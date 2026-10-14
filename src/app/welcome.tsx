@@ -1,10 +1,12 @@
 import { LinearGradient } from 'expo-linear-gradient';
-import { router } from 'expo-router';
+import { Redirect, router, useIsFocused } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
 import { StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Btn, Txt } from '@/components/ui';
+import { useAuth } from '@/lib/auth';
 import { gradients, radius } from '@/lib/theme';
 
 const FEATURES = [
@@ -15,8 +17,14 @@ const FEATURES = [
 
 export default function Welcome() {
   const insets = useSafeAreaInsets();
+  const { session } = useAuth();
+  const focused = useIsFocused();
+  // Already in a family: never offer to create/join another one over the current session.
+  if (session) return <Redirect href={session.role === 'child' ? '/child' : '/parent'} />;
   return (
     <LinearGradient colors={gradients.night} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ flex: 1 }}>
+      {/* light icons on the dark gradient in both themes; unmounts on blur so the root 'auto' style returns */}
+      {focused ? <StatusBar style="light" /> : null}
       <View style={{ flex: 1, paddingHorizontal: 24, paddingTop: insets.top + 40 }}>
         <Animated.View entering={FadeInDown.duration(400)}>
           <View style={styles.logo}>

@@ -12,6 +12,7 @@ import { Btn, Empty, haptic, Loading, Screen, SectionLabel, Txt, useToast } from
 import { api, ApiError, isDone, type ChildState, type Task } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { duration } from '@/lib/format';
+import { exactAlarmsAllowed, openExactAlarmSettings } from '@/lib/exactAlarm';
 import { cancelReminders, notificationsAllowed, scheduleReminders } from '@/lib/notify';
 import { gradients, radius, usePalette } from '@/lib/theme';
 
@@ -37,15 +38,21 @@ export default function ChildHome() {
   const [fetchedAt, setFetchedAt] = useState(0);
   const [now, setNow] = useState(0);
   const [notifOk, setNotifOk] = useState(true);
+  const [exactOk, setExactOk] = useState(true);
   const [skip, setSkip] = useState<Task | null>(null);
-  const [viewer, setViewer] = useState<{ url: string; caption: string } | null>(null);
+  const [viewer, setViewer] = useState<{ url: string; caption: string; id: number } | null>(null);
   const [confetti, setConfetti] = useState(0);
   const prevAll = useRef<boolean | null>(null);
+  const seq = useRef({ sent: 0, shown: 0 });
   const toast = useToast();
 
   const load = useCallback(async () => {
+    const my = ++seq.current.sent;
     try {
       const st = await api.childState();
+      // Overlapping refreshes (focus, poll, resume): never let an older answer overwrite a newer one.
+      if (my < seq.current.shown) return;
+      seq.current.shown = my;
       const t = Date.now();
       setS(st);
       setFetchedAt(t);
@@ -60,7 +67,8 @@ export default function ChildHome() {
       prevAll.current = all;
       const ok = await notificationsAllowed(false);
       setNotifOk(ok);
-      if (ok) await scheduleReminders(st);
+      setExactOk(exactAlarmsAllowed());
+      if (ok && my === seq.current.shown) await scheduleReminders(st);
     } catch (e) {
       if (e instanceof ApiError && e.status === 401) {
         await cancelReminders();
@@ -68,7 +76,7 @@ export default function ChildHome() {
         router.replace('/welcome');
         return;
       }
-      setError((e as Error).message);
+      if (my >= seq.current.shown) setError((e as Error).message);
     }
   }, [signOut]);
 
@@ -94,6 +102,7 @@ export default function ChildHome() {
   const lessons = s.tasks.filter((t) => t.kind === 'lesson');
   const items = s.tasks.filter((t) => t.kind === 'item');
 
+  const openPhoto = (url: string, caption: string, id: number) => setViewer({ url, caption, id });
   const openCamera = (t: Task) =>
     router.push({ pathname: '/child/camera', params: { id: String(t.id), label: t.label, emoji: t.emoji, page: String(t.photos.length + 1) } });
   const check = async (t: Task, done: boolean) => {
@@ -184,6 +193,13 @@ export default function ChildHome() {
             </Txt>
             <Btn small title="Включить" onPress={enableNotif} />
           </View>
+        ) : !exactOk ? (
+          <View style={[styles.banner, { backgroundColor: p.warnSoft }]}>
+            <Txt v="callout" style={{ flex: 1 }}>
+              ⏰ Чтобы напоминания приходили вовремя, разреши «Будильники и напоминания»
+            </Txt>
+            <Btn small title="Разрешить" onPress={() => openExactAlarmSettings() || toast.show('Открой настройки приложения → Будильники и напоминания')} />
+          </View>
         ) : null}
         {error ? (
           <Txt v="sub" color={p.bad} style={{ marginTop: 8 }}>
@@ -194,17 +210,18 @@ export default function ChildHome() {
         {!s.tasks.length ? <Empty icon="🌤️" title="На этот день заданий нет" text="Родитель ещё не добавил уроки и дела." /> : null}
         {lessons.length ? <SectionLabel>Уроки · {lessons.filter(isDone).length}/{lessons.length}</SectionLabel> : null}
         {lessons.map((t) => (
-          <ChildTaskCard key={t.id} t={t} onPhoto={openCamera} onSkip={setSkip} onCheck={check} onOpen={(url, caption) => setViewer({ url, caption })} />
+          <ChildTaskCard key={t.id} t={t} onPhoto={openCamera} onSkip={setSkip} onCheck={check} onOpen={openPhoto} />
         ))}
         {items.length ? <SectionLabel>Подготовить · {items.filter(isDone).length}/{items.length}</SectionLabel> : null}
         {items.map((t) => (
-          <ChildTaskCard key={t.id} t={t} onPhoto={openCamera} onSkip={setSkip} onCheck={check} onOpen={(url, caption) => setViewer({ url, caption })} />
+          <ChildTaskCard key={t.id} t={t} onPhoto={openCamera} onSkip={setSkip} onCheck={check} onOpen={openPhoto} />
         ))}
       </Screen>
-      <SkipSheet task={skip} onClose={() => setSkip(null)} onSend={sendSkip} />
-      <PhotoViewer url={viewer?.url ?? null} caption={viewer?.caption} onClose={() => setViewer(null)} />
+      {/* While the sheet is open the toast goes inside its modal, otherwise errors would hide under it. */}
+      <SkipSheet task={skip} onClose={() => setSkip(null)} onSend={sendSkip} overlay={skip ? toast.node : null} />
+      <PhotoViewer url={viewer?.url ?? null} id={viewer?.id} caption={viewer?.caption} onClose={() => setViewer(null)} />
       <Confetti run={confetti} />
-      {toast.node}
+      {skip ? null : toast.node}
     </>
   );
 }

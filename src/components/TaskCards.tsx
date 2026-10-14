@@ -65,15 +65,16 @@ function Head({ t, tone, text, right }: { t: Task; tone: Tone; text: string; rig
   );
 }
 
-function Thumbs({ t, onOpen }: { t: Task; onOpen: (url: string, caption: string) => void }) {
+function Thumbs({ t, onOpen }: { t: Task; onOpen: (url: string, caption: string, id: number) => void }) {
   const p = usePalette();
   if (!t.photos.length) return null;
   return (
     <View style={styles.thumbs}>
       {t.photos.map((ph) =>
         ph.url ? (
-          <Pressable key={ph.id} onPress={() => onOpen(ph.url!, `${t.label} · ${ph.hm ?? ''}`)}>
-            <Image source={{ uri: ph.url }} style={[styles.thumb, { borderColor: p.line }]} contentFit="cover" transition={150} />
+          <Pressable key={ph.id} onPress={() => onOpen(ph.url!, `${t.label} · ${ph.hm ?? ''}`, ph.id)}>
+            {/* Signed URLs change on every refresh; the photo id keeps the cached image. */}
+            <Image source={{ uri: ph.url, cacheKey: `photo-${ph.id}` }} style={[styles.thumb, { borderColor: p.line }]} contentFit="cover" transition={150} />
             {ph.hm ? (
               <View style={styles.time}>
                 <Txt v="sub" color="#fff" style={{ fontSize: 11 }}>
@@ -108,7 +109,7 @@ export function ChildTaskCard({
   onPhoto: (t: Task) => void;
   onSkip: (t: Task) => void;
   onCheck: (t: Task, done: boolean) => void;
-  onOpen: (url: string, caption: string) => void;
+  onOpen: (url: string, caption: string, id: number) => void;
 }) {
   const [tone, text] = statusFor(t, 'child');
   // Simple checklist item: one big tick, nothing else.
@@ -159,7 +160,7 @@ export function ParentTaskCard({
   t: Task;
   busy: boolean;
   onAction: (t: Task, a: ParentAction) => void;
-  onOpen: (url: string, caption: string) => void;
+  onOpen: (url: string, caption: string, id: number) => void;
 }) {
   const [tone, text] = statusFor(t, 'parent');
   const a = (x: ParentAction) => () => onAction(t, x);

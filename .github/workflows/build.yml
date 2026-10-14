@@ -16,6 +16,10 @@ jobs:
   android:
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    env:
+      BUILD_NUMBER: ${{ github.run_number }}
+    outputs:
+      signing: ${{ steps.apk.outputs.signing }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -30,9 +34,39 @@ jobs:
       - run: npx tsc --noEmit
       - run: npx expo prebuild --platform android --no-install
       - name: Build release APK
+        id: apk
+        env:
+          ANDROID_KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           cd android
-          ./gradlew assembleRelease --no-daemon -PreactNativeArchitectures=arm64-v8a,armeabi-v7a
+          signing=()
+          set_count=0
+          for v in "$ANDROID_KEYSTORE_B64" "$ANDROID_KEYSTORE_PASSWORD" "$ANDROID_KEY_ALIAS" "$ANDROID_KEY_PASSWORD"; do
+            if [ -n "$v" ]; then set_count=$((set_count + 1)); fi
+          done
+          if [ "$set_count" -ne 0 ] && [ "$set_count" -ne 4 ]; then
+            echo "::error title=Signing secrets::Set all four secrets ANDROID_KEYSTORE_B64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD (or none for a test build)."
+            exit 1
+          fi
+          if [ "$set_count" -eq 4 ]; then
+            trap 'rm -f app/release.keystore' EXIT
+            printf '%s' "$ANDROID_KEYSTORE_B64" | base64 --decode --ignore-garbage > app/release.keystore
+            signing=(
+              "-Pandroid.injected.signing.store.file=$PWD/app/release.keystore"
+              "-Pandroid.injected.signing.store.password=$ANDROID_KEYSTORE_PASSWORD"
+              "-Pandroid.injected.signing.key.alias=$ANDROID_KEY_ALIAS"
+              "-Pandroid.injected.signing.key.password=$ANDROID_KEY_PASSWORD"
+            )
+            echo "Signing the APK with the private release key"
+            echo "signing=release" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning title=Test signature::ANDROID_KEYSTORE_B64 / ANDROID_KEYSTORE_PASSWORD / ANDROID_KEY_ALIAS / ANDROID_KEY_PASSWORD secrets are not set, so the APK is signed with the public React Native debug key. Use it for testing only."
+            echo "signing=debug" >> "$GITHUB_OUTPUT"
+          fi
+          ./gradlew assembleRelease --no-daemon -PreactNativeArchitectures=arm64-v8a,armeabi-v7a "${signing[@]}"
       - run: |
           mkdir -p out
           cp android/app/build/outputs/apk/release/app-release.apk out/Uroki.apk
@@ -44,6 +78,8 @@ jobs:
   ios:
     runs-on: macos-latest
     timeout-minutes: 90
+    env:
+      BUILD_NUMBER: ${{ github.run_number }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -92,4 +128,4 @@ jobs:
           body: |
             **Android:** скачайте `Uroki.apk` на телефон и откройте (разрешите установку из этого источника).
             **iPhone:** `Uroki-unsigned.ipa` нужно подписать своим Apple ID через Sideloadly или AltStore (бесплатный Apple ID — приложение работает 7 дней, потом переподписать).
-            Android-сборки подписаны одним постоянным ключом, поэтому новые версии ставятся поверх старых.
+            ${{ needs.android.outputs.signing == 'release' && 'APK подписан закрытым ключом проекта, поэтому новые версии ставятся поверх старых. Если стояла тестовая версия и установка не проходит, удалите её один раз.' || 'Это тестовая сборка: APK подписан общедоступным тестовым ключом. Версии для магазина приложений будут подписаны закрытым ключом, и тестовую версию перед их установкой нужно будет один раз удалить.' }}

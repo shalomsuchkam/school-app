@@ -1,5 +1,5 @@
 import { useFocusEffect } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { Btn, Chip, EmojiPicker, Empty, Field, Group, Loading, Row, Screen, SectionLabel, Sheet, ToggleRow, Txt, useToast, WeekdayPicker } from '@/components/ui';
@@ -17,21 +17,31 @@ export default function Lists() {
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
   const toast = useToast();
+  // A delete is held back while its «Вернуть» toast is up, so undo keeps the same item (and its tasks).
+  const pending = useRef<{ id: number; timer: ReturnType<typeof setTimeout> } | null>(null);
 
   const load = useCallback(async () => {
     try {
       const [s, me] = await Promise.all([api.setup(), api.me()]);
-      setItems(s.items);
+      setItems(s.items.filter((x) => x.id !== pending.current?.id));
       setFam(me.family);
       setError(null);
     } catch (e) {
       setError((e as Error).message);
     }
   }, []);
+  const flush = useCallback(() => {
+    const d = pending.current;
+    if (!d) return;
+    pending.current = null;
+    clearTimeout(d.timer);
+    api.deleteItem(d.id).catch(load);
+  }, [load]);
   useFocusEffect(
     useCallback(() => {
       load();
-    }, [load]),
+      return flush; // leaving the tab (or unmounting) commits a pending delete
+    }, [load, flush]),
   );
   if (!items || !fam) return <Loading error={error} onRetry={load} />;
 
@@ -55,19 +65,23 @@ export default function Lists() {
       toast.show((e as Error).message);
     }
   };
-  const remove = async (it: Item) => {
+  const remove = (id: number) => {
+    const it = items.find((x) => x.id === id);
+    if (!it) return;
+    flush();
     setDraft(null);
-    setItems(items.filter((x) => x.id !== it.id));
-    try {
-      await api.deleteItem(it.id);
-      toast.show(`«${it.title}» удалён`, {
-        label: 'Вернуть',
-        run: () => api.addItem({ title: it.title, emoji: it.emoji, needs_photo: it.needs_photo, required: it.required, weekdays: it.weekdays, pos: it.pos }).then(load),
-      });
-    } catch (e) {
-      toast.show((e as Error).message);
-      load();
-    }
+    setItems(items.filter((x) => x.id !== id));
+    pending.current = { id, timer: setTimeout(flush, 5000) };
+    toast.show(`«${it.title}» удалён`, {
+      label: 'Вернуть',
+      run: () => {
+        if (pending.current?.id === id) {
+          clearTimeout(pending.current.timer);
+          pending.current = null;
+        }
+        load();
+      },
+    });
   };
   const unused = ITEM_PRESETS.filter((x) => !items.some((i) => i.title === x.title));
 
@@ -107,7 +121,7 @@ export default function Lists() {
         </Txt>
       </Screen>
 
-      <Sheet visible={!!draft} title={draft?.id ? 'Пункт списка' : 'Новый пункт'} onClose={() => setDraft(null)}>
+      <Sheet visible={!!draft} title={draft?.id ? 'Пункт списка' : 'Новый пункт'} onClose={() => setDraft(null)} overlay={toast.node}>
         <Field label="Что сделать" value={draft?.title ?? ''} onChangeText={(title) => setDraft({ ...draft, title })} placeholder="Например, погладить рубашку" maxLength={50} />
         <Txt v="sub" color={p.muted} style={{ marginBottom: 8, marginLeft: 4 }}>
           Значок
@@ -127,9 +141,9 @@ export default function Lists() {
           </View>
         ) : null}
         <Btn title="Сохранить" onPress={save} disabled={!draft?.title?.trim() || (!draft?.everyDay && !draft?.weekdays?.length)} style={{ marginTop: 16 }} />
-        {draft?.id ? <Btn title="Удалить" kind="plain" onPress={() => remove(draft as Item)} style={{ marginTop: 10 }} /> : null}
+        {draft?.id ? <Btn title="Удалить" kind="plain" onPress={() => remove(draft.id!)} style={{ marginTop: 10 }} /> : null}
       </Sheet>
-      {toast.node}
+      {draft ? null : toast.node}
     </>
   );
 }

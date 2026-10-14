@@ -1,6 +1,8 @@
 // deno-lint-ignore-file no-explicit-any
-import { activeDay, applyAction, checkItem, childState, ensureTasks, getFamily, isDone, loadTasks, overview, requestSkip, uploadPhoto } from "./core.ts";
-import { CORS, db, esc, fmtLong, fmtShort, HM, HttpError, json, randomCode, randomToken, secret, sha256, toMin } from "./lib.ts";
+import {
+  activeDay, applyAction, checkItem, childState, dropOpenTasks, ensureTasks, getFamily, isDone, loadTasks, MAX_PHOTO, overview, requestSkip, uploadPhoto,
+} from "./core.ts";
+import { CORS, db, dow, esc, fmtLong, fmtShort, HM, HttpError, json, localParts, randomCode, randomToken, secret, sha256, toMin, validTz } from "./lib.ts";
 import { notifyChild, notifyParents, tg, tgEnabled } from "./notify.ts";
 
 type Device = { id: string; family_id: string; role: "parent" | "child"; name: string | null; tg_chat_id: number | null };
@@ -30,6 +32,14 @@ async function newDevice(familyId: string, role: "parent" | "child", name: strin
     .insert({ family_id: familyId, role, name: name || null, token_hash: await sha256(token) }).select("id").single();
   if (error) throw new HttpError(500, error.message);
   return { token, device_id: data.id };
+}
+
+// Without a parent device nobody can invite, approve or change settings again, so the last one cannot be removed.
+async function keepLastParent(familyId: string, deviceId: string) {
+  const { data: dev } = await db.from("app_devices").select("role").eq("id", deviceId).eq("family_id", familyId).maybeSingle();
+  if (dev?.role !== "parent") return;
+  const { count } = await db.from("app_devices").select("id", { count: "exact", head: true }).eq("family_id", familyId).eq("role", "parent");
+  if ((count ?? 0) <= 1) throw new HttpError(409, "Вы единственный родитель. Сначала пригласите второго родителя.");
 }
 
 async function me(d: Device) {
@@ -75,21 +85,31 @@ async function handleTelegram(u: any) {
     const devs = await parentDeviceByChat(cb.from?.id);
     const [kind, a, b] = String(cb.data).split(":");
     const taskId = Number(kind === "u" ? a : b);
-    const { data: task } = await db.from("app_tasks").select("family_id, status").eq("id", taskId).maybeSingle();
+    const { data: task } = await db.from("app_tasks").select("family_id, status, accepted").eq("id", taskId).maybeSingle();
     const dev = devs.find((d) => d.family_id === task?.family_id);
     if (!task || !dev) return tg("answerCallbackQuery", { callback_query_id: cb.id, text: "Нет доступа" });
+    const closeKeyboard = () =>
+      tg("editMessageReplyMarkup", { chat_id: cb.message.chat.id, message_id: cb.message.message_id, reply_markup: { inline_keyboard: [] } });
     const expected = kind === "s" ? "skip_pending" : kind === "t" ? "done" : null;
-    if (expected && task.status !== expected) {
+    if ((expected && task.status !== expected) || (kind === "t" && a === "ok" && task.accepted)) {
       await tg("answerCallbackQuery", { callback_query_id: cb.id, text: "Уже обработано" });
-      return tg("editMessageReplyMarkup", { chat_id: cb.message.chat.id, message_id: cb.message.message_id, reply_markup: { inline_keyboard: [] } });
+      return closeKeyboard();
     }
-    const action = kind === "u" ? "reset" : kind === "t" ? (a === "ok" ? "ok" : "redo") : a === "ok" ? "skip_ok" : "skip_no";
-    const text = await applyAction(await getFamily(dev.family_id), taskId, action);
+    const action = kind === "u" ? "undo" : kind === "t" ? (a === "ok" ? "ok" : "redo") : a === "ok" ? "skip_ok" : "skip_no";
+    let text: string;
+    try {
+      // u:<id>:<action> undoes only that action; older u:<id> buttons undo whatever was last
+      text = await applyAction(await getFamily(dev.family_id), taskId, action, kind === "u" ? b : undefined);
+    } catch (e) {
+      if (!(e instanceof HttpError)) throw e;
+      await tg("answerCallbackQuery", { callback_query_id: cb.id, text: e.message });
+      return closeKeyboard();
+    }
     await tg("answerCallbackQuery", { callback_query_id: cb.id, text });
-    await tg("editMessageReplyMarkup", { chat_id: cb.message.chat.id, message_id: cb.message.message_id, reply_markup: { inline_keyboard: [] } });
+    await closeKeyboard();
     return tg("sendMessage", {
       chat_id: cb.message.chat.id, text, reply_to_message_id: cb.message.message_id,
-      reply_markup: kind !== "u" ? { inline_keyboard: [[{ text: "↩️ Отменить", callback_data: `u:${taskId}` }]] } : undefined,
+      reply_markup: kind !== "u" ? { inline_keyboard: [[{ text: "↩️ Отменить", callback_data: `u:${taskId}:${action}` }]] } : undefined,
     });
   }
   const m = u.message;
@@ -120,6 +140,7 @@ async function handleTelegram(u: any) {
 }
 
 // ---------- reminders (cron, every 5 min) ----------
+const RANK: Record<string, number> = { soft: 0, deadline: 1, final: 2 };
 async function tick() {
   const { data: fams } = await db.from("app_families").select("*");
   let fired = 0;
@@ -135,11 +156,13 @@ async function tick() {
         ...(fam.remind_times ?? []).map((t: string) => ({ t, kind: "soft" })),
         { t: fam.soft_deadline, kind: "deadline" },
         { t: fam.hard_deadline, kind: "final" },
-      ].filter((x) => HM.test(x.t)).sort((a, b) => toMin(a.t) - toMin(b.t));
+      ].filter((x) => HM.test(x.t)).sort((a, b) => toMin(a.t) - toMin(b.t) || RANK[a.kind] - RANK[b.kind]);
       const nowM = toMin(now.hm);
       let slot: any = null;
       for (const x of slots.filter((x) => nowM >= toMin(x.t) && nowM - toMin(x.t) <= 30)) {
-        const { error } = await db.from("app_reminder_log").insert({ family_id: fam.id, school_date: S, slot: x.t });
+        // the kind is part of the key: a reminder at the same time as a deadline must not swallow the deadline alert
+        const key = x.kind === "soft" ? x.t : `${x.kind}@${x.t}`;
+        const { error } = await db.from("app_reminder_log").insert({ family_id: fam.id, school_date: S, slot: key });
         if (!error) slot = x;
       }
       if (!slot) continue;
@@ -190,7 +213,8 @@ async function route(req: Request, path: string): Promise<Response> {
   // --- onboarding (no auth) ---
   if (path === "/family" && M === "POST") {
     const b = await body(req);
-    const { data: fam, error } = await db.from("app_families").insert({ child_name: clean(b.child_name, 30) || "Ученик" }).select("*").single();
+    const tz = validTz(b.tz); // the parent's phone zone; unknown names keep the default
+    const { data: fam, error } = await db.from("app_families").insert({ child_name: clean(b.child_name, 30) || "Ученик", ...(tz ? { tz } : {}) }).select("*").single();
     if (error) throw new HttpError(500, error.message);
     return json({ ...(await newDevice(fam.id, "parent", clean(b.parent_name, 30))), role: "parent" });
   }
@@ -215,10 +239,20 @@ async function route(req: Request, path: string): Promise<Response> {
     if (path === "/child/state" && M === "GET") return json(await childState(fam));
     if (d.role !== "child") throw new HttpError(403, "Только для ученика");
     if (path === "/child/photo" && M === "POST") {
-      const fd = await req.formData();
-      const file = fd.get("file") as File | null;
-      if (!file) throw new HttpError(400, "Нет фото");
-      await uploadPhoto(fam, Number(fd.get("task_id")), file);
+      const ct = (req.headers.get("content-type") ?? "").split(";")[0].trim().toLowerCase();
+      const qTask = new URL(req.url).searchParams.get("task_id");
+      if (ct === "multipart/form-data") {
+        // older app builds
+        const fd = await req.formData();
+        const file = fd.get("file");
+        if (!(file instanceof File)) throw new HttpError(400, "Нет фото");
+        await uploadPhoto(fam, Number(fd.get("task_id") ?? qTask), new Uint8Array(await file.arrayBuffer()), file.type);
+      } else {
+        // raw JPEG body, task id in the query: POST /child/photo?task_id=…
+        if (!ct.startsWith("image/") && ct !== "application/octet-stream") throw new HttpError(400, "Нет фото");
+        if (Number(req.headers.get("content-length") ?? 0) > MAX_PHOTO) throw new HttpError(413, "Фото слишком большое");
+        await uploadPhoto(fam, Number(qTask), new Uint8Array(await req.arrayBuffer()), ct);
+      }
       return json({ ok: true });
     }
     const b = await body(req);
@@ -239,6 +273,7 @@ async function route(req: Request, path: string): Promise<Response> {
     return json({ ok: true });
   }
   if (path === "/members/me" && M === "DELETE") {
+    if (d.role === "parent") await keepLastParent(famId, d.id);
     await db.from("app_devices").delete().eq("id", d.id);
     return json({ ok: true });
   }
@@ -267,9 +302,13 @@ async function route(req: Request, path: string): Promise<Response> {
     if (Array.isArray(b.remind_times) && b.remind_times.every((x: string) => HM.test(x))) patch.remind_times = [...new Set<string>(b.remind_times)].sort();
     const wd = weekdays(b.school_weekdays);
     if (wd && wd.length) patch.school_weekdays = wd;
-    if (typeof b.tz === "string" && b.tz.length < 60) patch.tz = b.tz;
+    const tz = validTz(b.tz);
+    if (tz) patch.tz = tz;
     if (Object.keys(patch).length) await db.from("app_families").update(patch).eq("id", famId);
-    return json(await getFamily(famId));
+    const nf = await getFamily(famId);
+    // tasks already created for a weekday that is no longer a school day must not hang around as missed days
+    if (patch.school_weekdays) await dropOpenTasks(famId, localParts(nf.tz).date, null, (date) => !nf.school_weekdays.includes(dow(date)));
+    return json(nf);
   }
 
   // subjects
@@ -343,7 +382,7 @@ async function route(req: Request, path: string): Promise<Response> {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(b.date)) throw new HttpError(400, "Неверная дата");
     if (b.off) {
       await db.from("app_days_off").upsert({ family_id: famId, date: b.date });
-      await db.from("app_tasks").delete().eq("family_id", famId).eq("school_date", b.date).eq("status", "todo");
+      await dropOpenTasks(famId, b.date, b.date, () => true);
     } else await db.from("app_days_off").delete().eq("family_id", famId).eq("date", b.date);
     return json({ ok: true });
   }
@@ -352,11 +391,16 @@ async function route(req: Request, path: string): Promise<Response> {
     const role = b.role === "parent" ? "parent" : "child";
     const code = randomCode(6);
     const expires_at = new Date(Date.now() + 48 * 3600 * 1000).toISOString();
-    await db.from("app_invites").insert({ code, family_id: famId, role, expires_at });
+    await db.from("app_invites").delete().lt("expires_at", new Date().toISOString());
+    const { error } = await db.from("app_invites").insert({ code, family_id: famId, role, expires_at });
+    if (error) throw new HttpError(500, error.message);
     return json({ code, role, expires_at });
   }
   if (seg[0] === "members" && M === "DELETE" && seg[1]) {
-    await db.from("app_devices").delete().eq("id", seg[1]).eq("family_id", famId);
+    await keepLastParent(famId, seg[1]);
+    const { data: gone } = await db.from("app_devices").delete().eq("id", seg[1]).eq("family_id", famId).select("id");
+    // a removed member must not come back with a code they have already seen
+    if (gone?.length && seg[1] !== d.id) await db.from("app_invites").delete().eq("family_id", famId);
     return json({ ok: true });
   }
   if (path === "/telegram/link" && M === "POST") {

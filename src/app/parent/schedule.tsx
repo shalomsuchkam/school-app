@@ -19,6 +19,10 @@ export default function Schedule() {
   });
   const [picker, setPicker] = useState(false);
   const [edit, setEdit] = useState<Partial<Subject> | null>(null);
+  // picker and editor share one Sheet; keep showing the last content while it slides away
+  const sheet = edit ? 'edit' : picker ? 'picker' : null;
+  const [shown, setShown] = useState<'edit' | 'picker'>('picker');
+  if (sheet && sheet !== shown) setShown(sheet);
   const toast = useToast();
 
   const load = useCallback(async () => {
@@ -209,39 +213,49 @@ export default function Schedule() {
         </View>
       </Screen>
 
-      <Sheet visible={picker && !edit} title={`Урок на ${WD_SHORT[day - 1]}`} onClose={() => setPicker(false)}>
-        {setup.subjects.length ? (
-          <Group>
-            {setup.subjects.map((s) => (
-              <Row
-                key={s.id}
-                icon={s.emoji}
-                title={s.name}
-                right={<Txt v="headline" color={p.brand}>＋</Txt>}
-                onPress={() => {
-                  saveLessons([...lessons, s.id]);
-                  toast.show(`${s.emoji} ${s.name} добавлен`);
-                }}
-              />
-            ))}
-          </Group>
-        ) : null}
-        <Btn title="Новый предмет" icon="＋" kind="secondary" style={{ marginTop: 14 }} onPress={() => setEdit({ emoji: '📘', light: false, name: '' })} />
+      {/* One Modal for both: swapping two sibling Modals in one update never presents the second on iOS */}
+      <Sheet
+        visible={sheet !== null}
+        title={shown === 'edit' ? (edit?.id ? 'Предмет' : 'Новый предмет') : `Урок на ${WD_SHORT[day - 1]}`}
+        onClose={shown === 'edit' ? () => setEdit(null) : () => setPicker(false)}
+        overlay={toast.node}
+      >
+        {shown === 'edit' ? (
+          <>
+            <Field label="Название" value={edit?.name ?? ''} onChangeText={(name) => setEdit({ ...edit, name })} placeholder="Например, Геометрия" maxLength={40} />
+            <Txt v="sub" color={p.muted} style={{ marginBottom: 8, marginLeft: 4 }}>
+              Значок
+            </Txt>
+            <EmojiPicker value={edit?.emoji ?? '📘'} options={EMOJIS} onChange={(emoji) => setEdit({ ...edit, emoji })} />
+            <Group style={{ marginTop: 14 }}>
+              <ToggleRow title="Обычно без ДЗ" subtitle="Кнопка «Нет ДЗ» будет первой" value={!!edit?.light} onChange={(light) => setEdit({ ...edit, light })} />
+            </Group>
+            <Btn title="Сохранить" onPress={saveSubject} disabled={!edit?.name?.trim()} style={{ marginTop: 16 }} />
+            {edit?.id ? <Btn title="Удалить предмет" kind="plain" onPress={() => deleteSubject(edit as Subject)} style={{ marginTop: 10 }} /> : null}
+          </>
+        ) : (
+          <>
+            {setup.subjects.length ? (
+              <Group>
+                {setup.subjects.map((s) => (
+                  <Row
+                    key={s.id}
+                    icon={s.emoji}
+                    title={s.name}
+                    right={<Txt v="headline" color={p.brand}>＋</Txt>}
+                    onPress={() => {
+                      saveLessons([...lessons, s.id]);
+                      toast.show(`${s.emoji} ${s.name} добавлен`);
+                    }}
+                  />
+                ))}
+              </Group>
+            ) : null}
+            <Btn title="Новый предмет" icon="＋" kind="secondary" style={{ marginTop: 14 }} onPress={() => setEdit({ emoji: '📘', light: false, name: '' })} />
+          </>
+        )}
       </Sheet>
-
-      <Sheet visible={!!edit} title={edit?.id ? 'Предмет' : 'Новый предмет'} onClose={() => setEdit(null)}>
-        <Field label="Название" value={edit?.name ?? ''} onChangeText={(name) => setEdit({ ...edit, name })} placeholder="Например, Геометрия" maxLength={40} />
-        <Txt v="sub" color={p.muted} style={{ marginBottom: 8, marginLeft: 4 }}>
-          Значок
-        </Txt>
-        <EmojiPicker value={edit?.emoji ?? '📘'} options={EMOJIS} onChange={(emoji) => setEdit({ ...edit, emoji })} />
-        <Group style={{ marginTop: 14 }}>
-          <ToggleRow title="Обычно без ДЗ" subtitle="Кнопка «Нет ДЗ» будет первой" value={!!edit?.light} onChange={(light) => setEdit({ ...edit, light })} />
-        </Group>
-        <Btn title="Сохранить" onPress={saveSubject} disabled={!edit?.name?.trim()} style={{ marginTop: 16 }} />
-        {edit?.id ? <Btn title="Удалить предмет" kind="plain" onPress={() => deleteSubject(edit as Subject)} style={{ marginTop: 10 }} /> : null}
-      </Sheet>
-      {toast.node}
+      {sheet ? null : toast.node}
     </>
   );
 }

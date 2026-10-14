@@ -2,8 +2,8 @@ import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Image } from 'expo-image';
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useRef, useState } from 'react';
-import { Alert, Linking, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { Alert, AppState, Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Btn, haptic, Txt } from '@/components/ui';
@@ -14,13 +14,20 @@ export default function CameraScreen() {
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ id: string; label: string; emoji: string; page: string }>();
   const taskId = Number(params.id);
-  const [perm, requestPerm] = useCameraPermissions();
+  const [perm, requestPerm, getPerm] = useCameraPermissions();
   const cam = useRef<CameraView>(null);
   const [torch, setTorch] = useState(false);
   const [shot, setShot] = useState<string | null>(null);
   const [page, setPage] = useState(Number(params.page) || 1);
   const [busy, setBusy] = useState(false);
   const [sent, setSent] = useState(false);
+  // Access granted in the phone's Settings only shows up after a fresh check.
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (st) => {
+      if (st === 'active') getPerm();
+    });
+    return () => sub.remove();
+  }, [getPerm]);
 
   if (!perm) return <View style={styles.bg} />;
   if (!perm.granted) {

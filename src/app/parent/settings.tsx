@@ -4,7 +4,7 @@ import { Alert, Linking, Pressable, StyleSheet, View } from 'react-native';
 
 import { InviteSheet } from '@/components/InviteSheet';
 import { Btn, Chip, Field, Group, Loading, Row, Screen, SectionLabel, Sheet, TimeStepper, Txt, useToast, WeekdayPicker } from '@/components/ui';
-import { api, type Me, type Role } from '@/lib/api';
+import { api, ApiError, type Me, type Role } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { toMin } from '@/lib/format';
 import { usePalette } from '@/lib/theme';
@@ -46,8 +46,10 @@ export default function Settings() {
       load();
     }
   };
-  const setSoft = (v: string) => (toMin(v) < toMin(f.hard_deadline) ? patch({ soft_deadline: v }) : toast.show('Срок должен быть раньше последнего срока'));
-  const setHard = (v: string) => (toMin(v) > toMin(f.soft_deadline) ? patch({ hard_deadline: v }) : toast.show('Последний срок должен быть позже срока'));
+  // a pair saved invalid by an older build must stay editable, otherwise every step is rejected
+  const broken = toMin(f.soft_deadline) >= toMin(f.hard_deadline);
+  const setSoft = (v: string) => (broken || toMin(v) < toMin(f.hard_deadline) ? patch({ soft_deadline: v }) : toast.show('Срок должен быть раньше последнего срока'));
+  const setHard = (v: string) => (broken || toMin(v) > toMin(f.soft_deadline) ? patch({ hard_deadline: v }) : toast.show('Последний срок должен быть позже срока'));
 
   const connectTelegram = async () => {
     setTgBusy(true);
@@ -68,24 +70,55 @@ export default function Settings() {
   const removeMember = (id: string, label: string) =>
     Alert.alert(`Отключить ${label}?`, 'Устройство выйдет из семьи. Подключить снова можно новым кодом.', [
       { text: 'Отмена', style: 'cancel' },
-      { text: 'Отключить', style: 'destructive', onPress: () => api.removeMember(id).then(load) },
+      {
+        text: 'Отключить',
+        style: 'destructive',
+        onPress: () =>
+          api
+            .removeMember(id)
+            .catch((e) => toast.show((e as Error).message))
+            .finally(load),
+      },
     ]);
-  const logout = () =>
+
+  const parents = me.members.filter((m) => m.role === 'parent');
+  const children = me.members.filter((m) => m.role === 'child');
+
+  // Without a parent device nobody could invite, approve skips or edit the schedule again.
+  const offerInvite = (title: string, msg: string) =>
+    Alert.alert(title, msg, [
+      { text: 'Отмена', style: 'cancel' },
+      { text: 'Пригласить второго родителя', onPress: () => setInvite('parent') },
+    ]);
+  const logout = () => {
+    if (parents.length <= 1)
+      return offerInvite(
+        'Вы единственный родитель',
+        'Если выйти, в семье не останется родителя: никто не сможет одобрять пропуски, смотреть фото и менять расписание. Сначала пригласите второго родителя — например, на ваш новый телефон.',
+      );
     Alert.alert('Выйти на этом телефоне?', 'Данные семьи сохранятся. Вернуться можно по коду от другого родителя.', [
       { text: 'Отмена', style: 'cancel' },
       {
         text: 'Выйти',
         style: 'destructive',
         onPress: async () => {
-          await api.leave().catch(() => {});
+          try {
+            await api.leave();
+          } catch (e) {
+            const status = e instanceof ApiError ? e.status : 0;
+            // 401: this phone was already disconnected, so signing out locally is all that's left
+            if (status !== 401) {
+              if (status === 409) offerInvite('Не получилось выйти', (e as Error).message);
+              else toast.show((e as Error).message);
+              return load();
+            }
+          }
           await signOut();
           router.replace('/welcome');
         },
       },
     ]);
-
-  const parents = me.members.filter((m) => m.role === 'parent');
-  const children = me.members.filter((m) => m.role === 'child');
+  };
 
   return (
     <>
@@ -100,8 +133,8 @@ export default function Settings() {
 
         <SectionLabel>Сроки</SectionLabel>
         <Group>
-          <Row icon="⏰" title="Срок" subtitle="Уведомление, если не готово" right={<TimeStepper value={f.soft_deadline} onChange={setSoft} />} />
-          <Row icon="🌙" title="Последний срок" subtitle="Финальная проверка" right={<TimeStepper value={f.hard_deadline} onChange={setHard} />} />
+          <Row icon="⏰" title="Срок" subtitle="Уведомление, если не готово" right={<TimeStepper value={f.soft_deadline} onChange={setSoft} clamp />} />
+          <Row icon="🌙" title="Последний срок" subtitle="Финальная проверка" right={<TimeStepper value={f.hard_deadline} onChange={setHard} clamp />} />
         </Group>
 
         <SectionLabel right={<Btn small kind="secondary" title="Время" icon="＋" onPress={() => setNewTime('16:00')} />}>Напоминания ученику</SectionLabel>

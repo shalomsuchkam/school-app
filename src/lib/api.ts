@@ -1,3 +1,6 @@
+import { File as FsFile } from 'expo-file-system';
+import { Platform } from 'react-native';
+
 // Client for the `app` edge function (multi-family backend of the mobile app).
 export const API_BASE = 'https://cmranrfjvvmhktntbnpg.supabase.co/functions/v1/app';
 
@@ -35,6 +38,9 @@ export type ChildState = {
   streak: number;
   perfect_week: number;
   tasks: Task[];
+  tz: string;
+  // Further due days after due_date (ascending), used for offline reminders.
+  upcoming: { due_date: string; school_date: string }[];
 };
 export type Day = { date: string; label: string; total: number; done: number; last_done_hm: string | null; on_time: boolean; tasks: Task[] };
 export type Overview = { now_hm: string; active: string; days: Day[]; streak: number; perfect_week: number; days_off: string[] };
@@ -57,7 +63,7 @@ export type Me = {
 export type Subject = { id: number; name: string; emoji: string; light: boolean };
 export type Item = { id: number; title: string; emoji: string; required: boolean; needs_photo: boolean; weekdays: number[] | null; pos: number };
 export type Setup = { subjects: Subject[]; lessons: Record<string, number[]>; items: Item[]; days_off: string[] };
-export type ParentAction = 'ok' | 'done' | 'redo' | 'skip_ok' | 'skip_no' | 'reset';
+export type ParentAction = 'ok' | 'done' | 'redo' | 'skip_ok' | 'skip_no' | 'reset' | 'undo';
 
 export class ApiError extends Error {
   constructor(message: string, public status: number) {
@@ -70,13 +76,15 @@ export const setToken = (t: string | null) => {
   token = t;
 };
 
-async function call<T>(method: string, path: string, body?: unknown, form?: FormData): Promise<T> {
+type Raw = { data: Uint8Array<ArrayBuffer> | Blob; type: string };
+async function call<T>(method: string, path: string, body?: unknown, raw?: Raw): Promise<T> {
   const headers: Record<string, string> = {};
   if (token) headers.authorization = `Bearer ${token}`;
-  if (body !== undefined) headers['content-type'] = 'application/json';
+  if (raw) headers['content-type'] = raw.type;
+  else if (body !== undefined) headers['content-type'] = 'application/json';
   let r: Response;
   try {
-    r = await fetch(API_BASE + path, { method, headers, body: form ?? (body !== undefined ? JSON.stringify(body) : undefined) });
+    r = await fetch(API_BASE + path, { method, headers, body: raw ? raw.data : body !== undefined ? JSON.stringify(body) : undefined });
   } catch {
     throw new ApiError('Нет связи с сервером', 0);
   }
@@ -87,7 +95,7 @@ async function call<T>(method: string, path: string, body?: unknown, form?: Form
 
 type Auth = { token: string; role: Role };
 export const api = {
-  createFamily: (child_name: string, parent_name: string) => call<Auth>('POST', '/family', { child_name, parent_name }),
+  createFamily: (child_name: string, parent_name: string, tz?: string) => call<Auth>('POST', '/family', { child_name, parent_name, tz }),
   join: (code: string, name: string) => call<Auth>('POST', '/join', { code, name }),
   me: () => call<Me>('GET', '/me'),
   setup: () => call<Setup>('GET', '/setup'),
@@ -96,11 +104,15 @@ export const api = {
   childState: () => call<ChildState>('GET', '/child/state'),
   skip: (task_id: number, reason: string) => call('POST', '/child/skip', { task_id, reason }),
   check: (task_id: number, done: boolean) => call('POST', '/child/check', { task_id, done }),
-  photo: (task_id: number, uri: string) => {
-    const fd = new FormData();
-    fd.append('task_id', String(task_id));
-    fd.append('file', { uri, name: 'photo.jpg', type: 'image/jpeg' } as unknown as Blob);
-    return call('POST', '/child/photo', undefined, fd);
+  // Raw JPEG body: expo/fetch (the global fetch in SDK 57) can't send RN's {uri} FormData parts.
+  photo: async (task_id: number, uri: string) => {
+    let data: Raw['data'];
+    try {
+      data = Platform.OS === 'web' ? await (await fetch(uri)).blob() : await new FsFile(uri).bytes();
+    } catch {
+      throw new ApiError('Не удалось прочитать фото', 0);
+    }
+    return call('POST', `/child/photo?task_id=${task_id}`, undefined, { data, type: 'image/jpeg' });
   },
 
   overview: () => call<Overview>('GET', '/parent/overview'),

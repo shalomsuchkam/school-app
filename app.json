@@ -9,7 +9,6 @@
     "userInterfaceStyle": "automatic",
     "ios": {
       "bundleIdentifier": "kz.uroki.app",
-      "buildNumber": "1",
       "supportsTablet": false,
       "infoPlist": {
         "CFBundleDisplayName": "Уроки",
@@ -18,14 +17,17 @@
     },
     "android": {
       "package": "kz.uroki.app",
-      "versionCode": 1,
       "adaptiveIcon": {
         "backgroundColor": "#6D5EFC",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
-      "permissions": ["android.permission.CAMERA", "android.permission.POST_NOTIFICATIONS"],
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.POST_NOTIFICATIONS",
+        "android.permission.SCHEDULE_EXACT_ALARM"
+      ],
       "blockedPermissions": ["android.permission.RECORD_AUDIO"],
       "predictiveBackGestureEnabled": false
     },
@@ -43,7 +45,9 @@
         "expo-camera",
         {
           "cameraPermission": "Камера нужна, чтобы фотографировать домашнее задание и вещи на завтра.",
-          "recordAudioAndroid": false
+          "microphonePermission": false,
+          "recordAudioAndroid": false,
+          "barcodeScannerEnabled": false
         }
       ],
       [
@@ -53,7 +57,7 @@
           "color": "#6D5EFC"
         }
       ],
-      "expo-secure-store",
+      ["expo-secure-store", { "faceIDPermission": false }],
       "expo-font",
       ["./plugins/withAndroidLabel", "Уроки"]
     ],

@@ -4,9 +4,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   ActivityIndicator,
   Animated as RNAnimated,
-  KeyboardAvoidingView,
   Modal,
-  Platform,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -21,6 +19,7 @@ import {
   type TextStyle,
   type ViewStyle,
 } from 'react-native';
+import { KeyboardAvoidingView, useKeyboardState } from 'react-native-keyboard-controller';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { fromMin, toMin, WD_SHORT } from '@/lib/format';
@@ -321,14 +320,20 @@ export function Field(props: TextInputProps & { label?: string }) {
   );
 }
 
-export function TimeStepper({ value, onChange, step = 15 }: { value: string; onChange: (v: string) => void; step?: number }) {
+// clamp: stay within one day (00:00–23:45) instead of wrapping past midnight
+export function TimeStepper({ value, onChange, step = 15, clamp }: { value: string; onChange: (v: string) => void; step?: number; clamp?: boolean }) {
   const p = usePalette();
   const m = toMin(value);
   const btn = (d: number, label: string) => (
     <Pressable
       onPress={() => {
+        const next = clamp ? Math.min(1440 - step, Math.max(0, m + d)) : m + d;
+        if (next === m) {
+          haptic.warn();
+          return;
+        }
         haptic.tap();
-        onChange(fromMin(m + d));
+        onChange(fromMin(next));
       }}
       hitSlop={6}
       style={({ pressed }) => [styles.step, { backgroundColor: p.fill, transform: [{ scale: pressed ? 0.9 : 1 }] }]}
@@ -368,13 +373,26 @@ export function EmojiPicker({ value, onChange, options }: { value: string; onCha
 }
 
 // ---------- bottom sheet ----------
-export function Sheet({ visible, title, onClose, children }: { visible: boolean; title: string; onClose: () => void; children: ReactNode }) {
+// `overlay` is rendered last inside the Modal (e.g. a toast), so it shows above the sheet.
+export function Sheet({
+  visible,
+  title,
+  onClose,
+  children,
+  overlay,
+}: {
+  visible: boolean;
+  title: string;
+  onClose: () => void;
+  children: ReactNode;
+  overlay?: ReactNode;
+}) {
   const p = usePalette();
   const insets = useSafeAreaInsets();
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose} statusBarTranslucent>
       <Pressable style={[StyleSheet.absoluteFill, { backgroundColor: p.scrim }]} onPress={onClose} />
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1, justifyContent: 'flex-end' }} pointerEvents="box-none">
+      <KeyboardAvoidingView behavior="padding" style={{ flex: 1, justifyContent: 'flex-end' }} pointerEvents="box-none">
         <View style={[styles.sheet, { backgroundColor: p.bgElevated, paddingBottom: insets.bottom + 16 }]}>
           <View style={[styles.grip, { backgroundColor: p.line }]} />
           <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
@@ -392,6 +410,7 @@ export function Sheet({ visible, title, onClose, children }: { visible: boolean;
           </ScrollView>
         </View>
       </KeyboardAvoidingView>
+      {overlay}
     </Modal>
   );
 }
@@ -402,7 +421,8 @@ export function useToast() {
   const [opacity] = useState(() => new RNAnimated.Value(0));
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hide = () =>
-    RNAnimated.timing(opacity, { toValue: 0, duration: 200, useNativeDriver: true }).start(() => setState(null));
+    // a show() during the fade-out stops it (finished=false): keep the new toast then
+    RNAnimated.timing(opacity, { toValue: 0, duration: 200, useNativeDriver: true }).start(({ finished }) => finished && setState(null));
   const show = (msg: string, action?: { label: string; run: () => void }) => {
     setState({ msg, action });
     RNAnimated.timing(opacity, { toValue: 1, duration: 160, useNativeDriver: true }).start();
@@ -418,16 +438,18 @@ export function useToast() {
 function ToastView({ opacity, msg, action, onAction }: { opacity: RNAnimated.Value; msg: string; action?: { label: string; run: () => void }; onAction: () => void }) {
   const p = usePalette();
   const insets = useSafeAreaInsets();
+  // inside a Sheet the keyboard may be open: keep the toast above it
+  const kb = useKeyboardState((k) => (k.isVisible ? k.height : 0));
   return (
-    <RNAnimated.View pointerEvents="box-none" style={[styles.toast, { opacity, bottom: insets.bottom + 92, backgroundColor: p.ink }]}>
+    <RNAnimated.View pointerEvents="box-none" style={[styles.toast, { opacity, bottom: Math.max(insets.bottom + 92, kb + 16), backgroundColor: p.ink }]}>
       <Txt v="callout" color={p.bg} style={{ flex: 1 }}>
         {msg}
       </Txt>
       {action ? (
         <Pressable
           onPress={() => {
+            onAction(); // hide first: a toast shown by run() then replaces this one instead of fading out with it
             action.run();
-            onAction();
           }}
           hitSlop={10}
         >

@@ -1,6 +1,7 @@
 import { router } from 'expo-router';
-import { useState } from 'react';
-import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useRef, useState } from 'react';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import Animated, { FadeIn, FadeInRight, LinearTransition } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -8,7 +9,7 @@ import { InviteSheet } from '@/components/InviteSheet';
 import { Btn, Chip, Field, Group, IconBtn, Row, TimeStepper, ToggleRow, Txt, WeekdayPicker } from '@/components/ui';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
-import { WD_LONG, WD_SHORT } from '@/lib/format';
+import { toMin, WD_LONG, WD_SHORT } from '@/lib/format';
 import { ITEM_PRESETS, SUBJECT_PRESETS } from '@/lib/presets';
 import { usePalette } from '@/lib/theme';
 
@@ -16,6 +17,15 @@ type Subj = { name: string; emoji: string; light: boolean };
 type Item = { title: string; emoji: string; needs_photo: boolean; required: boolean; on: boolean };
 
 const STEPS = ['Знакомство', 'Учебные дни', 'Предметы', 'Расписание', 'Дела на завтра', 'Сроки'];
+
+// The family lives in the parent's time zone: reminders and deadlines are computed there.
+function deviceTz() {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Almaty';
+  } catch {
+    return 'Asia/Almaty';
+  }
+}
 
 export default function Onboarding() {
   const p = usePalette();
@@ -41,29 +51,48 @@ export default function Onboarding() {
   const has = (n: string) => subjects.some((s) => s.name === n);
   const toggleSubject = (s: Subj) => setSubjects(has(s.name) ? subjects.filter((x) => x.name !== s.name) : [...subjects, s]);
   const dayPlan = plan[planDay] ?? [];
-  const canNext = [child.trim().length > 0, days.length > 0, subjects.length > 0, true, true, true][step];
+  // same rule as Settings: both deadlines on the same evening, the first one earlier
+  const deadlinesOk = toMin(soft) < toMin(hard);
+  const canNext = [child.trim().length > 0, days.length > 0, subjects.length > 0, true, true, deadlinesOk][step];
 
+  // What a failed attempt already created, so «Создать» again resumes instead of making a second family.
+  const made = useRef<{ family: boolean; subjects: Record<string, number>; items: Set<string> }>({ family: false, subjects: {}, items: new Set() });
   const finish = async () => {
+    if (busy || !deadlinesOk) return;
     setBusy(true);
     setError(null);
+    const m = made.current;
     try {
-      const auth = await api.createFamily(child.trim(), parent.trim());
-      await signIn(auth);
-      const ids: Record<string, number> = {};
-      for (const s of subjects) ids[s.name] = (await api.addSubject(s)).id;
+      const tz = deviceTz();
+      if (!m.family) {
+        await signIn(await api.createFamily(child.trim(), parent.trim(), tz));
+        m.family = true;
+      }
+      // core settings first, so even an interrupted setup never runs on the defaults
+      await api.updateFamily({ child_name: child.trim(), school_weekdays: days, soft_deadline: soft, hard_deadline: hard, tz });
+      for (const s of subjects) if (!m.subjects[s.name]) m.subjects[s.name] = (await api.addSubject(s)).id;
       for (const d of days) {
-        const list = (plan[d] ?? []).map((n) => ids[n]).filter(Boolean);
+        const list = (plan[d] ?? []).map((n) => m.subjects[n]).filter(Boolean);
         if (list.length) await api.setLessons(d, list);
       }
       let pos = 0;
-      for (const it of items.filter((x) => x.on)) await api.addItem({ title: it.title, emoji: it.emoji, needs_photo: it.needs_photo, required: it.required, weekdays: null, pos: pos++ });
-      await api.updateFamily({ school_weekdays: days, soft_deadline: soft, hard_deadline: hard });
+      for (const it of items.filter((x) => x.on)) {
+        const at = pos++;
+        if (m.items.has(it.title)) continue;
+        await api.addItem({ title: it.title, emoji: it.emoji, needs_photo: it.needs_photo, required: it.required, weekdays: null, pos: at });
+        m.items.add(it.title);
+      }
       setDone(true);
     } catch (e) {
       setError((e as Error).message);
     } finally {
       setBusy(false);
     }
+  };
+  const enterApp = () => {
+    // drop welcome/onboarding from history: Back must not lead to «create a family» again
+    if (router.canDismiss()) router.dismissAll();
+    router.replace('/parent');
   };
 
   const next = () => {
@@ -88,7 +117,7 @@ export default function Onboarding() {
         </Animated.View>
         <View style={{ gap: 10 }}>
           <Btn title="Показать код для ученика" onPress={() => setInviteOpen(true)} />
-          <Btn title="Перейти в приложение" kind="plain" onPress={() => router.replace('/parent')} />
+          <Btn title="Перейти в приложение" kind="plain" onPress={enterApp} />
         </View>
         <InviteSheet role={inviteOpen ? 'child' : null} onClose={() => setInviteOpen(false)} />
       </View>
@@ -96,7 +125,7 @@ export default function Onboarding() {
   }
 
   return (
-    <KeyboardAvoidingView style={{ flex: 1, backgroundColor: p.bg }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <KeyboardAvoidingView style={{ flex: 1, backgroundColor: p.bg }} behavior="padding">
       <View style={{ paddingHorizontal: 20, paddingTop: insets.top + 10 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
           <IconBtn icon="←" label="Назад" onPress={() => (step ? setStep(step - 1) : router.back())} />
@@ -253,9 +282,14 @@ export default function Onboarding() {
                 Если к сроку не всё сделано — вы получите уведомление. Последний срок — финальная проверка вечером.
               </Txt>
               <Group>
-                <Row icon="⏰" title="Срок" subtitle="Уведомление родителю" right={<TimeStepper value={soft} onChange={setSoft} />} />
-                <Row icon="🌙" title="Последний срок" subtitle="Финальная проверка" right={<TimeStepper value={hard} onChange={setHard} />} />
+                <Row icon="⏰" title="Срок" subtitle="Уведомление родителю" right={<TimeStepper value={soft} onChange={setSoft} clamp />} />
+                <Row icon="🌙" title="Последний срок" subtitle="Финальная проверка" right={<TimeStepper value={hard} onChange={setHard} clamp />} />
               </Group>
+              {!deadlinesOk ? (
+                <Txt v="callout" color={p.warn} style={{ marginTop: 14 }}>
+                  Срок должен быть раньше последнего срока — в тот же вечер.
+                </Txt>
+              ) : null}
               {error ? (
                 <Txt v="callout" color={p.bad} style={{ marginTop: 14 }}>
                   {error}

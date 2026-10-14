@@ -1,6 +1,7 @@
-import { router } from 'expo-router';
+import { Redirect, router } from 'expo-router';
 import { useState } from 'react';
-import { KeyboardAvoidingView, Platform, StyleSheet, TextInput, View } from 'react-native';
+import { StyleSheet, TextInput, View } from 'react-native';
+import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Btn, Field, IconBtn, Txt } from '@/components/ui';
@@ -11,11 +12,14 @@ import { radius, type, usePalette } from '@/lib/theme';
 export default function Join() {
   const p = usePalette();
   const insets = useSafeAreaInsets();
-  const { signIn } = useAuth();
+  const { session, signIn } = useAuth();
   const [code, setCode] = useState('');
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
+  const [joined, setJoined] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Already signed in (e.g. reached via back navigation): go home instead of joining again.
+  if (session && !joined) return <Redirect href={session.role === 'child' ? '/child' : '/parent'} />;
   const clean = code.toUpperCase().replace(/[^A-Z0-9]/g, '');
 
   const submit = async () => {
@@ -23,7 +27,10 @@ export default function Join() {
     setError(null);
     try {
       const r = await api.join(clean, name.trim());
+      setJoined(true);
       await signIn(r);
+      // Drop welcome/join from history so Back can't return to them.
+      if (router.canDismiss()) router.dismissAll();
       router.replace(r.role === 'child' ? '/child' : '/parent');
     } catch (e) {
       setError((e as Error).message);
@@ -33,7 +40,7 @@ export default function Join() {
   };
 
   return (
-    <KeyboardAvoidingView style={{ flex: 1, backgroundColor: p.bg }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <KeyboardAvoidingView style={{ flex: 1, backgroundColor: p.bg }} behavior="padding">
       <View style={{ flex: 1, paddingHorizontal: 20, paddingTop: insets.top + 10 }}>
         <IconBtn icon="←" label="Назад" onPress={() => router.back()} />
         <Txt v="largeTitle" style={{ marginTop: 18 }}>

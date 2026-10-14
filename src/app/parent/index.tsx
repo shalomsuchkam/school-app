@@ -19,7 +19,7 @@ export default function Today() {
   const [mode, setMode] = useState<'day' | 'history'>('day');
   const [busy, setBusy] = useState<number | null>(null);
   const [openDay, setOpenDay] = useState<string | null>(null);
-  const [viewer, setViewer] = useState<{ url: string; caption: string } | null>(null);
+  const [viewer, setViewer] = useState<{ url: string; caption: string; id: number } | null>(null);
   const toast = useToast();
 
   const load = useCallback(async () => {
@@ -54,11 +54,20 @@ export default function Today() {
 
   if (!data) return <Loading error={error} onRetry={load} />;
 
+  // the server restores the task exactly as it was before the last action (photos, skip request)
+  const undo = (t: Task) =>
+    api
+      .action(t.id, 'undo')
+      .then(
+        (r) => toast.show(r.text),
+        (e: Error) => toast.show(e.message),
+      )
+      .finally(load);
   const act = async (t: Task, a: ParentAction) => {
     setBusy(t.id);
     try {
       const r = await api.action(t.id, a);
-      toast.show(r.text, a === 'reset' ? undefined : { label: 'Отменить', run: () => api.action(t.id, 'reset').then(load) });
+      toast.show(r.text, a === 'reset' ? undefined : { label: 'Отменить', run: () => undo(t) });
       await load();
     } catch (e) {
       toast.show((e as Error).message);
@@ -74,7 +83,7 @@ export default function Today() {
       toast.show((e as Error).message);
     }
   };
-  const open = (url: string, caption: string) => setViewer({ url, caption });
+  const open = (url: string, caption: string, id: number) => setViewer({ url, caption, id });
 
   const active = data.days.find((d) => d.date === data.active)!;
   const history = data.days.filter((d) => d.date !== data.active);
@@ -156,7 +165,7 @@ export default function Today() {
           <History days={history} openDay={openDay} setOpenDay={setOpenDay} busy={busy} act={act} open={open} />
         )}
       </Screen>
-      <PhotoViewer url={viewer?.url ?? null} caption={viewer?.caption} onClose={() => setViewer(null)} />
+      <PhotoViewer url={viewer?.url ?? null} id={viewer?.id} caption={viewer?.caption} onClose={() => setViewer(null)} />
       {toast.node}
     </>
   );
@@ -175,7 +184,7 @@ function History({
   setOpenDay: (d: string | null) => void;
   busy: number | null;
   act: (t: Task, a: ParentAction) => void;
-  open: (url: string, caption: string) => void;
+  open: (url: string, caption: string, id: number) => void;
 }) {
   const p = usePalette();
   if (!days.length) return <Empty icon="📅" title="История пока пуста" text="Здесь будут прошедшие учебные дни." />;

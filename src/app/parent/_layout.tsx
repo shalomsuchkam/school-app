@@ -1,5 +1,6 @@
 import { Redirect, Tabs } from 'expo-router';
-import { Platform, StyleSheet, Text } from 'react-native';
+import { StyleSheet, Text } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useAuth } from '@/lib/auth';
 import { font, usePalette } from '@/lib/theme';
@@ -11,6 +12,7 @@ const icon = (e: string) =>
 
 export default function ParentTabs() {
   const p = usePalette();
+  const insets = useSafeAreaInsets();
   const { session } = useAuth();
   if (!session) return <Redirect href="/welcome" />;
   if (session.role !== 'parent') return <Redirect href="/child" />;
@@ -25,7 +27,8 @@ export default function ParentTabs() {
           backgroundColor: p.bgElevated,
           borderTopColor: p.line,
           borderTopWidth: StyleSheet.hairlineWidth,
-          height: Platform.OS === 'ios' ? 86 : 66,
+          // a custom height replaces the default one entirely, so it must include the bottom (nav bar / home indicator) inset
+          height: 56 + insets.bottom,
           paddingTop: 6,
         },
         sceneStyle: { backgroundColor: p.bg },

@@ -50,6 +50,15 @@ export function localParts(tz: string, d = new Date()) {
   const p: any = Object.fromEntries(f.formatToParts(d).map((x) => [x.type, x.value]));
   return { date: `${p.year}-${p.month}-${p.day}`, hm: `${p.hour}:${p.minute}` };
 }
+// Canonical IANA zone name, or null when the runtime does not know it (an unknown zone would break localParts).
+export function validTz(v: unknown) {
+  if (typeof v !== "string" || !v || v.length > 60) return null;
+  try {
+    return new Intl.DateTimeFormat("en-US", { timeZone: v }).resolvedOptions().timeZone;
+  } catch {
+    return null;
+  }
+}
 export function addDays(iso: string, n: number) {
   const d = new Date(iso + "T00:00:00Z");
   d.setUTCDate(d.getUTCDate() + n);
