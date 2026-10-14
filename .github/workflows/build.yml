@@ -1,0 +1,95 @@
+name: Build APK + IPA
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npx expo prebuild --platform android --no-install
+      - name: Build release APK
+        run: |
+          cd android
+          ./gradlew assembleRelease --no-daemon -PreactNativeArchitectures=arm64-v8a,armeabi-v7a
+      - run: |
+          mkdir -p out
+          cp android/app/build/outputs/apk/release/app-release.apk out/Uroki.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android
+          path: out/Uroki.apk
+
+  ios:
+    runs-on: macos-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Use the newest Xcode on the runner
+        run: |
+          sudo xcode-select -s "$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)/Contents/Developer"
+          xcodebuild -version
+      - run: npm ci
+      - run: npx expo prebuild --platform ios
+      - name: Build unsigned app
+        run: |
+          xcodebuild -workspace ios/Uroki.xcworkspace -scheme Uroki -configuration Release \
+            -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build > xcodebuild.log 2>&1 \
+            || (tail -n 250 xcodebuild.log; exit 1)
+          tail -n 5 xcodebuild.log
+      - name: Package IPA (unsigned, for re-signing with Sideloadly/AltStore)
+        run: |
+          mkdir -p out/Payload
+          cp -R build/Build/Products/Release-iphoneos/Uroki.app out/Payload/
+          cd out && zip -qry Uroki-unsigned.ipa Payload && rm -rf Payload
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ios
+          path: out/Uroki-unsigned.ipa
+
+  release:
+    needs: [android, ios]
+    if: always() && (needs.android.result == 'success' || needs.ios.result == 'success')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: out
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: Сборка ${{ github.run_number }}
+          prerelease: true
+          fail_on_unmatched_files: false
+          files: out/*
+          body: |
+            **Android:** скачайте `Uroki.apk` на телефон и откройте (разрешите установку из этого источника).
+            **iPhone:** `Uroki-unsigned.ipa` нужно подписать своим Apple ID через Sideloadly или AltStore (бесплатный Apple ID — приложение работает 7 дней, потом переподписать).
+            Android-сборки подписаны одним постоянным ключом, поэтому новые версии ставятся поверх старых.

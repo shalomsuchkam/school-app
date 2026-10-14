@@ -1,0 +1,71 @@
+import { router } from 'expo-router';
+import { useState } from 'react';
+import { KeyboardAvoidingView, Platform, StyleSheet, TextInput, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+import { Btn, Field, IconBtn, Txt } from '@/components/ui';
+import { api } from '@/lib/api';
+import { useAuth } from '@/lib/auth';
+import { radius, type, usePalette } from '@/lib/theme';
+
+export default function Join() {
+  const p = usePalette();
+  const insets = useSafeAreaInsets();
+  const { signIn } = useAuth();
+  const [code, setCode] = useState('');
+  const [name, setName] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const clean = code.toUpperCase().replace(/[^A-Z0-9]/g, '');
+
+  const submit = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await api.join(clean, name.trim());
+      await signIn(r);
+      router.replace(r.role === 'child' ? '/child' : '/parent');
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <KeyboardAvoidingView style={{ flex: 1, backgroundColor: p.bg }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <View style={{ flex: 1, paddingHorizontal: 20, paddingTop: insets.top + 10 }}>
+        <IconBtn icon="←" label="Назад" onPress={() => router.back()} />
+        <Txt v="largeTitle" style={{ marginTop: 18 }}>
+          Вход по коду
+        </Txt>
+        <Txt v="callout" color={p.muted} style={{ marginTop: 6 }}>
+          Код из 6 знаков даёт родитель: «Настройки → Пригласить».
+        </Txt>
+        <TextInput
+          value={clean}
+          onChangeText={setCode}
+          autoCapitalize="characters"
+          autoCorrect={false}
+          maxLength={6}
+          placeholder="ABC123"
+          placeholderTextColor={p.line}
+          style={[type.largeTitle, styles.code, { color: p.ink, backgroundColor: p.card, borderColor: clean.length === 6 ? p.brand : p.line }]}
+        />
+        <Field label="Как тебя зовут? (необязательно)" value={name} onChangeText={setName} placeholder="Например, Алия" maxLength={30} />
+        {error ? (
+          <Txt v="callout" color={p.bad}>
+            {error}
+          </Txt>
+        ) : null}
+      </View>
+      <View style={{ paddingHorizontal: 20, paddingBottom: insets.bottom + 16 }}>
+        <Btn title="Войти" onPress={submit} loading={busy} disabled={clean.length !== 6} />
+      </View>
+    </KeyboardAvoidingView>
+  );
+}
+
+const styles = StyleSheet.create({
+  code: { marginTop: 24, marginBottom: 20, textAlign: 'center', letterSpacing: 10, borderRadius: radius.l, borderWidth: 2, paddingVertical: 18 },
+});

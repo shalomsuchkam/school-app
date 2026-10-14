@@ -1,0 +1,65 @@
+{
+  "expo": {
+    "name": "Uroki",
+    "slug": "uroki",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "scheme": "uroki",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "bundleIdentifier": "kz.uroki.app",
+      "buildNumber": "1",
+      "supportsTablet": false,
+      "infoPlist": {
+        "CFBundleDisplayName": "Уроки",
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    },
+    "android": {
+      "package": "kz.uroki.app",
+      "versionCode": 1,
+      "adaptiveIcon": {
+        "backgroundColor": "#6D5EFC",
+        "foregroundImage": "./assets/images/android-icon-foreground.png",
+        "backgroundImage": "./assets/images/android-icon-background.png",
+        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+      },
+      "permissions": ["android.permission.CAMERA", "android.permission.POST_NOTIFICATIONS"],
+      "blockedPermissions": ["android.permission.RECORD_AUDIO"],
+      "predictiveBackGestureEnabled": false
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#6D5EFC",
+          "image": "./assets/images/splash-icon.png",
+          "imageWidth": 120
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Камера нужна, чтобы фотографировать домашнее задание и вещи на завтра.",
+          "recordAudioAndroid": false
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/notification-icon.png",
+          "color": "#6D5EFC"
+        }
+      ],
+      "expo-secure-store",
+      "expo-font",
+      ["./plugins/withAndroidLabel", "Уроки"]
+    ],
+    "experiments": {
+      "typedRoutes": false,
+      "reactCompiler": true
+    }
+  }
+}
