@@ -3,6 +3,7 @@ import {
   accessOf, activeDay, applyAction, checkItem, childState, deleteFamily, dropOpenTasks, ensureTasks, getFamily, isDone, loadTasks, MAX_PHOTO, overview,
   purgePhotos, requestSkip, uploadPhoto,
 } from "./core.ts";
+import { langOf, tr } from "./i18n.ts";
 import { LEGAL_VERSION, legalPage } from "./legal.ts";
 import {
   clientIp, CORS, db, dow, esc, fmtLong, fmtShort, HM, HttpError, json, limit, localParts, randomCode, randomToken, safeEq, secret, sha256, toMin, validTz,
@@ -228,8 +229,8 @@ async function route(req: Request, path: string): Promise<Response> {
   const seg = path.split("/").filter(Boolean);
   const M = req.method;
 
-  if (seg[0] === "legal" && M === "GET" && (seg[1] === "terms" || seg[1] === "privacy")) {
-    return legalPage(seg[1], new URL(req.url).searchParams.get("lang") ?? "ru");
+  if (seg[0] === "legal" && M === "GET" && (seg[1] === "terms" || seg[1] === "privacy" || seg[1] === "delete")) {
+    return legalPage(seg[1], new URL(req.url).searchParams.get("lang") ?? langOf(req));
   }
   if (path === "/tg" && M === "POST") {
     if (!safeEq(req.headers.get("x-telegram-bot-api-secret-token"), await secret("app_tg_secret"))) return new Response("forbidden", { status: 403 });
@@ -314,9 +315,14 @@ async function route(req: Request, path: string): Promise<Response> {
     return json({ ok: true });
   }
 
-  // everything else needs an active subscription (or the owner's free access)
+  // Daily use (the child's tasks and actions, the parent's dashboard and approvals) needs an active subscription
+  // or the owner's free access. Setting the family up (schedule, lists, invites, settings) is always possible,
+  // so a new family can finish onboarding and then start the store trial.
   const fam0 = await getFamily(famId);
-  if (!accessOf(fam0, await billingOn()).active) throw new HttpError(402, d.role === "parent" ? "Подписка закончилась" : "Попроси родителя продлить подписку");
+  const daily = seg[0] === "child" || seg[0] === "parent";
+  if (daily && !accessOf(fam0, await billingOn()).active) {
+    throw new HttpError(402, d.role === "parent" ? "Подписка закончилась" : "Попроси родителя продлить подписку");
+  }
 
   if (path === "/setup" && M === "GET") return json(await setup(famId));
 
@@ -366,7 +372,7 @@ async function route(req: Request, path: string): Promise<Response> {
   if (path === "/parent/overview" && M === "GET") return json(await overview(fam));
   if (path === "/parent/task" && M === "POST") {
     const b = await body(req);
-    return json({ ok: true, text: await applyAction(fam, Number(b.id), String(b.action)) });
+    return json({ ok: true, text: tr(langOf(req), await applyAction(fam, Number(b.id), String(b.action))) });
   }
   if (path === "/parent/nudge" && M === "POST") {
     const { S } = await activeDay(fam);
@@ -512,7 +518,7 @@ Deno.serve(async (req) => {
     if (path === "/" ) return json({ ok: true, service: "uroki-app" });
     return await route(req, path);
   } catch (e: any) {
-    if (e instanceof HttpError) return json({ error: e.message }, e.status);
+    if (e instanceof HttpError) return json({ error: tr(langOf(req), e.message) }, e.status);
     console.error(e);
     return json({ error: String(e?.message ?? e) }, 500);
   }

@@ -109,10 +109,24 @@ const en = {
 <p>Access, correct or delete your data in the app (Settings → Delete family and all data) or at ${CONTACT}.</p>`,
 };
 
-export function legalPage(kind: "terms" | "privacy", lang: string) {
-  const t = (lang === "en" ? en : ru)[kind];
+// Google Play requires a web page where users can ask for account deletion without the app.
+const del = {
+  ru: `
+<h1>Удаление аккаунта «Уроки»</h1>
+<p><b>В приложении:</b> родитель открывает Настройки → «Удалить семью и все данные» и подтверждает. Сразу и безвозвратно удаляются расписание, задания, история, все фото и все подключённые телефоны семьи.</p>
+<p><b>Без приложения:</b> напишите на ${CONTACT} с темой «Удалить аккаунт» и укажите код семьи (Настройки → Подписка) или имя ученика и примерную дату регистрации. Мы удалим данные в течение 7 дней и ответим на письмо.</p>
+<p>Платную подписку отменяйте отдельно в настройках App Store или Google Play — удаление аккаунта её не отменяет. Данные о покупках хранятся у магазина по его правилам.</p>`,
+  en: `
+<h1>Delete your “Uroki” account</h1>
+<p><b>In the app:</b> a parent opens Settings → “Delete family and all data” and confirms. The timetable, tasks, history, all photos and all connected phones are deleted immediately and permanently.</p>
+<p><b>Without the app:</b> email ${CONTACT} with the subject “Delete account” and include the family code (Settings → Subscription) or the student's name and approximate sign-up date. We delete the data within 7 days and reply to you.</p>
+<p>Cancel a paid subscription separately in App Store or Google Play settings — deleting the account does not cancel it. Purchase records are kept by the store under its own rules.</p>`,
+};
+
+export function legalPage(kind: "terms" | "privacy" | "delete", lang: string) {
+  const t = kind === "delete" ? del[lang === "en" ? "en" : "ru"] : (lang === "en" ? en : ru)[kind];
   const html = `<!doctype html><html lang="${lang === "en" ? "en" : "ru"}"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1"><title>${kind === "terms" ? "Uroki — Terms" : "Uroki — Privacy"}</title>
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>${kind === "terms" ? "Uroki — Terms" : kind === "privacy" ? "Uroki — Privacy" : "Uroki — Delete account"}</title>
 <style>body{font:16px/1.55 -apple-system,system-ui,Segoe UI,Roboto,sans-serif;max-width:720px;margin:0 auto;padding:20px 16px 48px;color:#1b1b29;background:#fff}
 h1{font-size:26px;line-height:1.2}h2{font-size:18px;margin-top:28px}a{color:#6355f5}
 @media(prefers-color-scheme:dark){body{color:#ececf5;background:#111118}a{color:#8478ff}}</style></head><body>${t}</body></html>`;

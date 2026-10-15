@@ -1,6 +1,8 @@
 import { File as FsFile } from 'expo-file-system';
 import { Platform } from 'react-native';
 
+import { getLang, t } from './i18n';
+
 // Client for the `app` edge function (multi-family backend of the mobile app).
 export const API_BASE = 'https://cmranrfjvvmhktntbnpg.supabase.co/functions/v1/app';
 
@@ -94,16 +96,17 @@ type Raw = { data: Uint8Array<ArrayBuffer> | Blob; type: string };
 async function call<T>(method: string, path: string, body?: unknown, raw?: Raw): Promise<T> {
   const headers: Record<string, string> = {};
   if (token) headers.authorization = `Bearer ${token}`;
+  headers['x-lang'] = getLang(); // server messages in the user's language
   if (raw) headers['content-type'] = raw.type;
   else if (body !== undefined) headers['content-type'] = 'application/json';
   let r: Response;
   try {
     r = await fetch(API_BASE + path, { method, headers, body: raw ? raw.data : body !== undefined ? JSON.stringify(body) : undefined });
   } catch {
-    throw new ApiError('Нет связи с сервером', 0);
+    throw new ApiError(t('common.offline'), 0);
   }
   const data = await r.json().catch(() => ({}));
-  if (!r.ok) throw new ApiError(data.error || 'Ошибка сервера', r.status);
+  if (!r.ok) throw new ApiError(data.error || t('common.serverError'), r.status);
   return data as T;
 }
 
@@ -126,7 +129,7 @@ export const api = {
     try {
       data = Platform.OS === 'web' ? await (await fetch(uri)).blob() : await new FsFile(uri).bytes();
     } catch {
-      throw new ApiError('Не удалось прочитать фото', 0);
+      throw new ApiError(t('common.photoRead'), 0);
     }
     return call('POST', `/child/photo?task_id=${task_id}`, undefined, { data, type: 'image/jpeg' });
   },

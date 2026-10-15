@@ -8,12 +8,14 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Btn, haptic, Txt } from '@/components/ui';
 import { api } from '@/lib/api';
+import { useT } from '@/lib/i18n';
 
 // Live camera only: deliberately no gallery picker, so every photo is taken right now.
 const MAX_SIDE = 2048;
 
 export default function CameraScreen() {
   const insets = useSafeAreaInsets();
+  const t = useT();
   const params = useLocalSearchParams<{ id: string; label: string; emoji: string; page: string }>();
   const taskId = Number(params.id);
   const [perm, requestPerm, getPerm] = useCameraPermissions();
@@ -38,17 +40,17 @@ export default function CameraScreen() {
       <View style={[styles.bg, styles.center, { paddingTop: insets.top }]}>
         <Text style={{ fontSize: 48 }}>📷</Text>
         <Txt v="title" color="#fff" style={{ marginTop: 12, textAlign: 'center' }}>
-          Нужен доступ к камере
+          {t('child.cam.permTitle')}
         </Txt>
         <Txt v="callout" color="rgba(255,255,255,0.7)" style={{ marginTop: 8, textAlign: 'center' }}>
-          Фото делаются только камерой, без галереи — так родители видят, что всё сделано сегодня.
+          {t('child.cam.permText')}
         </Txt>
         <Btn
-          title={perm.canAskAgain ? 'Разрешить камеру' : 'Открыть настройки'}
+          title={perm.canAskAgain ? t('child.cam.allow') : t('child.cam.openSettings')}
           onPress={() => (perm.canAskAgain ? requestPerm() : Linking.openSettings())}
           style={{ marginTop: 22, alignSelf: 'stretch' }}
         />
-        <Btn title="Назад" kind="plain" onPress={() => router.back()} style={{ marginTop: 10, alignSelf: 'stretch' }} />
+        <Btn title={t('common.back')} kind="plain" onPress={() => router.back()} style={{ marginTop: 10, alignSelf: 'stretch' }} />
       </View>
     );
   }
@@ -63,7 +65,7 @@ export default function CameraScreen() {
         setDims({ w: pic.width, h: pic.height });
       }
     } catch {
-      Alert.alert('Не получилось', 'Попробуй сфотографировать ещё раз.');
+      Alert.alert(t('child.cam.failTitle'), t('child.cam.failText'));
     }
   };
   const send = async () => {
@@ -82,7 +84,7 @@ export default function CameraScreen() {
       if (page < 2) setSent(true);
       else router.back();
     } catch (e) {
-      Alert.alert('Фото не отправлено', (e as Error).message || 'Проверь интернет и попробуй ещё раз.');
+      Alert.alert(t('child.cam.sendFailTitle'), (e as Error).message || t('child.cam.sendFailText'));
     } finally {
       setBusy(false);
     }
@@ -106,7 +108,7 @@ export default function CameraScreen() {
             {params.emoji} {params.label}
           </Txt>
           <Txt v="sub" color="rgba(255,255,255,0.75)">
-            Страница {page} из 2
+            {t('child.cam.page', { page })}
           </Txt>
         </View>
         {!shot ? (
@@ -121,7 +123,7 @@ export default function CameraScreen() {
         <View pointerEvents="none" style={styles.frame}>
           <View style={styles.frameBox} />
           <Txt v="sub" color="rgba(255,255,255,0.85)" style={{ marginTop: 10 }}>
-            Помести страницу в рамку
+            {t('child.cam.frame')}
           </Txt>
         </View>
       ) : null}
@@ -129,25 +131,25 @@ export default function CameraScreen() {
         {sent ? (
           <View style={{ gap: 10, alignSelf: 'stretch' }}>
             <Txt v="headline" color="#fff" style={{ textAlign: 'center' }}>
-              ✅ Отправлено
+              {t('child.cam.sent')}
             </Txt>
             <Btn
-              title="Сфотографировать 2-ю страницу"
+              title={t('child.cam.page2')}
               icon="＋"
               onPress={() => {
                 setSent(false);
                 setPage(2);
               }}
             />
-            <Btn title="Готово" kind="plain" onPress={() => router.back()} />
+            <Btn title={t('common.done')} kind="plain" onPress={() => router.back()} />
           </View>
         ) : shot ? (
           <View style={{ flexDirection: 'row', gap: 10, alignSelf: 'stretch' }}>
-            <Btn title="Переснять" kind="plain" onPress={() => setShot(null)} disabled={busy} style={{ flex: 1 }} />
-            <Btn title="Отправить" onPress={send} loading={busy} style={{ flex: 1 }} />
+            <Btn title={t('child.cam.retake')} kind="plain" onPress={() => setShot(null)} disabled={busy} style={{ flex: 1 }} />
+            <Btn title={t('child.cam.send')} onPress={send} loading={busy} style={{ flex: 1 }} />
           </View>
         ) : (
-          <Pressable onPress={take} accessibilityLabel="Сделать фото" style={({ pressed }) => [styles.shutter, pressed && { transform: [{ scale: 0.92 }] }]}>
+          <Pressable onPress={take} accessibilityLabel={t('child.cam.shutter')} style={({ pressed }) => [styles.shutter, pressed && { transform: [{ scale: 0.92 }] }]}>
             <View style={styles.shutterInner} />
           </Pressable>
         )}

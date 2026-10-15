@@ -18,11 +18,13 @@ import {
   type TextProps,
   type TextStyle,
   type ViewStyle,
+  useWindowDimensions,
 } from 'react-native';
 import { KeyboardAvoidingView, useKeyboardState } from 'react-native-keyboard-controller';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { fromMin, toMin, WD_SHORT } from '@/lib/format';
+import { fromMin, toMin, wdShort } from '@/lib/format';
+import { useT } from '@/lib/i18n';
 import { gradients, radius, type, usePalette } from '@/lib/theme';
 
 export const haptic = {
@@ -36,6 +38,17 @@ type Variant = keyof typeof type;
 export function Txt({ v = 'body', color, style, ...rest }: TextProps & { v?: Variant; color?: string; style?: StyleProp<TextStyle> }) {
   const p = usePalette();
   return <Text {...rest} style={[type[v], { color: color ?? p.ink }, style]} />;
+}
+
+// ---------- adaptive layout ----------
+// Phones keep the full width; tablets, unfolded foldables and landscape get a centred column of readable width.
+export const CONTENT_MAX = 720;
+export function useLayout() {
+  const { width } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  const wide = width >= 700;
+  const pad = width >= 600 ? 24 : 16;
+  return { width, wide, pad: Math.max(pad, insets.left + 8, insets.right + 8) };
 }
 
 // ---------- screen with a large title ----------
@@ -56,6 +69,7 @@ export function Screen({
 }) {
   const p = usePalette();
   const insets = useSafeAreaInsets();
+  const { pad } = useLayout();
   const [refreshing, setRefreshing] = useState(false);
   const refresh = async () => {
     if (!onRefresh) return;
@@ -66,7 +80,7 @@ export function Screen({
   return (
     <View style={{ flex: 1, backgroundColor: p.bg }}>
       <ScrollView
-        contentContainerStyle={{ paddingHorizontal: 16, paddingTop: insets.top + 12, paddingBottom: insets.bottom + 110 }}
+        contentContainerStyle={{ paddingHorizontal: pad, paddingTop: insets.top + 12, paddingBottom: insets.bottom + 110, width: '100%', maxWidth: CONTENT_MAX + pad * 2, alignSelf: 'center' }}
         keyboardShouldPersistTaps="handled"
         refreshControl={onRefresh ? <RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={p.brand} /> : undefined}
       >
@@ -289,12 +303,13 @@ export function Chip({ label, selected, onPress, tone }: { label: string; select
 }
 
 export function WeekdayPicker({ value, onChange, only }: { value: number[]; onChange: (v: number[]) => void; only?: number[] }) {
+  useT(); // re-render with the new weekday names when the language changes
   const days = only ?? [1, 2, 3, 4, 5, 6, 7];
   return (
     <View style={styles.wrap}>
       {days.map((d) => {
         const on = value.includes(d);
-        return <Chip key={d} label={WD_SHORT[d - 1]} selected={on} onPress={() => onChange(on ? value.filter((x) => x !== d) : [...value, d].sort())} />;
+        return <Chip key={d} label={wdShort(d)} selected={on} onPress={() => onChange(on ? value.filter((x) => x !== d) : [...value, d].sort())} />;
       })}
     </View>
   );
@@ -323,9 +338,12 @@ export function Field(props: TextInputProps & { label?: string }) {
 // clamp: stay within one day (00:00–23:45) instead of wrapping past midnight
 export function TimeStepper({ value, onChange, step = 15, clamp }: { value: string; onChange: (v: string) => void; step?: number; clamp?: boolean }) {
   const p = usePalette();
+  const t = useT();
   const m = toMin(value);
   const btn = (d: number, label: string) => (
     <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={t(d < 0 ? 'ui.earlier' : 'ui.later')}
       onPress={() => {
         const next = clamp ? Math.min(1440 - step, Math.max(0, m + d)) : m + d;
         if (next === m) {
@@ -388,18 +406,19 @@ export function Sheet({
   overlay?: ReactNode;
 }) {
   const p = usePalette();
+  const t = useT();
   const insets = useSafeAreaInsets();
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose} statusBarTranslucent>
       <Pressable style={[StyleSheet.absoluteFill, { backgroundColor: p.scrim }]} onPress={onClose} />
       <KeyboardAvoidingView behavior="padding" style={{ flex: 1, justifyContent: 'flex-end' }} pointerEvents="box-none">
-        <View style={[styles.sheet, { backgroundColor: p.bgElevated, paddingBottom: insets.bottom + 16 }]}>
+        <View style={[styles.sheet, { backgroundColor: p.bgElevated, paddingBottom: insets.bottom + 16, width: '100%', maxWidth: 600, alignSelf: 'center' }]}>
           <View style={[styles.grip, { backgroundColor: p.line }]} />
           <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
             <Txt v="title" style={{ flex: 1 }}>
               {title}
             </Txt>
-            <Pressable onPress={onClose} hitSlop={10} style={[styles.close, { backgroundColor: p.fill }]}>
+            <Pressable onPress={onClose} hitSlop={10} accessibilityRole="button" accessibilityLabel={t('common.close')} style={[styles.close, { backgroundColor: p.fill }]}>
               <Txt v="sub" color={p.muted}>
                 ✕
               </Txt>
@@ -482,11 +501,12 @@ export function Empty({ icon, title, text, children }: { icon: string; title: st
 
 export function Loading({ error, onRetry }: { error?: string | null; onRetry?: () => void }) {
   const p = usePalette();
+  const t = useT();
   return (
     <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: p.bg, padding: 24 }}>
       {error ? (
         <Empty icon="📡" title={error}>
-          {onRetry ? <Btn title="Повторить" onPress={onRetry} style={{ marginTop: 16 }} /> : null}
+          {onRetry ? <Btn title={t('common.retry')} onPress={onRetry} style={{ marginTop: 16 }} /> : null}
         </Empty>
       ) : (
         <ActivityIndicator color={p.brand} size="large" />

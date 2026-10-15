@@ -9,23 +9,35 @@ import { InviteSheet } from '@/components/InviteSheet';
 import { Btn, Chip, Field, Group, IconBtn, Row, TimeStepper, ToggleRow, Txt, WeekdayPicker } from '@/components/ui';
 import { api, legalUrl } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
-import { toMin, WD_LONG, WD_SHORT } from '@/lib/format';
-import { ITEM_PRESETS, SUBJECT_PRESETS } from '@/lib/presets';
+import { toMin, wdLong, wdShort } from '@/lib/format';
+import { getLang, LANGS, setLang, useLang, useT } from '@/lib/i18n';
+import { itemPresets, subjectPresets } from '@/lib/presets';
 import { usePalette } from '@/lib/theme';
 
 type Subj = { name: string; emoji: string; light: boolean };
-type Item = { title: string; emoji: string; needs_photo: boolean; required: boolean; on: boolean };
+// preset: index into itemPresets(), so a preset's title follows a language switch made on step 0
+type Item = { title: string; emoji: string; needs_photo: boolean; required: boolean; on: boolean; preset?: number };
 
-const STEPS = ['Знакомство', 'Учебные дни', 'Предметы', 'Расписание', 'Дела на завтра', 'Сроки'];
+const STEPS = ['intro', 'days', 'subjects', 'schedule', 'items', 'deadlines'];
 
 // Where the family studies: sets the store price region later and the default calendar.
+// Labels: 'onboarding.country.<code>'.
 const COUNTRIES = [
-  { code: 'KZ', label: '🇰🇿 Казахстан' },
-  { code: 'RU', label: '🇷🇺 Россия' },
-  { code: 'UZ', label: '🇺🇿 Узбекистан' },
-  { code: 'KG', label: '🇰🇬 Кыргызстан' },
-  { code: 'BY', label: '🇧🇾 Беларусь' },
-  { code: 'ZZ', label: '🌍 Другая' },
+  { code: 'KZ', flag: '🇰🇿' },
+  { code: 'RU', flag: '🇷🇺' },
+  { code: 'UZ', flag: '🇺🇿' },
+  { code: 'KG', flag: '🇰🇬' },
+  { code: 'TJ', flag: '🇹🇯' },
+  { code: 'BY', flag: '🇧🇾' },
+  { code: 'AZ', flag: '🇦🇿' },
+  { code: 'GE', flag: '🇬🇪' },
+  { code: 'AM', flag: '🇦🇲' },
+  { code: 'TR', flag: '🇹🇷' },
+  { code: 'AE', flag: '🇦🇪' },
+  { code: 'DE', flag: '🇩🇪' },
+  { code: 'GB', flag: '🇬🇧' },
+  { code: 'US', flag: '🇺🇸' },
+  { code: 'ZZ', flag: '🌍' },
 ];
 function deviceCountry() {
   try {
@@ -48,6 +60,8 @@ function deviceTz() {
 export default function Onboarding() {
   const p = usePalette();
   const insets = useSafeAreaInsets();
+  const t = useT();
+  const lang = useLang();
   const { signIn } = useAuth();
   const [step, setStep] = useState(0);
   const [child, setChild] = useState('');
@@ -57,7 +71,7 @@ export default function Onboarding() {
   const [custom, setCustom] = useState('');
   const [plan, setPlan] = useState<Record<number, string[]>>({});
   const [planDay, setPlanDay] = useState(1);
-  const [items, setItems] = useState<Item[]>(ITEM_PRESETS.map((i, n) => ({ ...i, on: n < 2 })));
+  const [items, setItems] = useState<Item[]>(() => itemPresets().map((i, n) => ({ ...i, preset: n, on: n < 2 })));
   const [newItem, setNewItem] = useState('');
   const [soft, setSoft] = useState('17:30');
   const [hard, setHard] = useState('22:00');
@@ -68,6 +82,9 @@ export default function Onboarding() {
   const [country, setCountry] = useState(deviceCountry);
   const [consent, setConsent] = useState(false);
 
+  const presets = subjectPresets();
+  const presetItems = itemPresets();
+  const titleOf = (it: Item) => (it.preset === undefined ? it.title : presetItems[it.preset].title);
   const has = (n: string) => subjects.some((s) => s.name === n);
   const toggleSubject = (s: Subj) => setSubjects(has(s.name) ? subjects.filter((x) => x.name !== s.name) : [...subjects, s]);
   const dayPlan = plan[planDay] ?? [];
@@ -85,7 +102,7 @@ export default function Onboarding() {
     try {
       const tz = deviceTz();
       if (!m.family) {
-        await signIn(await api.createFamily({ child_name: child.trim(), parent_name: parent.trim(), tz, country, lang: 'ru', consent: true }));
+        await signIn(await api.createFamily({ child_name: child.trim(), parent_name: parent.trim(), tz, country, lang: getLang(), consent: true }));
         m.family = true;
       }
       // core settings first, so even an interrupted setup never runs on the defaults
@@ -98,9 +115,10 @@ export default function Onboarding() {
       let pos = 0;
       for (const it of items.filter((x) => x.on)) {
         const at = pos++;
-        if (m.items.has(it.title)) continue;
-        await api.addItem({ title: it.title, emoji: it.emoji, needs_photo: it.needs_photo, required: it.required, weekdays: null, pos: at });
-        m.items.add(it.title);
+        const title = titleOf(it);
+        if (m.items.has(title)) continue;
+        await api.addItem({ title, emoji: it.emoji, needs_photo: it.needs_photo, required: it.required, weekdays: null, pos: at });
+        m.items.add(title);
       }
       setDone(true);
     } catch (e) {
@@ -129,15 +147,15 @@ export default function Onboarding() {
         <Animated.View entering={FadeIn.duration(400)} style={{ alignItems: 'center' }}>
           <Text style={{ fontSize: 64 }}>🎉</Text>
           <Txt v="largeTitle" style={{ textAlign: 'center', marginTop: 12 }}>
-            Всё готово!
+            {t('onboarding.done.title')}
           </Txt>
           <Txt v="body" color={p.muted} style={{ textAlign: 'center', marginTop: 8 }}>
-            Осталось подключить телефон {child.trim()}: дайте ему код приглашения.
+            {t('onboarding.done.text', { name: child.trim() })}
           </Txt>
         </Animated.View>
         <View style={{ gap: 10 }}>
-          <Btn title="Показать код для ученика" onPress={() => setInviteOpen(true)} />
-          <Btn title="Перейти в приложение" kind="plain" onPress={enterApp} />
+          <Btn title={t('onboarding.done.showCode')} onPress={() => setInviteOpen(true)} />
+          <Btn title={t('onboarding.done.enter')} kind="plain" onPress={enterApp} />
         </View>
         <InviteSheet role={inviteOpen ? 'child' : null} onClose={() => setInviteOpen(false)} />
       </View>
@@ -148,7 +166,7 @@ export default function Onboarding() {
     <KeyboardAvoidingView style={{ flex: 1, backgroundColor: p.bg }} behavior="padding">
       <View style={{ paddingHorizontal: 20, paddingTop: insets.top + 10 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-          <IconBtn icon="←" label="Назад" onPress={() => (step ? setStep(step - 1) : router.back())} />
+          <IconBtn icon="←" label={t('common.back')} onPress={() => (step ? setStep(step - 1) : router.back())} />
           <View style={[styles.progress, { backgroundColor: p.line }]}>
             <Animated.View layout={LinearTransition.springify().damping(20)} style={[styles.bar, { backgroundColor: p.brand, width: `${((step + 1) / STEPS.length) * 100}%` }]} />
           </View>
@@ -157,7 +175,7 @@ export default function Onboarding() {
           </Txt>
         </View>
         <Txt v="caps" color={p.brand} style={{ marginTop: 18 }}>
-          {STEPS[step].toUpperCase()}
+          {t(`onboarding.step.${STEPS[step]}`).toLocaleUpperCase()}
         </Txt>
       </View>
 
@@ -165,18 +183,26 @@ export default function Onboarding() {
         <Animated.View key={step} entering={FadeInRight.duration(260)}>
           {step === 0 ? (
             <>
-              <Txt v="largeTitle">Кто будет учиться?</Txt>
+              <Txt v="largeTitle">{t('onboarding.intro.title')}</Txt>
               <Txt v="callout" color={p.muted} style={{ marginVertical: 10 }}>
-                Имя увидит ребёнок в приложении, а вы — в напоминаниях.
+                {t('onboarding.intro.text')}
               </Txt>
-              <Field label="Имя ученика" value={child} onChangeText={setChild} placeholder="Например, Алия" maxLength={30} autoFocus />
-              <Field label="Как вас подписать (необязательно)" value={parent} onChangeText={setParent} placeholder="Мама" maxLength={30} />
+              <Txt v="sub" color={p.muted} style={{ marginBottom: 8 }}>
+                {t('common.language')}
+              </Txt>
+              <View style={[styles.wrap, { marginBottom: 16 }]}>
+                {LANGS.map((l) => (
+                  <Chip key={l.code} label={l.label} selected={lang === l.code} onPress={() => setLang(l.code)} />
+                ))}
+              </View>
+              <Field label={t('onboarding.intro.child')} value={child} onChangeText={setChild} placeholder={t('onboarding.intro.childPh')} maxLength={30} autoFocus />
+              <Field label={t('onboarding.intro.parent')} value={parent} onChangeText={setParent} placeholder={t('onboarding.intro.parentPh')} maxLength={30} />
               <Txt v="sub" color={p.muted} style={{ marginTop: 6, marginBottom: 8 }}>
-                Страна
+                {t('common.country')}
               </Txt>
               <View style={styles.wrap}>
                 {COUNTRIES.map((c) => (
-                  <Chip key={c.code} label={c.label} selected={country === c.code} onPress={() => setCountry(c.code)} />
+                  <Chip key={c.code} label={`${c.flag} ${t(`onboarding.country.${c.code}`)}`} selected={country === c.code} onPress={() => setCountry(c.code)} />
                 ))}
               </View>
             </>
@@ -184,9 +210,9 @@ export default function Onboarding() {
 
           {step === 1 ? (
             <>
-              <Txt v="largeTitle">В какие дни учёба?</Txt>
+              <Txt v="largeTitle">{t('onboarding.days.title')}</Txt>
               <Txt v="callout" color={p.muted} style={{ marginVertical: 10 }}>
-                Задания готовятся накануне каждого учебного дня. Каникулы и праздники отметите позже.
+                {t('onboarding.days.text')}
               </Txt>
               <WeekdayPicker value={days} onChange={setDays} />
             </>
@@ -194,24 +220,24 @@ export default function Onboarding() {
 
           {step === 2 ? (
             <>
-              <Txt v="largeTitle">Какие предметы?</Txt>
+              <Txt v="largeTitle">{t('onboarding.subjects.title')}</Txt>
               <Txt v="callout" color={p.muted} style={{ marginVertical: 10 }}>
-                Выберите из списка или добавьте свой. Всё можно поменять потом.
+                {t('onboarding.subjects.text')}
               </Txt>
               <View style={styles.wrap}>
-                {SUBJECT_PRESETS.map((s) => (
+                {presets.map((s) => (
                   <Chip key={s.name} label={`${s.emoji} ${s.name}`} selected={has(s.name)} onPress={() => toggleSubject(s)} />
                 ))}
-                {subjects.filter((s) => !SUBJECT_PRESETS.some((x) => x.name === s.name)).map((s) => (
+                {subjects.filter((s) => !presets.some((x) => x.name === s.name)).map((s) => (
                   <Chip key={s.name} label={`${s.emoji} ${s.name}`} selected onPress={() => toggleSubject(s)} />
                 ))}
               </View>
               <View style={{ flexDirection: 'row', gap: 8, marginTop: 16, alignItems: 'flex-start' }}>
                 <View style={{ flex: 1 }}>
-                  <Field value={custom} onChangeText={setCustom} placeholder="Свой предмет" maxLength={40} />
+                  <Field value={custom} onChangeText={setCustom} placeholder={t('onboarding.subjects.customPh')} maxLength={40} />
                 </View>
                 <Btn
-                  title="Добавить"
+                  title={t('common.add')}
                   kind="secondary"
                   disabled={!custom.trim() || has(custom.trim())}
                   onPress={() => {
@@ -225,17 +251,17 @@ export default function Onboarding() {
 
           {step === 3 ? (
             <>
-              <Txt v="largeTitle">Уроки по дням</Txt>
+              <Txt v="largeTitle">{t('onboarding.schedule.title')}</Txt>
               <Txt v="callout" color={p.muted} style={{ marginVertical: 10 }}>
-                Нажимайте предметы по порядку уроков. Можно пропустить и заполнить позже во вкладке «Расписание».
+                {t('onboarding.schedule.text')}
               </Txt>
               <View style={styles.wrap}>
                 {days.map((d) => (
-                  <Chip key={d} label={`${WD_SHORT[d - 1]}${plan[d]?.length ? ` · ${plan[d].length}` : ''}`} selected={d === planDay} onPress={() => setPlanDay(d)} />
+                  <Chip key={d} label={`${wdShort(d)}${plan[d]?.length ? ` · ${plan[d].length}` : ''}`} selected={d === planDay} onPress={() => setPlanDay(d)} />
                 ))}
               </View>
               <Txt v="headline" style={{ marginTop: 18, marginBottom: 8 }}>
-                {WD_LONG[planDay - 1]}
+                {wdLong(planDay)}
               </Txt>
               <Group>
                 {dayPlan.length ? (
@@ -257,7 +283,7 @@ export default function Onboarding() {
                     );
                   })
                 ) : (
-                  <Row title="Пока нет уроков" subtitle="Нажмите предметы ниже" />
+                  <Row title={t('onboarding.schedule.empty')} subtitle={t('onboarding.schedule.emptyHint')} />
                 )}
               </Group>
               <View style={[styles.wrap, { marginTop: 14 }]}>
@@ -270,17 +296,17 @@ export default function Onboarding() {
 
           {step === 4 ? (
             <>
-              <Txt v="largeTitle">Что подготовить к утру?</Txt>
+              <Txt v="largeTitle">{t('onboarding.items.title')}</Txt>
               <Txt v="callout" color={p.muted} style={{ marginVertical: 10 }}>
-                Пункты появляются в списке каждый учебный день. Для части можно требовать фото.
+                {t('onboarding.items.text')}
               </Txt>
               <Group>
                 {items.map((it, i) => (
                   <ToggleRow
-                    key={it.title}
+                    key={it.preset === undefined ? it.title : `preset-${it.preset}`}
                     icon={it.emoji}
-                    title={it.title}
-                    subtitle={it.needs_photo ? 'С фото' : 'Галочкой'}
+                    title={titleOf(it)}
+                    subtitle={it.needs_photo ? t('onboarding.items.withPhoto') : t('onboarding.items.checkmark')}
                     value={it.on}
                     onChange={(v) => setItems(items.map((x, j) => (j === i ? { ...x, on: v } : x)))}
                   />
@@ -288,10 +314,10 @@ export default function Onboarding() {
               </Group>
               <View style={{ flexDirection: 'row', gap: 8, marginTop: 14, alignItems: 'flex-start' }}>
                 <View style={{ flex: 1 }}>
-                  <Field value={newItem} onChangeText={setNewItem} placeholder="Свой пункт" maxLength={50} />
+                  <Field value={newItem} onChangeText={setNewItem} placeholder={t('onboarding.items.customPh')} maxLength={50} />
                 </View>
                 <Btn
-                  title="Добавить"
+                  title={t('common.add')}
                   kind="secondary"
                   disabled={!newItem.trim()}
                   onPress={() => {
@@ -305,17 +331,17 @@ export default function Onboarding() {
 
           {step === 5 ? (
             <>
-              <Txt v="largeTitle">Когда всё должно быть готово?</Txt>
+              <Txt v="largeTitle">{t('onboarding.deadlines.title')}</Txt>
               <Txt v="callout" color={p.muted} style={{ marginVertical: 10 }}>
-                Если к сроку не всё сделано — вы получите уведомление. Последний срок — финальная проверка вечером.
+                {t('onboarding.deadlines.text')}
               </Txt>
               <Group>
-                <Row icon="⏰" title="Срок" subtitle="Уведомление родителю" right={<TimeStepper value={soft} onChange={setSoft} clamp />} />
-                <Row icon="🌙" title="Последний срок" subtitle="Финальная проверка" right={<TimeStepper value={hard} onChange={setHard} clamp />} />
+                <Row icon="⏰" title={t('onboarding.deadlines.soft')} subtitle={t('onboarding.deadlines.softSub')} right={<TimeStepper value={soft} onChange={setSoft} clamp />} />
+                <Row icon="🌙" title={t('onboarding.deadlines.hard')} subtitle={t('onboarding.deadlines.hardSub')} right={<TimeStepper value={hard} onChange={setHard} clamp />} />
               </Group>
               {!deadlinesOk ? (
                 <Txt v="callout" color={p.warn} style={{ marginTop: 14 }}>
-                  Срок должен быть раньше последнего срока — в тот же вечер.
+                  {t('onboarding.deadlines.invalid')}
                 </Txt>
               ) : null}
               <Pressable
@@ -328,15 +354,15 @@ export default function Onboarding() {
                   {consent ? <Txt v="sub" color="#fff">✓</Txt> : null}
                 </View>
                 <Txt v="callout" style={{ flex: 1 }}>
-                  Я родитель или законный представитель, принимаю{' '}
+                  {t('onboarding.consent.a')}{' '}
                   <Txt v="callout" color={p.brand} onPress={() => Linking.openURL(legalUrl('terms'))}>
-                    соглашение
+                    {t('onboarding.consent.terms')}
                   </Txt>{' '}
-                  и{' '}
+                  {t('onboarding.consent.and')}{' '}
                   <Txt v="callout" color={p.brand} onPress={() => Linking.openURL(legalUrl('privacy'))}>
-                    политику конфиденциальности
+                    {t('onboarding.consent.privacy')}
                   </Txt>{' '}
-                  и соглашаюсь на обработку данных ребёнка.
+                  {t('onboarding.consent.b')}
                 </Txt>
               </Pressable>
               {error ? (
@@ -350,7 +376,7 @@ export default function Onboarding() {
       </ScrollView>
 
       <View style={{ paddingHorizontal: 20, paddingBottom: insets.bottom + 16, paddingTop: 8 }}>
-        <Btn title={step === STEPS.length - 1 ? 'Создать' : step === 3 && !Object.keys(plan).length ? 'Заполню позже' : 'Далее'} onPress={next} disabled={!canNext} loading={busy} />
+        <Btn title={step === STEPS.length - 1 ? t('onboarding.create') : step === 3 && !Object.keys(plan).length ? t('onboarding.later') : t('common.next')} onPress={next} disabled={!canNext} loading={busy} />
       </View>
     </KeyboardAvoidingView>
   );

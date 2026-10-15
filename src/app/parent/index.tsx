@@ -9,11 +9,14 @@ import { ParentTaskCard } from '@/components/TaskCards';
 import { Btn, Chip, Empty, Group, Loading, Row, Screen, SectionLabel, Txt, useToast } from '@/components/ui';
 import { api, ApiError, isDone, isPaywall, type Day, type Overview, type ParentAction, type Task } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
+import { longDate } from '@/lib/format';
+import { useT } from '@/lib/i18n';
 import { gradients, radius, usePalette } from '@/lib/theme';
 
 export default function Today() {
   const p = usePalette();
   const { signOut } = useAuth();
+  const t = useT();
   const [data, setData] = useState<Overview | null>(null);
   const [name, setName] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -60,19 +63,19 @@ export default function Today() {
   if (!data) return <Loading error={error} onRetry={load} />;
 
   // the server restores the task exactly as it was before the last action (photos, skip request)
-  const undo = (t: Task) =>
+  const undo = (task: Task) =>
     api
-      .action(t.id, 'undo')
+      .action(task.id, 'undo')
       .then(
         (r) => toast.show(r.text),
         (e: Error) => toast.show(e.message),
       )
       .finally(load);
-  const act = async (t: Task, a: ParentAction) => {
-    setBusy(t.id);
+  const act = async (task: Task, a: ParentAction) => {
+    setBusy(task.id);
     try {
-      const r = await api.action(t.id, a);
-      toast.show(r.text, a === 'reset' ? undefined : { label: 'Отменить', run: () => undo(t) });
+      const r = await api.action(task.id, a);
+      toast.show(r.text, a === 'reset' ? undefined : { label: t('parent.undo'), run: () => undo(task) });
       await load();
     } catch (e) {
       toast.show((e as Error).message);
@@ -83,7 +86,7 @@ export default function Today() {
   const nudge = async () => {
     try {
       const r = await api.nudge();
-      toast.show(!r.left ? 'Всё уже сделано 🎉' : r.sent ? 'Напоминание отправлено 🔔' : 'Пуш-уведомления включатся после публикации в сторах');
+      toast.show(!r.left ? t('parent.today.allDone') : r.sent ? t('parent.today.nudgeSent') : t('parent.today.pushLater'));
     } catch (e) {
       toast.show((e as Error).message);
     }
@@ -93,15 +96,15 @@ export default function Today() {
   const active = data.days.find((d) => d.date === data.active)!;
   const history = data.days.filter((d) => d.date !== data.active);
   const left = active.total - active.done;
-  const pending = active.tasks.filter((t) => t.status === 'skip_pending');
-  const toReview = active.tasks.filter((t) => t.status === 'done' && t.needs_photo && !t.accepted);
+  const pending = active.tasks.filter((x) => x.status === 'skip_pending');
+  const toReview = active.tasks.filter((x) => x.status === 'done' && x.needs_photo && !x.accepted);
 
   return (
     <>
-      <Screen title={name || 'Сегодня'} subtitle={`На ${active.label}`} onRefresh={load}>
+      <Screen title={name || t('parent.tab.today')} subtitle={t('parent.today.subtitle', { date: longDate(active.date) })} onRefresh={load}>
         <View style={styles.seg}>
-          <Chip label="Ближайший день" selected={mode === 'day'} onPress={() => setMode('day')} />
-          <Chip label="История" selected={mode === 'history'} onPress={() => setMode('history')} />
+          <Chip label={t('parent.today.segDay')} selected={mode === 'day'} onPress={() => setMode('day')} />
+          <Chip label={t('parent.today.segHistory')} selected={mode === 'history'} onPress={() => setMode('history')} />
         </View>
 
         {mode === 'day' ? (
@@ -121,8 +124,8 @@ export default function Today() {
                 </Txt>
               </View>
               <Txt v="headline" color="#fff" style={{ marginTop: 6 }}>
-                {!active.total ? 'Заданий пока нет' : left ? `Осталось ${left}` : 'Всё готово 🎉'}
-                {active.last_done_hm ? ` · последнее в ${active.last_done_hm}` : ''}
+                {!active.total ? t('parent.today.none') : left ? t('parent.today.left', { n: left }) : t('parent.today.ready')}
+                {active.last_done_hm ? t('parent.today.lastAt', { hm: active.last_done_hm }) : ''}
               </Txt>
               <View style={[styles.track, { backgroundColor: 'rgba(255,255,255,0.25)' }]}>
                 <View style={[styles.fill, { width: `${active.total ? (active.done / active.total) * 100 : 0}%` }]} />
@@ -132,25 +135,25 @@ export default function Today() {
             {pending.length || toReview.length ? (
               <View style={[styles.attn, { backgroundColor: p.warnSoft }]}>
                 <Txt v="callout" style={{ flex: 1 }}>
-                  {pending.length ? `⏳ Ждут ответа: ${pending.length}` : ''}
+                  {pending.length ? t('parent.today.pending', { n: pending.length }) : ''}
                   {pending.length && toReview.length ? '   ' : ''}
-                  {toReview.length ? `📸 Новые фото: ${toReview.length}` : ''}
+                  {toReview.length ? t('parent.today.newPhotos', { n: toReview.length }) : ''}
                 </Txt>
               </View>
             ) : null}
 
             {!active.total ? (
-              <Empty icon="🗓️" title="Добавьте уроки и дела" text="Задания создаются из расписания и списка дел.">
-                <Btn title="Открыть расписание" kind="secondary" onPress={() => router.push('/parent/schedule')} style={{ marginTop: 16 }} />
+              <Empty icon="🗓️" title={t('parent.today.emptyTitle')} text={t('parent.today.emptyText')}>
+                <Btn title={t('parent.today.openSchedule')} kind="secondary" onPress={() => router.push('/parent/schedule')} style={{ marginTop: 16 }} />
               </Empty>
             ) : (
               <>
-                {left ? <Btn title="Напомнить ученику" icon="🔔" kind="secondary" onPress={nudge} style={{ marginTop: 12 }} /> : null}
-                {[...pending, ...active.tasks.filter((t) => t.status !== 'skip_pending')]
-                  .reduce<{ k: string; items: Task[] }[]>((acc, t) => {
-                    const k = t.kind === 'lesson' ? 'Уроки' : 'Подготовить';
+                {left ? <Btn title={t('parent.today.nudge')} icon="🔔" kind="secondary" onPress={nudge} style={{ marginTop: 12 }} /> : null}
+                {[...pending, ...active.tasks.filter((x) => x.status !== 'skip_pending')]
+                  .reduce<{ k: string; items: Task[] }[]>((acc, task) => {
+                    const k = task.kind === 'lesson' ? t('parent.today.groupLessons') : t('parent.today.groupPrep');
                     const g = acc.find((x) => x.k === k) ?? (acc.push({ k, items: [] }), acc[acc.length - 1]);
-                    g.items.push(t);
+                    g.items.push(task);
                     return acc;
                   }, [])
                   .map((g) => (
@@ -158,8 +161,8 @@ export default function Today() {
                       <SectionLabel>
                         {g.k} · {g.items.filter(isDone).length}/{g.items.length}
                       </SectionLabel>
-                      {g.items.map((t) => (
-                        <ParentTaskCard key={t.id} t={t} busy={busy === t.id} onAction={act} onOpen={open} />
+                      {g.items.map((x) => (
+                        <ParentTaskCard key={x.id} t={x} busy={busy === x.id} onAction={act} onOpen={open} />
                       ))}
                     </View>
                   ))}
@@ -192,7 +195,8 @@ function History({
   open: (url: string, caption: string, id: number) => void;
 }) {
   const p = usePalette();
-  if (!days.length) return <Empty icon="📅" title="История пока пуста" text="Здесь будут прошедшие учебные дни." />;
+  const t = useT();
+  if (!days.length) return <Empty icon="📅" title={t('parent.history.emptyTitle')} text={t('parent.history.emptyText')} />;
   return (
     <View style={{ marginTop: 12 }}>
       {days.map((d) => {
@@ -202,8 +206,8 @@ function History({
             <Group>
               <Pressable onPress={() => setOpenDay(openDay === d.date ? null : d.date)}>
                 <Row
-                  title={d.label}
-                  subtitle={`${d.done}/${d.total}${d.last_done_hm ? ` · до ${d.last_done_hm}` : ''}${d.on_time ? ' · вовремя' : ''}`}
+                  title={longDate(d.date)}
+                  subtitle={`${d.done}/${d.total}${d.last_done_hm ? t('parent.history.until', { hm: d.last_done_hm }) : ''}${d.on_time ? t('parent.history.onTime') : ''}`}
                   right={<View style={[styles.dot, { backgroundColor: color }]} />}
                   chevron
                 />
@@ -211,8 +215,8 @@ function History({
             </Group>
             {openDay === d.date ? (
               <View style={{ marginTop: 8 }}>
-                {d.tasks.map((t) => (
-                  <ParentTaskCard key={t.id} t={t} busy={busy === t.id} onAction={act} onOpen={open} />
+                {d.tasks.map((x) => (
+                  <ParentTaskCard key={x.id} t={x} busy={busy === x.id} onAction={act} onOpen={open} />
                 ))}
               </View>
             ) : null}

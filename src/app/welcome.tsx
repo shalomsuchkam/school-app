@@ -7,18 +7,20 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Btn, Txt } from '@/components/ui';
 import { useAuth } from '@/lib/auth';
+import { useT } from '@/lib/i18n';
 import { gradients, radius } from '@/lib/theme';
 
 const FEATURES = [
-  ['📸', 'Фото домашки', 'Только камерой, по каждому предмету'],
-  ['⏰', 'Напоминания', 'Ребёнку — заранее, родителю — если не успел'],
-  ['✅', 'Одобрение пропусков', 'Без родителя пункт не закрывается'],
+  ['📸', 'f1'],
+  ['⏰', 'f2'],
+  ['✅', 'f3'],
 ];
 
 export default function Welcome() {
   const insets = useSafeAreaInsets();
   const { session } = useAuth();
   const focused = useIsFocused();
+  const t = useT();
   // Already in a family: never offer to create/join another one over the current session.
   if (session) return <Redirect href={session.role === 'child' ? '/child' : '/parent'} />;
   return (
@@ -31,22 +33,22 @@ export default function Welcome() {
             <Text style={{ fontSize: 40 }}>📚</Text>
           </View>
           <Txt v="largeTitle" color="#fff" style={{ fontSize: 40, lineHeight: 46, marginTop: 22 }}>
-            Уроки{'\n'}под контролем
+            {t('onboarding.welcome.title')}
           </Txt>
           <Txt v="body" color="rgba(255,255,255,0.78)" style={{ marginTop: 10 }}>
-            Домашка, вещи на завтра и спокойствие родителей — в одном приложении.
+            {t('onboarding.welcome.subtitle')}
           </Txt>
         </Animated.View>
         <View style={{ marginTop: 32, gap: 14 }}>
-          {FEATURES.map(([e, t, s], i) => (
-            <Animated.View key={t} entering={FadeInDown.delay(120 + i * 80).duration(400)} style={styles.feature}>
+          {FEATURES.map(([e, f], i) => (
+            <Animated.View key={f} entering={FadeInDown.delay(120 + i * 80).duration(400)} style={styles.feature}>
               <Text style={{ fontSize: 24 }}>{e}</Text>
               <View style={{ flex: 1 }}>
                 <Txt v="headline" color="#fff">
-                  {t}
+                  {t(`onboarding.welcome.${f}.title`)}
                 </Txt>
                 <Txt v="sub" color="rgba(255,255,255,0.7)">
-                  {s}
+                  {t(`onboarding.welcome.${f}.text`)}
                 </Txt>
               </View>
             </Animated.View>
@@ -54,8 +56,8 @@ export default function Welcome() {
         </View>
       </View>
       <Animated.View entering={FadeInUp.delay(300).duration(400)} style={[styles.bottom, { paddingBottom: insets.bottom + 20 }]}>
-        <Btn title="Я родитель — начать" onPress={() => router.push('/onboarding')} />
-        <Btn title="У меня есть код" kind="plain" onPress={() => router.push('/join')} style={{ marginTop: 10 }} />
+        <Btn title={t('onboarding.welcome.parent')} onPress={() => router.push('/onboarding')} />
+        <Btn title={t('onboarding.welcome.haveCode')} kind="plain" onPress={() => router.push('/join')} style={{ marginTop: 10 }} />
       </Animated.View>
     </LinearGradient>
   );

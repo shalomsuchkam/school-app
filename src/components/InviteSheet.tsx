@@ -2,12 +2,14 @@ import { useEffect, useState } from 'react';
 import { ActivityIndicator, Share, StyleSheet, View } from 'react-native';
 
 import { api, type Role } from '@/lib/api';
+import { useT } from '@/lib/i18n';
 import { radius, usePalette } from '@/lib/theme';
 
 import { Btn, Sheet, Txt } from './ui';
 
 export function InviteSheet({ role, onClose }: { role: Role | null; onClose: () => void }) {
   const p = usePalette();
+  const t = useT();
   const [code, setCode] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
@@ -23,11 +25,10 @@ export function InviteSheet({ role, onClose }: { role: Role | null; onClose: () 
       setError(null);
     };
   }, [role]);
-  const who = role === 'child' ? 'ученика' : 'второго родителя';
   return (
-    <Sheet visible={!!role} title={`Пригласить ${who}`} onClose={onClose}>
+    <Sheet visible={!!role} title={role === 'child' ? t('parent.settings.inviteChild') : t('parent.settings.inviteParent')} onClose={onClose}>
       <Txt v="callout" color={p.muted}>
-        Установите приложение «Уроки» на телефон {role === 'child' ? 'ребёнка' : 'родителя'}, нажмите «У меня есть код» и введите:
+        {role === 'child' ? t('parent.invite.textChild') : t('parent.invite.textParent')}
       </Txt>
       <View style={[styles.box, { backgroundColor: p.brandSoft }]}>
         {code ? (
@@ -43,15 +44,15 @@ export function InviteSheet({ role, onClose }: { role: Role | null; onClose: () 
         )}
       </View>
       <Txt v="sub" color={p.muted} style={{ textAlign: 'center' }}>
-        Код одноразовый и действует 48 часов
+        {t('parent.invite.oneTime')}
       </Txt>
       {code ? (
         <Btn
-          title="Отправить код"
+          title={t('parent.invite.send')}
           icon="↗"
           kind="secondary"
           style={{ marginTop: 16 }}
-          onPress={() => Share.share({ message: `Код для входа в приложение «Уроки»: ${code}` })}
+          onPress={() => Share.share({ message: t('parent.invite.share', { code }) })}
         />
       ) : null}
     </Sheet>

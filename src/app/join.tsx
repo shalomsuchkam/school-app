@@ -7,11 +7,13 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Btn, Field, IconBtn, Txt } from '@/components/ui';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
+import { useT } from '@/lib/i18n';
 import { radius, type, usePalette } from '@/lib/theme';
 
 export default function Join() {
   const p = usePalette();
   const insets = useSafeAreaInsets();
+  const t = useT();
   const { session, signIn } = useAuth();
   const [code, setCode] = useState('');
   const [name, setName] = useState('');
@@ -42,12 +44,12 @@ export default function Join() {
   return (
     <KeyboardAvoidingView style={{ flex: 1, backgroundColor: p.bg }} behavior="padding">
       <View style={{ flex: 1, paddingHorizontal: 20, paddingTop: insets.top + 10 }}>
-        <IconBtn icon="←" label="Назад" onPress={() => router.back()} />
+        <IconBtn icon="←" label={t('common.back')} onPress={() => router.back()} />
         <Txt v="largeTitle" style={{ marginTop: 18 }}>
-          Вход по коду
+          {t('onboarding.join.title')}
         </Txt>
         <Txt v="callout" color={p.muted} style={{ marginTop: 6 }}>
-          Код из 6 знаков даёт родитель: «Настройки → Пригласить».
+          {t('onboarding.join.hint')}
         </Txt>
         <TextInput
           value={clean}
@@ -59,7 +61,7 @@ export default function Join() {
           placeholderTextColor={p.line}
           style={[type.largeTitle, styles.code, { color: p.ink, backgroundColor: p.card, borderColor: clean.length === 6 ? p.brand : p.line }]}
         />
-        <Field label="Как тебя зовут? (необязательно)" value={name} onChangeText={setName} placeholder="Например, Алия" maxLength={30} />
+        <Field label={t('onboarding.join.name')} value={name} onChangeText={setName} placeholder={t('onboarding.join.namePh')} maxLength={30} />
         {error ? (
           <Txt v="callout" color={p.bad}>
             {error}
@@ -67,7 +69,7 @@ export default function Join() {
         ) : null}
       </View>
       <View style={{ paddingHorizontal: 20, paddingBottom: insets.bottom + 16 }}>
-        <Btn title="Войти" onPress={submit} loading={busy} disabled={clean.length !== 6} />
+        <Btn title={t('onboarding.join.submit')} onPress={submit} loading={busy} disabled={clean.length !== 6} />
       </View>
     </KeyboardAvoidingView>
   );

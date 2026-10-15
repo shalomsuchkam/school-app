@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeInDown, LinearTransition, useReducedMotion } from 'react-native-reanimated';
 
 import type { ParentAction, Task } from '@/lib/api';
+import { t as tr, tn, useT } from '@/lib/i18n';
 import { radius, usePalette } from '@/lib/theme';
 
 import { Btn, Txt } from './ui';
@@ -11,19 +12,19 @@ type Tone = 'ok' | 'warn' | 'bad' | undefined;
 function statusFor(t: Task, viewer: 'child' | 'parent'): [Tone, string] {
   switch (t.status) {
     case 'done':
-      if (t.accepted) return ['ok', viewer === 'child' ? 'Принято родителем' : 'Принято'];
-      if (!t.needs_photo) return ['ok', `Отмечено${t.done_hm ? ` · ${t.done_hm}` : ''}`];
-      return ['ok', `Сдано${t.done_hm ? ` · ${t.done_hm}` : ''}${t.photos.length > 1 ? ` · ${t.photos.length} фото` : ''}`];
+      if (t.accepted) return ['ok', viewer === 'child' ? tr('child.st.acceptedChild') : tr('child.st.accepted')];
+      if (!t.needs_photo) return ['ok', `${tr('child.st.checked')}${t.done_hm ? ` · ${t.done_hm}` : ''}`];
+      return ['ok', `${tr('child.st.submitted')}${t.done_hm ? ` · ${t.done_hm}` : ''}${t.photos.length > 1 ? ` · ${tn('child.st.photos', t.photos.length)}` : ''}`];
     case 'skip_ok':
-      return ['ok', 'Пропуск одобрен'];
+      return ['ok', tr('child.st.skipOk')];
     case 'skip_pending':
-      return ['warn', viewer === 'child' ? 'Ждём ответ родителя' : `Просит пропустить${t.skip_reason ? `: ${t.skip_reason}` : ''}`];
+      return ['warn', viewer === 'child' ? tr('child.st.waiting') : `${tr('child.st.asksSkip')}${t.skip_reason ? `: ${t.skip_reason}` : ''}`];
     case 'skip_no':
-      return ['bad', viewer === 'child' ? 'Не одобрено — нужно сделать' : 'Пропуск отклонён'];
+      return ['bad', viewer === 'child' ? tr('child.st.skipNoChild') : tr('child.st.skipNo')];
     case 'redo':
-      return ['bad', viewer === 'child' ? 'Нужно переснять' : 'Просили переснять'];
+      return ['bad', viewer === 'child' ? tr('child.st.redoChild') : tr('child.st.redo')];
     default:
-      return [undefined, !t.required ? 'По желанию' : t.needs_photo ? 'Нужно фото' : 'Отметь, когда готово'];
+      return [undefined, !t.required ? tr('child.st.optional') : t.needs_photo ? tr('child.st.needPhoto') : tr('child.st.markWhenDone')];
   }
 }
 
@@ -112,6 +113,7 @@ export function ChildTaskCard({
   onCheck: (t: Task, done: boolean) => void;
   onOpen: (url: string, caption: string, id: number) => void;
 }) {
+  const tt = useT();
   const [tone, text] = statusFor(t, 'child');
   // Simple checklist item: one big tick, nothing else.
   if (!t.needs_photo) {
@@ -124,26 +126,26 @@ export function ChildTaskCard({
   }
   const open = !['skip_ok', 'skip_pending', 'done'].includes(t.status);
   const canSkip = ['todo', 'skip_no', 'redo'].includes(t.status) && t.photos.length === 0;
-  const photoLabel = t.kind === 'lesson' ? 'Сфотографировать' : 'Фото';
+  const photoLabel = t.kind === 'lesson' ? tt('child.card.takePhoto') : tt('child.card.photo');
   return (
     <Shell t={t} tone={tone}>
       <Head t={t} tone={tone} text={text} />
       <Thumbs t={t} onOpen={onOpen} />
       {t.status === 'done' && t.photos.length < 2 ? (
         <View style={styles.btns}>
-          <Btn small kind="plain" icon="＋" title="Ещё страница" onPress={() => onPhoto(t)} />
+          <Btn small kind="plain" icon="＋" title={tt('child.card.morePage')} onPress={() => onPhoto(t)} />
         </View>
       ) : open ? (
         <View style={styles.btns}>
           {t.light && t.status === 'todo' ? (
             <>
-              <Btn small kind="secondary" title="Нет ДЗ" onPress={() => onSkip(t)} style={{ flex: 1 }} />
+              <Btn small kind="secondary" title={tt('child.card.noHw')} onPress={() => onSkip(t)} style={{ flex: 1 }} />
               <Btn small icon="📸" title={photoLabel} onPress={() => onPhoto(t)} style={{ flex: 1 }} />
             </>
           ) : (
             <>
               <Btn small icon="📸" title={photoLabel} onPress={() => onPhoto(t)} style={{ flex: 1 }} />
-              {canSkip ? <Btn small kind="plain" title={t.kind === 'lesson' ? 'Нет ДЗ' : 'Не нужно'} onPress={() => onSkip(t)} /> : null}
+              {canSkip ? <Btn small kind="plain" title={t.kind === 'lesson' ? tt('child.card.noHw') : tt('child.card.notNeeded')} onPress={() => onSkip(t)} /> : null}
             </>
           )}
         </View>
@@ -163,28 +165,29 @@ export function ParentTaskCard({
   onAction: (t: Task, a: ParentAction) => void;
   onOpen: (url: string, caption: string, id: number) => void;
 }) {
+  const tt = useT();
   const [tone, text] = statusFor(t, 'parent');
   const a = (x: ParentAction) => () => onAction(t, x);
   let actions: React.ReactNode = null;
   if (t.status === 'skip_pending') {
     actions = (
       <>
-        <Btn small kind="ok" title="Одобрить" onPress={a('skip_ok')} disabled={busy} style={{ flex: 1 }} />
-        <Btn small kind="bad" title="Отклонить" onPress={a('skip_no')} disabled={busy} style={{ flex: 1 }} />
+        <Btn small kind="ok" title={tt('child.card.approve')} onPress={a('skip_ok')} disabled={busy} style={{ flex: 1 }} />
+        <Btn small kind="bad" title={tt('child.card.decline')} onPress={a('skip_no')} disabled={busy} style={{ flex: 1 }} />
       </>
     );
   } else if (t.status === 'done') {
     actions = (
       <>
-        {!t.accepted && t.needs_photo ? <Btn small kind="ok" title="Принять" onPress={a('ok')} disabled={busy} /> : null}
-        {t.needs_photo ? <Btn small kind="plain" title="Переснять" onPress={a('redo')} disabled={busy} /> : null}
-        <Btn small kind="plain" title="Отменить" onPress={a('reset')} disabled={busy} />
+        {!t.accepted && t.needs_photo ? <Btn small kind="ok" title={tt('child.card.accept')} onPress={a('ok')} disabled={busy} /> : null}
+        {t.needs_photo ? <Btn small kind="plain" title={tt('child.card.redo')} onPress={a('redo')} disabled={busy} /> : null}
+        <Btn small kind="plain" title={tt('child.card.undo')} onPress={a('reset')} disabled={busy} />
       </>
     );
   } else if (t.status === 'skip_ok' || t.status === 'skip_no' || t.status === 'redo') {
-    actions = <Btn small kind="plain" title="Отменить отметку" onPress={a('reset')} disabled={busy} />;
+    actions = <Btn small kind="plain" title={tt('child.card.clearMark')} onPress={a('reset')} disabled={busy} />;
   } else if (t.required) {
-    actions = <Btn small kind="plain" title={t.needs_photo ? 'Закрыть без фото' : 'Отметить'} onPress={a(t.needs_photo ? 'skip_ok' : 'done')} disabled={busy} />;
+    actions = <Btn small kind="plain" title={t.needs_photo ? tt('child.card.closeNoPhoto') : tt('child.card.mark')} onPress={a(t.needs_photo ? 'skip_ok' : 'done')} disabled={busy} />;
   }
   return (
     <Shell t={t} tone={tone}>

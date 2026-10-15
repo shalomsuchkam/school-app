@@ -1,30 +1,57 @@
-export const SUBJECT_PRESETS = [
-  { name: 'Математика', emoji: '➗', light: false },
-  { name: 'Русский язык', emoji: '✏️', light: false },
-  { name: 'Литература', emoji: '📖', light: false },
-  { name: 'Английский язык', emoji: '🇬🇧', light: false },
-  { name: 'Казахский язык', emoji: '🇰🇿', light: false },
-  { name: 'История', emoji: '🏛️', light: false },
-  { name: 'Естествознание', emoji: '🔬', light: false },
-  { name: 'Биология', emoji: '🌿', light: false },
-  { name: 'География', emoji: '🌍', light: false },
-  { name: 'Физика', emoji: '⚛️', light: false },
-  { name: 'Химия', emoji: '🧪', light: false },
-  { name: 'Информатика', emoji: '💻', light: false },
-  { name: 'Музыка', emoji: '🎵', light: true },
-  { name: 'Физкультура', emoji: '⚽', light: true },
-  { name: 'Рисование', emoji: '🎨', light: true },
-  { name: 'Труд', emoji: '🛠️', light: true },
-  { name: 'Классный час', emoji: '🗣️', light: true },
+import { t } from './i18n';
+
+// Names are translated when read (getters), so the lists follow the current interface language.
+const SUBJECTS = [
+  { key: 'math', emoji: '➗', light: false },
+  { key: 'russian', emoji: '✏️', light: false },
+  { key: 'literature', emoji: '📖', light: false },
+  { key: 'english', emoji: '🇬🇧', light: false },
+  { key: 'kazakh', emoji: '🇰🇿', light: false },
+  { key: 'history', emoji: '🏛️', light: false },
+  { key: 'science', emoji: '🔬', light: false },
+  { key: 'biology', emoji: '🌿', light: false },
+  { key: 'geography', emoji: '🌍', light: false },
+  { key: 'physics', emoji: '⚛️', light: false },
+  { key: 'chemistry', emoji: '🧪', light: false },
+  { key: 'cs', emoji: '💻', light: false },
+  { key: 'music', emoji: '🎵', light: true },
+  { key: 'pe', emoji: '⚽', light: true },
+  { key: 'art', emoji: '🎨', light: true },
+  { key: 'labour', emoji: '🛠️', light: true },
+  { key: 'classHour', emoji: '🗣️', light: true },
 ];
 
-export const ITEM_PRESETS = [
-  { title: 'Рубашка поглажена', emoji: '👔', needs_photo: true, required: true },
-  { title: 'Портфель собран', emoji: '🎒', needs_photo: false, required: true },
-  { title: 'Форма для физкультуры', emoji: '👟', needs_photo: false, required: true },
-  { title: 'Сменная обувь', emoji: '👞', needs_photo: false, required: true },
-  { title: 'Телефон заряжен', emoji: '🔋', needs_photo: false, required: false },
-  { title: 'Читательский дневник', emoji: '📓', needs_photo: true, required: false },
+const ITEMS = [
+  { key: 'shirt', emoji: '👔', needs_photo: true, required: true },
+  { key: 'bag', emoji: '🎒', needs_photo: false, required: true },
+  { key: 'peKit', emoji: '👟', needs_photo: false, required: true },
+  { key: 'shoes', emoji: '👞', needs_photo: false, required: true },
+  { key: 'phone', emoji: '🔋', needs_photo: false, required: false },
+  { key: 'readingLog', emoji: '📓', needs_photo: true, required: false },
 ];
+
+export type SubjectPreset = { name: string; emoji: string; light: boolean };
+export type ItemPreset = { title: string; emoji: string; needs_photo: boolean; required: boolean };
+
+// Plain snapshots in the current language — call during render.
+export const subjectPresets = (): SubjectPreset[] => SUBJECTS.map(({ key, ...s }) => ({ ...s, name: t(`onboarding.subj.${key}`) }));
+export const itemPresets = (): ItemPreset[] => ITEMS.map(({ key, ...i }) => ({ ...i, title: t(`onboarding.item.${key}`) }));
+
+// Back-compatible constants: `name` / `title` are getters that translate on every read.
+export const SUBJECT_PRESETS: readonly SubjectPreset[] = SUBJECTS.map(({ key, emoji, light }) => ({
+  emoji,
+  light,
+  get name() {
+    return t(`onboarding.subj.${key}`);
+  },
+}));
+export const ITEM_PRESETS: readonly ItemPreset[] = ITEMS.map(({ key, emoji, needs_photo, required }) => ({
+  emoji,
+  needs_photo,
+  required,
+  get title() {
+    return t(`onboarding.item.${key}`);
+  },
+}));
 
 export const EMOJIS = ['📘', '➗', '✏️', '📖', '🇬🇧', '🇰🇿', '🏛️', '🔬', '🌿', '🌍', '⚛️', '🧪', '💻', '🎵', '⚽', '🎨', '🛠️', '🗣️', '👔', '🎒', '👟', '👞', '🔋', '📓', '🧮', '🧭', '🎭', '🏊', '✅', '⭐'];

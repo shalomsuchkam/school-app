@@ -4,6 +4,7 @@ import { Platform } from 'react-native';
 import { isDone, type ChildState } from './api';
 import { fromMin, toMin } from './format';
 import { exactAlarmsAllowed } from './exactAlarm';
+import { t } from './i18n';
 
 // Local reminders scheduled on the phone: they work offline and need no push service.
 const supported = Platform.OS !== 'web';
@@ -19,7 +20,7 @@ export async function notificationsAllowed(ask: boolean): Promise<boolean> {
   if (!supported) return false;
   if (Platform.OS === 'android') {
     await Notifications.setNotificationChannelAsync(CHANNEL, {
-      name: 'Напоминания об уроках',
+      name: t('child.rem.channel'),
       importance: Notifications.AndroidImportance.HIGH,
       vibrationPattern: [0, 250, 150, 250],
       lightColor: '#6355F5',
@@ -51,10 +52,10 @@ function zonedDate(iso: string, min: number, tz: string) {
   try {
     const guess = Date.UTC(y, mo - 1, d, h, mi);
     const off = tzOffset(guess, tz);
-    let t = guess - off;
-    const off2 = tzOffset(t, tz);
-    if (off2 !== off) t = guess - off2;
-    return new Date(t);
+    let at = guess - off;
+    const off2 = tzOffset(at, tz);
+    if (off2 !== off) at = guess - off2;
+    return new Date(at);
   } catch {
     return new Date(y, mo - 1, d, h, mi, 0);
   }
@@ -63,10 +64,10 @@ function zonedDate(iso: string, min: number, tz: string) {
 type Slot = { id: string; at: number; title: string; body: string };
 function daySlots(s: ChildState, due: string, names: string | null): Slot[] {
   const list = [
-    ...s.remind_times.map((t) => ({ m: toMin(t), title: '📚 Пора за уроки', body: names ? `Осталось: ${names}` : 'Загляни в приложение: что нужно сделать к завтра' })),
-    { m: toMin(s.soft) - 30, title: '⏳ Полчаса до срока', body: names ? `До ${s.soft} осталось 30 минут. Осталось: ${names}` : `До ${s.soft} осталось 30 минут. Всё готово к завтра?` },
-    { m: toMin(s.soft), title: `⏰ ${s.soft} — срок вышел`, body: names ? 'Родители получили отчёт. Доделай и отметь!' : 'Если что-то не доделано — доделай и отметь!' },
-    { m: toMin(s.hard) - 60, title: '🔴 Остался час', body: `В ${s.hard} последний срок` },
+    ...s.remind_times.map((hm) => ({ m: toMin(hm), title: t('child.rem.timeTitle'), body: names ? t('child.rem.left', { names }) : t('child.rem.generic') })),
+    { m: toMin(s.soft) - 30, title: t('child.rem.halfTitle'), body: names ? t('child.rem.halfLeft', { soft: s.soft, names }) : t('child.rem.halfAll', { soft: s.soft }) },
+    { m: toMin(s.soft), title: t('child.rem.softTitle', { soft: s.soft }), body: names ? t('child.rem.softLeft') : t('child.rem.softAll') },
+    { m: toMin(s.hard) - 60, title: t('child.rem.hourTitle'), body: t('child.rem.hourBody', { hard: s.hard }) },
   ];
   const seen = new Set<number>();
   const out: Slot[] = [];
@@ -82,9 +83,9 @@ async function sync(s: ChildState | null) {
   const now = Date.now();
   const wanted = new Map<string, Slot>();
   if (s) {
-    const left = s.tasks.filter((t) => t.required && !isDone(t));
+    const left = s.tasks.filter((x) => x.required && !isDone(x));
     // The current due day lists what is left (nothing once all is done); later days get generic text.
-    const all = left.length ? daySlots(s, s.due_date, left.map((t) => t.label).join(', ')) : [];
+    const all = left.length ? daySlots(s, s.due_date, left.map((x) => x.label).join(', ')) : [];
     for (const u of s.upcoming ?? []) if (u.due_date !== s.due_date) all.push(...daySlots(s, u.due_date, null));
     all
       .filter((sl) => sl.at > now)

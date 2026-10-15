@@ -4,14 +4,17 @@ import { Alert, Linking, Pressable, StyleSheet, View } from 'react-native';
 
 import { InviteSheet } from '@/components/InviteSheet';
 import { Btn, Chip, Field, Group, Loading, Row, Screen, SectionLabel, Sheet, TimeStepper, Txt, useToast, WeekdayPicker } from '@/components/ui';
+import { openManage } from '@/lib/billing';
 import { api, ApiError, legalUrl, type Me, type Role } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { shortDate, toMin } from '@/lib/format';
+import { getLang, LANGS, setLang, tn, useT, type Lang } from '@/lib/i18n';
 import { usePalette } from '@/lib/theme';
 
 export default function Settings() {
   const p = usePalette();
   const { signOut } = useAuth();
+  const t = useT();
   const [me, setMe] = useState<Me | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [nameEdit, setNameEdit] = useState<string | null>(null);
@@ -48,15 +51,15 @@ export default function Settings() {
   };
   // a pair saved invalid by an older build must stay editable, otherwise every step is rejected
   const broken = toMin(f.soft_deadline) >= toMin(f.hard_deadline);
-  const setSoft = (v: string) => (broken || toMin(v) < toMin(f.hard_deadline) ? patch({ soft_deadline: v }) : toast.show('Срок должен быть раньше последнего срока'));
-  const setHard = (v: string) => (broken || toMin(v) > toMin(f.soft_deadline) ? patch({ hard_deadline: v }) : toast.show('Последний срок должен быть позже срока'));
+  const setSoft = (v: string) => (broken || toMin(v) < toMin(f.hard_deadline) ? patch({ soft_deadline: v }) : toast.show(t('parent.settings.softErr')));
+  const setHard = (v: string) => (broken || toMin(v) > toMin(f.soft_deadline) ? patch({ hard_deadline: v }) : toast.show(t('parent.settings.hardErr')));
 
   const connectTelegram = async () => {
     setTgBusy(true);
     try {
       const { url } = await api.telegramLink();
       await Linking.openURL(url);
-      toast.show('Нажмите «Start» в Telegram, затем вернитесь сюда');
+      toast.show(t('parent.settings.tgStart'));
     } catch (e) {
       toast.show((e as Error).message);
     } finally {
@@ -68,10 +71,10 @@ export default function Settings() {
     load();
   };
   const removeMember = (id: string, label: string) =>
-    Alert.alert(`Отключить ${label}?`, 'Устройство выйдет из семьи. Подключить снова можно новым кодом.', [
-      { text: 'Отмена', style: 'cancel' },
+    Alert.alert(t('parent.settings.removeTitle', { label }), t('parent.settings.removeMsg'), [
+      { text: t('common.cancel'), style: 'cancel' },
       {
-        text: 'Отключить',
+        text: t('parent.settings.disconnect'),
         style: 'destructive',
         onPress: () =>
           api
@@ -83,12 +86,12 @@ export default function Settings() {
 
   const deleteAll = () =>
     Alert.alert(
-      'Удалить семью и все данные?',
-      'Будут безвозвратно удалены расписание, задания, история и все фото, а все телефоны семьи отключатся. Подписку в App Store / Google Play отмените отдельно в настройках магазина.',
+      t('parent.settings.deleteTitle'),
+      t('parent.settings.deleteMsg'),
       [
-        { text: 'Отмена', style: 'cancel' },
+        { text: t('common.cancel'), style: 'cancel' },
         {
-          text: 'Удалить всё',
+          text: t('parent.settings.deleteAll'),
           style: 'destructive',
           onPress: async () => {
             try {
@@ -104,14 +107,22 @@ export default function Settings() {
     );
   const a = me.access;
   const subTitle = a.free_forever
-    ? 'Бесплатный доступ'
+    ? t('parent.settings.subFree')
     : !a.billing
-      ? 'Тестовый доступ'
+      ? t('parent.settings.subTest')
       : a.granted_until && new Date(a.granted_until) > new Date()
-        ? `Подарочный доступ до ${shortDate(a.granted_until.slice(0, 10))}`
+        ? t('parent.settings.subGift', { date: shortDate(a.granted_until.slice(0, 10)) })
         : a.paid_until && a.active
-          ? `${a.trial ? 'Пробный период' : 'Подписка'} до ${shortDate(a.paid_until.slice(0, 10))}`
-          : 'Не активна';
+          ? t(a.trial ? 'parent.settings.subTrial' : 'parent.settings.subPaid', { date: shortDate(a.paid_until.slice(0, 10)) })
+          : t('parent.settings.subInactive');
+
+  const changeLang = (l: Lang) => {
+    if (l === getLang()) return;
+    setLang(l);
+    patch({ lang: l });
+  };
+  const countryKey = `parent.country.${f.country}`;
+  const countryName = t(countryKey) === countryKey ? f.country : t(countryKey);
 
   const parents = me.members.filter((m) => m.role === 'parent');
   const children = me.members.filter((m) => m.role === 'child');
@@ -119,19 +130,16 @@ export default function Settings() {
   // Without a parent device nobody could invite, approve skips or edit the schedule again.
   const offerInvite = (title: string, msg: string) =>
     Alert.alert(title, msg, [
-      { text: 'Отмена', style: 'cancel' },
-      { text: 'Пригласить второго родителя', onPress: () => setInvite('parent') },
+      { text: t('common.cancel'), style: 'cancel' },
+      { text: t('parent.settings.inviteParent'), onPress: () => setInvite('parent') },
     ]);
   const logout = () => {
     if (parents.length <= 1)
-      return offerInvite(
-        'Вы единственный родитель',
-        'Если выйти, в семье не останется родителя: никто не сможет одобрять пропуски, смотреть фото и менять расписание. Сначала пригласите второго родителя — например, на ваш новый телефон.',
-      );
-    Alert.alert('Выйти на этом телефоне?', 'Данные семьи сохранятся. Вернуться можно по коду от другого родителя.', [
-      { text: 'Отмена', style: 'cancel' },
+      return offerInvite(t('parent.settings.onlyParentTitle'), t('parent.settings.onlyParentMsg'));
+    Alert.alert(t('parent.settings.logoutTitle'), t('parent.settings.logoutMsg'), [
+      { text: t('common.cancel'), style: 'cancel' },
       {
-        text: 'Выйти',
+        text: t('parent.settings.logout'),
         style: 'destructive',
         onPress: async () => {
           try {
@@ -140,7 +148,7 @@ export default function Settings() {
             const status = e instanceof ApiError ? e.status : 0;
             // 401: this phone was already disconnected, so signing out locally is all that's left
             if (status !== 401) {
-              if (status === 409) offerInvite('Не получилось выйти', (e as Error).message);
+              if (status === 409) offerInvite(t('parent.settings.logoutFail'), (e as Error).message);
               else toast.show((e as Error).message);
               return load();
             }
@@ -154,68 +162,81 @@ export default function Settings() {
 
   return (
     <>
-      <Screen title="Настройки" onRefresh={load}>
-        <SectionLabel>Ученик</SectionLabel>
+      <Screen title={t('parent.tab.settings')} onRefresh={load}>
+        <SectionLabel>{t('parent.settings.student')}</SectionLabel>
         <Group>
-          <Row icon="🎓" title={f.child_name} subtitle="Имя в приложении и уведомлениях" chevron onPress={() => setNameEdit(f.child_name)} />
+          <Row icon="🎓" title={f.child_name} subtitle={t('parent.settings.nameSub')} chevron onPress={() => setNameEdit(f.child_name)} />
         </Group>
 
-        <SectionLabel>Учебные дни</SectionLabel>
-        <WeekdayPicker value={f.school_weekdays} onChange={(w) => (w.length ? patch({ school_weekdays: w }) : toast.show('Нужен хотя бы один учебный день'))} />
+        <SectionLabel>{t('parent.settings.schoolDays')}</SectionLabel>
+        <WeekdayPicker value={f.school_weekdays} onChange={(w) => (w.length ? patch({ school_weekdays: w }) : toast.show(t('parent.needSchoolDay')))} />
 
-        <SectionLabel>Сроки</SectionLabel>
+        <SectionLabel>{t('parent.settings.deadlines')}</SectionLabel>
         <Group>
-          <Row icon="⏰" title="Срок" subtitle="Уведомление, если не готово" right={<TimeStepper value={f.soft_deadline} onChange={setSoft} clamp />} />
-          <Row icon="🌙" title="Последний срок" subtitle="Финальная проверка" right={<TimeStepper value={f.hard_deadline} onChange={setHard} clamp />} />
+          <Row icon="⏰" title={t('parent.settings.soft')} subtitle={t('parent.settings.softSub')} right={<TimeStepper value={f.soft_deadline} onChange={setSoft} clamp />} />
+          <Row icon="🌙" title={t('parent.settings.hard')} subtitle={t('parent.settings.hardSub')} right={<TimeStepper value={f.hard_deadline} onChange={setHard} clamp />} />
         </Group>
 
-        <SectionLabel right={<Btn small kind="secondary" title="Время" icon="＋" onPress={() => setNewTime('16:00')} />}>Напоминания ученику</SectionLabel>
+        <SectionLabel right={<Btn small kind="secondary" title={t('parent.settings.time')} icon="＋" onPress={() => setNewTime('16:00')} />}>{t('parent.settings.reminders')}</SectionLabel>
         <View style={styles.wrap}>
           {f.remind_times.length ? (
-            f.remind_times.map((t) => (
-              <Chip key={t} label={`${t}  ✕`} onPress={() => patch({ remind_times: f.remind_times.filter((x) => x !== t) })} />
+            f.remind_times.map((hm) => (
+              <Chip key={hm} label={`${hm}  ✕`} onPress={() => patch({ remind_times: f.remind_times.filter((x) => x !== hm) })} />
             ))
           ) : (
             <Txt v="callout" color={p.muted} style={{ marginLeft: 6 }}>
-              Только перед сроком
+              {t('parent.settings.onlyBefore')}
             </Txt>
           )}
         </View>
 
-        <SectionLabel>Семья</SectionLabel>
+        <SectionLabel>{t('parent.settings.family')}</SectionLabel>
         <Group>
           {[...parents, ...children].map((m) => (
             <Row
               key={m.id}
               icon={m.role === 'parent' ? '🧑' : '🎒'}
-              title={`${m.name || (m.role === 'parent' ? 'Родитель' : 'Ученик')}${m.me ? ' · это вы' : ''}`}
-              subtitle={`${m.role === 'parent' ? 'Родитель' : 'Ученик'}${m.telegram ? ' · Telegram' : ''}`}
+              title={`${m.name || (m.role === 'parent' ? t('parent.settings.parent') : t('parent.settings.student'))}${m.me ? t('parent.settings.you') : ''}`}
+              subtitle={`${m.role === 'parent' ? t('parent.settings.parent') : t('parent.settings.student')}${m.telegram ? ' · Telegram' : ''}`}
               right={
                 !m.me ? (
-                  <Pressable hitSlop={8} onPress={() => removeMember(m.id, m.name || 'устройство')}>
+                  <Pressable hitSlop={8} onPress={() => removeMember(m.id, m.name || t('parent.settings.device'))}>
                     <Txt v="sub" color={p.bad}>
-                      Отключить
+                      {t('parent.settings.disconnect')}
                     </Txt>
                   </Pressable>
                 ) : undefined
               }
             />
           ))}
-          <Row icon="➕" title="Пригласить ученика" chevron onPress={() => setInvite('child')} />
-          <Row icon="👪" title="Пригласить второго родителя" chevron onPress={() => setInvite('parent')} />
+          <Row icon="➕" title={t('parent.settings.inviteChild')} chevron onPress={() => setInvite('child')} />
+          <Row icon="👪" title={t('parent.settings.inviteParent')} chevron onPress={() => setInvite('parent')} />
         </Group>
 
-        <SectionLabel>Уведомления</SectionLabel>
+        <SectionLabel>{t('common.language')}</SectionLabel>
+        <View style={styles.wrap}>
+          {LANGS.map((l) => (
+            <Chip key={l.code} label={l.label} selected={getLang() === l.code} onPress={() => changeLang(l.code)} />
+          ))}
+        </View>
+        <Txt v="sub" color={p.muted} style={{ marginTop: 8, marginLeft: 6 }}>
+          {t('parent.settings.langHint')}
+        </Txt>
+        <Group style={{ marginTop: 10 }}>
+          <Row icon="🌍" title={t('common.country')} right={<Txt v="callout" color={p.muted}>{countryName}</Txt>} />
+        </Group>
+
+        <SectionLabel>{t('parent.settings.notifications')}</SectionLabel>
         <Group>
           {me.telegram.linked ? (
             <Row
               icon="✈️"
-              title="Telegram подключён"
-              subtitle="Фото, запросы и тревоги приходят в Telegram"
+              title={t('parent.settings.tgLinked')}
+              subtitle={t('parent.settings.tgLinkedSub')}
               right={
                 <Pressable hitSlop={8} onPress={disconnectTelegram}>
                   <Txt v="sub" color={p.bad}>
-                    Отключить
+                    {t('parent.settings.disconnect')}
                   </Txt>
                 </Pressable>
               }
@@ -223,69 +244,76 @@ export default function Settings() {
           ) : (
             <Row
               icon="✈️"
-              title="Получать в Telegram"
-              subtitle={me.telegram.enabled ? 'Фото и одобрения кнопками прямо в чате' : 'Опция появится после настройки бота'}
+              title={t('parent.settings.tgGet')}
+              subtitle={me.telegram.enabled ? t('parent.settings.tgSub') : t('parent.settings.tgOff')}
               disabled={!me.telegram.enabled || tgBusy}
               chevron={me.telegram.enabled}
               onPress={connectTelegram}
             />
           )}
-          <Row icon="🔔" title="Уведомления в приложении" subtitle="Включатся после публикации в App Store и Google Play" disabled />
+          <Row icon="🔔" title={t('parent.settings.push')} subtitle={t('parent.settings.pushSub')} disabled />
         </Group>
 
-        <SectionLabel>Фото</SectionLabel>
+        <SectionLabel>{t('parent.settings.photos')}</SectionLabel>
         <Group>
           <Row
             icon="🗂️"
-            title="Хранить фото"
-            subtitle={`${f.photo_retention_days} дн., потом удаляются автоматически`}
+            title={t('parent.settings.keepPhotos')}
+            subtitle={tn('parent.settings.keepSub', f.photo_retention_days)}
             right={<DaysStepper value={f.photo_retention_days} onChange={(v) => patch({ photo_retention_days: v })} />}
           />
         </Group>
 
-        <SectionLabel>Подписка</SectionLabel>
+        <SectionLabel>{t('parent.settings.subscription')}</SectionLabel>
         <Group>
-          <Row icon="⭐" title={subTitle} subtitle={`Код семьи: ${f.code}`} />
+          <Row
+            icon="⭐"
+            title={subTitle}
+            subtitle={t('parent.settings.familyCode', { code: f.code })}
+            // store subscriptions are changed or cancelled in the store's own settings
+            chevron={!!a.store}
+            onPress={a.store ? () => openManage() : undefined}
+          />
         </Group>
 
-        <SectionLabel>Документы</SectionLabel>
+        <SectionLabel>{t('parent.settings.docs')}</SectionLabel>
         <Group>
-          <Row icon="📄" title="Пользовательское соглашение" chevron onPress={() => Linking.openURL(legalUrl('terms'))} />
-          <Row icon="🔒" title="Политика конфиденциальности" chevron onPress={() => Linking.openURL(legalUrl('privacy'))} />
+          <Row icon="📄" title={t('parent.settings.terms')} chevron onPress={() => Linking.openURL(legalUrl('terms', getLang()))} />
+          <Row icon="🔒" title={t('parent.settings.privacy')} chevron onPress={() => Linking.openURL(legalUrl('privacy', getLang()))} />
         </Group>
 
-        <SectionLabel>Аккаунт</SectionLabel>
+        <SectionLabel>{t('parent.settings.account')}</SectionLabel>
         <Group>
-          <Row icon="🚪" title="Выйти на этом телефоне" danger onPress={logout} />
-          <Row icon="🗑️" title="Удалить семью и все данные" danger onPress={deleteAll} />
+          <Row icon="🚪" title={t('parent.settings.logoutRow')} danger onPress={logout} />
+          <Row icon="🗑️" title={t('parent.settings.deleteRow')} danger onPress={deleteAll} />
         </Group>
         <Txt v="sub" color={p.muted} style={{ textAlign: 'center', marginTop: 20 }}>
-          Уроки · версия 1.0
+          {t('parent.settings.version', { v: '1.0' })}
         </Txt>
       </Screen>
 
-      <Sheet visible={nameEdit !== null} title="Имя ученика" onClose={() => setNameEdit(null)}>
+      <Sheet visible={nameEdit !== null} title={t('parent.settings.childName')} onClose={() => setNameEdit(null)}>
         <Field value={nameEdit ?? ''} onChangeText={setNameEdit} maxLength={30} autoFocus />
         <Btn
-          title="Сохранить"
+          title={t('common.save')}
           disabled={!nameEdit?.trim()}
           onPress={() => {
-            patch({ child_name: nameEdit!.trim() }, 'Сохранено');
+            patch({ child_name: nameEdit!.trim() }, t('parent.settings.saved'));
             setNameEdit(null);
           }}
         />
       </Sheet>
-      <Sheet visible={newTime !== null} title="Новое напоминание" onClose={() => setNewTime(null)}>
+      <Sheet visible={newTime !== null} title={t('parent.settings.newReminder')} onClose={() => setNewTime(null)}>
         <View style={{ alignItems: 'center', marginVertical: 10 }}>
           <TimeStepper value={newTime ?? '16:00'} onChange={setNewTime} />
         </View>
         <Txt v="sub" color={p.muted} style={{ textAlign: 'center', marginBottom: 14 }}>
-          Ученик получит напоминание в это время, если не всё готово
+          {t('parent.settings.reminderHint')}
         </Txt>
         <Btn
-          title="Добавить"
+          title={t('common.add')}
           onPress={() => {
-            if (newTime && !f.remind_times.includes(newTime)) patch({ remind_times: [...f.remind_times, newTime].sort() }, 'Напоминание добавлено');
+            if (newTime && !f.remind_times.includes(newTime)) patch({ remind_times: [...f.remind_times, newTime].sort() }, t('parent.settings.reminderAdded'));
             setNewTime(null);
           }}
         />
@@ -299,6 +327,7 @@ export default function Settings() {
 // 7–40 days, in steps of one day (long press jumps by a week)
 function DaysStepper({ value, onChange }: { value: number; onChange: (v: number) => void }) {
   const p = usePalette();
+  const t = useT();
   const set = (v: number) => onChange(Math.min(40, Math.max(7, v)));
   const btn = (d: number, label: string) => (
     <Pressable
@@ -306,7 +335,7 @@ function DaysStepper({ value, onChange }: { value: number; onChange: (v: number)
       onPress={() => set(value + d)}
       onLongPress={() => set(value + d * 7)}
       disabled={(d < 0 && value <= 7) || (d > 0 && value >= 40)}
-      accessibilityLabel={d < 0 ? 'Меньше дней' : 'Больше дней'}
+      accessibilityLabel={d < 0 ? t('parent.settings.fewerDays') : t('parent.settings.moreDays')}
       style={({ pressed }) => [styles.step, { backgroundColor: p.fill, opacity: (d < 0 && value <= 7) || (d > 0 && value >= 40) ? 0.4 : 1, transform: [{ scale: pressed ? 0.9 : 1 }] }]}
     >
       <Txt v="headline">{label}</Txt>

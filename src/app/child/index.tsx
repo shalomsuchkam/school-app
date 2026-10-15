@@ -12,27 +12,29 @@ import { ChildTaskCard } from '@/components/TaskCards';
 import { Btn, Empty, haptic, Loading, Screen, SectionLabel, Txt, useToast } from '@/components/ui';
 import { api, ApiError, isPaywall, isDone, type ChildState, type Task } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
-import { duration } from '@/lib/format';
+import { duration, longDate, shortDate } from '@/lib/format';
+import { t as tr, tn, useT } from '@/lib/i18n';
 import { exactAlarmsAllowed, openExactAlarmSettings } from '@/lib/exactAlarm';
 import { cancelReminders, notificationsAllowed, scheduleReminders } from '@/lib/notify';
 import { gradients, radius, usePalette } from '@/lib/theme';
 
 function hero(s: ChildState, fetchedAt: number, now: number) {
-  const req = s.tasks.filter((t) => t.required);
+  const req = s.tasks.filter((x) => x.required);
   const done = req.filter(isDone).length;
   const total = req.length;
   const elapsed = Math.max(0, Math.floor((now - fetchedAt) / 60000));
-  if (total && done === total) return { g: gradients.ok, t1: 'Всё готово!', t2: 'Можно отдыхать. Родители уже знают.', done, total };
-  if (!s.due_today) return { g: gradients.brand, t1: `Сдать до ${s.due_label}`, t2: `Срок ${s.soft}, последний ${s.hard}`, done, total };
+  if (total && done === total) return { g: gradients.ok, t1: tr('child.hero.allDone'), t2: tr('child.hero.allDoneSub'), done, total };
+  if (!s.due_today) return { g: gradients.brand, t1: tr('child.hero.dueBy', { date: shortDate(s.due_date) }), t2: tr('child.hero.deadlines', { soft: s.soft, hard: s.hard }), done, total };
   const soft = (s.mins_to_soft ?? 0) - elapsed;
   const hard = (s.mins_to_hard ?? 0) - elapsed;
-  if (soft > 0) return { g: soft < 45 ? gradients.warn : gradients.brand, t1: `${duration(soft)} до ${s.soft}`, t2: `Осталось ${total - done} из ${total}`, done, total };
-  if (hard > 0) return { g: gradients.bad, t1: `${s.soft} прошло`, t2: `Последний срок через ${duration(hard)}`, done, total };
-  return { g: gradients.bad, t1: 'Время вышло', t2: `Осталось ${total - done}. Сделай сейчас!`, done, total };
+  if (soft > 0) return { g: soft < 45 ? gradients.warn : gradients.brand, t1: tr('child.hero.timeTo', { dur: duration(soft), soft: s.soft }), t2: tr('child.hero.leftOf', { left: total - done, total }), done, total };
+  if (hard > 0) return { g: gradients.bad, t1: tr('child.hero.softPassed', { soft: s.soft }), t2: tr('child.hero.lastIn', { dur: duration(hard) }), done, total };
+  return { g: gradients.bad, t1: tr('child.hero.timeUp'), t2: tn('child.hero.leftNow', total - done), done, total };
 }
 
 export default function ChildHome() {
   const p = usePalette();
+  const t = useT();
   const { signOut } = useAuth();
   const [s, setS] = useState<ChildState | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -79,10 +81,10 @@ export default function ChildHome() {
       });
       if (key === lastKey.current) return;
       lastKey.current = key;
-      const t = Date.now();
+      const ts = Date.now();
       setS(st);
-      setFetchedAt(t);
-      setNow(t);
+      setFetchedAt(ts);
+      setNow(ts);
       const req = st.tasks.filter((x) => x.required);
       const all = req.length > 0 && req.every(isDone);
       if (prevAll.current === false && all) {
@@ -127,17 +129,18 @@ export default function ChildHome() {
   if (!s) return <Loading error={error} onRetry={load} />;
 
   const h = hero(s, fetchedAt, now);
-  const lessons = s.tasks.filter((t) => t.kind === 'lesson');
-  const items = s.tasks.filter((t) => t.kind === 'item');
+  const schoolLabel = longDate(s.school_date);
+  const lessons = s.tasks.filter((x) => x.kind === 'lesson');
+  const items = s.tasks.filter((x) => x.kind === 'item');
 
   const openPhoto = (url: string, caption: string, id: number) => setViewer({ url, caption, id });
-  const openCamera = (t: Task) =>
-    router.push({ pathname: '/child/camera', params: { id: String(t.id), label: t.label, emoji: t.emoji, page: String(t.photos.length + 1) } });
-  const check = async (t: Task, done: boolean) => {
+  const openCamera = (tk: Task) =>
+    router.push({ pathname: '/child/camera', params: { id: String(tk.id), label: tk.label, emoji: tk.emoji, page: String(tk.photos.length + 1) } });
+  const check = async (tk: Task, done: boolean) => {
     haptic.tap();
-    setS({ ...s, tasks: s.tasks.map((x) => (x.id === t.id ? { ...x, status: done ? 'done' : 'todo' } : x)) });
+    setS({ ...s, tasks: s.tasks.map((x) => (x.id === tk.id ? { ...x, status: done ? 'done' : 'todo' } : x)) });
     try {
-      await api.check(t.id, done);
+      await api.check(tk.id, done);
     } catch (e) {
       toast.show((e as Error).message);
     }
@@ -148,7 +151,7 @@ export default function ChildHome() {
     try {
       await api.skip(skip.id, reason);
       setSkip(null);
-      toast.show('Запрос отправлен ⏳');
+      toast.show(t('child.skipSent'));
       load();
     } catch (e) {
       toast.show((e as Error).message);
@@ -158,13 +161,13 @@ export default function ChildHome() {
     const ok = await notificationsAllowed(true);
     setNotifOk(ok);
     if (ok) await scheduleReminders(s);
-    toast.show(ok ? 'Напоминания включены 🔔' : 'Разреши уведомления в настройках телефона');
+    toast.show(ok ? t('child.notif.on') : t('child.notif.denied'));
   };
   const logout = () =>
-    Alert.alert('Выйти из приложения?', 'Для входа снова понадобится новый код от родителя.', [
-      { text: 'Отмена', style: 'cancel' },
+    Alert.alert(t('child.logout.title'), t('child.logout.text'), [
+      { text: t('common.cancel'), style: 'cancel' },
       {
-        text: 'Выйти',
+        text: t('child.logout.ok'),
         style: 'destructive',
         onPress: async () => {
           await api.leave().catch(() => {});
@@ -180,10 +183,10 @@ export default function ChildHome() {
       <Screen onRefresh={load}>
         <Pressable onLongPress={logout} delayLongPress={1200}>
           <Txt v="callout" color={p.muted}>
-            Привет, {s.name} 👋 Задания на
+            {t('child.greeting', { name: s.name })}
           </Txt>
           <Txt v="largeTitle" style={{ marginTop: 2 }}>
-            {s.school_label.charAt(0).toUpperCase() + s.school_label.slice(1)}
+            {schoolLabel.charAt(0).toUpperCase() + schoolLabel.slice(1)}
           </Txt>
         </Pressable>
 
@@ -203,13 +206,13 @@ export default function ChildHome() {
           <View style={[styles.stat, { backgroundColor: p.card }]}>
             <Txt v="title">🔥 {s.streak}</Txt>
             <Txt v="sub" color={p.muted}>
-              дней подряд
+              {tn('child.streak', s.streak)}
             </Txt>
           </View>
           <View style={[styles.stat, { backgroundColor: p.card }]}>
             <Txt v="title">⭐ {s.perfect_week}</Txt>
             <Txt v="sub" color={p.muted}>
-              вовремя за неделю
+              {t('child.perfectWeek')}
             </Txt>
           </View>
         </View>
@@ -217,16 +220,16 @@ export default function ChildHome() {
         {!notifOk ? (
           <View style={[styles.banner, { backgroundColor: p.warnSoft }]}>
             <Txt v="callout" style={{ flex: 1 }}>
-              🔔 Включи напоминания, чтобы ничего не забыть
+              {t('child.notif.banner')}
             </Txt>
-            <Btn small title="Включить" onPress={enableNotif} />
+            <Btn small title={t('child.notif.enable')} onPress={enableNotif} />
           </View>
         ) : !exactOk ? (
           <View style={[styles.banner, { backgroundColor: p.warnSoft }]}>
             <Txt v="callout" style={{ flex: 1 }}>
-              ⏰ Чтобы напоминания приходили вовремя, разреши «Будильники и напоминания»
+              {t('child.exact.banner')}
             </Txt>
-            <Btn small title="Разрешить" onPress={() => openExactAlarmSettings() || toast.show('Открой настройки приложения → Будильники и напоминания')} />
+            <Btn small title={t('child.exact.allow')} onPress={() => openExactAlarmSettings() || toast.show(t('child.exact.manual'))} />
           </View>
         ) : null}
         {error ? (
@@ -235,14 +238,14 @@ export default function ChildHome() {
           </Txt>
         ) : null}
 
-        {!s.tasks.length ? <Empty icon="🌤️" title="На этот день заданий нет" text="Родитель ещё не добавил уроки и дела." /> : null}
-        {lessons.length ? <SectionLabel>Уроки · {lessons.filter(isDone).length}/{lessons.length}</SectionLabel> : null}
-        {lessons.map((t) => (
-          <ChildTaskCard key={t.id} t={t} onPhoto={openCamera} onSkip={setSkip} onCheck={check} onOpen={openPhoto} />
+        {!s.tasks.length ? <Empty icon="🌤️" title={t('child.empty.title')} text={t('child.empty.text')} /> : null}
+        {lessons.length ? <SectionLabel>{t('child.section.lessons', { done: lessons.filter(isDone).length, total: lessons.length })}</SectionLabel> : null}
+        {lessons.map((tk) => (
+          <ChildTaskCard key={tk.id} t={tk} onPhoto={openCamera} onSkip={setSkip} onCheck={check} onOpen={openPhoto} />
         ))}
-        {items.length ? <SectionLabel>Подготовить · {items.filter(isDone).length}/{items.length}</SectionLabel> : null}
-        {items.map((t) => (
-          <ChildTaskCard key={t.id} t={t} onPhoto={openCamera} onSkip={setSkip} onCheck={check} onOpen={openPhoto} />
+        {items.length ? <SectionLabel>{t('child.section.items', { done: items.filter(isDone).length, total: items.length })}</SectionLabel> : null}
+        {items.map((tk) => (
+          <ChildTaskCard key={tk.id} t={tk} onPhoto={openCamera} onSkip={setSkip} onCheck={check} onOpen={openPhoto} />
         ))}
       </Screen>
       {/* While the sheet is open the toast goes inside its modal, otherwise errors would hide under it. */}

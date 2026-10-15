@@ -16,7 +16,7 @@ export async function secret(key: string): Promise<string> {
 
 export const CORS = {
   "access-control-allow-origin": "*",
-  "access-control-allow-headers": "content-type, authorization",
+  "access-control-allow-headers": "content-type, authorization, x-lang",
   "access-control-allow-methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
 };
 export const json = (data: any, status = 200) =>
