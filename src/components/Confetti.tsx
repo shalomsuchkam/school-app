@@ -31,7 +31,7 @@ export function Confetti({ run }: { run: number }) {
   if (!run || reduce) return null;
   return (
     <View pointerEvents="none" style={StyleSheet.absoluteFill} key={run}>
-      {Array.from({ length: 44 }, (_, i) => (
+      {Array.from({ length: 24 }, (_, i) => (
         <Piece key={i} i={i} />
       ))}
     </View>

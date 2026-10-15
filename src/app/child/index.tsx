@@ -44,6 +44,8 @@ export default function ChildHome() {
   const [confetti, setConfetti] = useState(0);
   const prevAll = useRef<boolean | null>(null);
   const seq = useRef({ sent: 0, shown: 0 });
+  // Last payload we rendered: lets a poll that brought nothing new skip the whole re-render.
+  const lastKey = useRef<string | null>(null);
   const toast = useToast();
 
   const load = useCallback(async () => {
@@ -53,11 +55,31 @@ export default function ChildHome() {
       // Overlapping refreshes (focus, poll, resume): never let an older answer overwrite a newer one.
       if (my < seq.current.shown) return;
       seq.current.shown = my;
+      setError(null);
+      // Permission banners must refresh even when the data is unchanged (e.g. back from Settings).
+      const ok = await notificationsAllowed(false);
+      setNotifOk(ok);
+      setExactOk(exactAlarmsAllowed());
+      // The server hands back fresh object identities (and rotated photo URLs) on every poll, so
+      // without this guard setS would re-render the whole tree twice a minute for no reason.
+      const key = JSON.stringify({
+        tasks: st.tasks.map((tk) => ({ ...tk, photos: tk.photos.map((ph) => ph.id) })),
+        streak: st.streak,
+        perfect_week: st.perfect_week,
+        due_date: st.due_date,
+        school_date: st.school_date,
+        due_today: st.due_today,
+        soft: st.soft,
+        hard: st.hard,
+        remind_times: st.remind_times,
+        upcoming: st.upcoming,
+      });
+      if (key === lastKey.current) return;
+      lastKey.current = key;
       const t = Date.now();
       setS(st);
       setFetchedAt(t);
       setNow(t);
-      setError(null);
       const req = st.tasks.filter((x) => x.required);
       const all = req.length > 0 && req.every(isDone);
       if (prevAll.current === false && all) {
@@ -65,9 +87,6 @@ export default function ChildHome() {
         haptic.success();
       }
       prevAll.current = all;
-      const ok = await notificationsAllowed(false);
-      setNotifOk(ok);
-      setExactOk(exactAlarmsAllowed());
       if (ok && my === seq.current.shown) await scheduleReminders(st);
     } catch (e) {
       if (e instanceof ApiError && e.status === 401) {
