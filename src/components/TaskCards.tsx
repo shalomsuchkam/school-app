@@ -6,10 +6,12 @@ import type { ParentAction, Task } from '@/lib/api';
 import { t as tr, tn, useT } from '@/lib/i18n';
 import { radius, usePalette } from '@/lib/theme';
 
-import { Btn, Txt } from './ui';
+import { Btn, Icon, type IconName, Txt } from './ui';
 
-type Tone = 'ok' | 'warn' | 'bad' | undefined;
-function statusFor(t: Task, viewer: 'child' | 'parent'): [Tone, string] {
+// Status at a glance: the colour of the left bar and the chip tells the story before any reading.
+// todo = neutral, wait = waiting for the parent (amber), ok = done/accepted (green), bad = redo/declined/overdue (red).
+type Tone = 'todo' | 'wait' | 'ok' | 'bad';
+function statusFor(t: Task, viewer: 'child' | 'parent', overdue: boolean): [Tone, string] {
   switch (t.status) {
     case 'done':
       if (t.accepted) return ['ok', viewer === 'child' ? tr('child.st.acceptedChild') : tr('child.st.accepted')];
@@ -18,27 +20,38 @@ function statusFor(t: Task, viewer: 'child' | 'parent'): [Tone, string] {
     case 'skip_ok':
       return ['ok', tr('child.st.skipOk')];
     case 'skip_pending':
-      return ['warn', viewer === 'child' ? tr('child.st.waiting') : `${tr('child.st.asksSkip')}${t.skip_reason ? `: ${t.skip_reason}` : ''}`];
+      return ['wait', viewer === 'child' ? tr('child.st.waiting') : `${tr('child.st.asksSkip')}${t.skip_reason ? `: ${t.skip_reason}` : ''}`];
     case 'skip_no':
       return ['bad', viewer === 'child' ? tr('child.st.skipNoChild') : tr('child.st.skipNo')];
     case 'redo':
       return ['bad', viewer === 'child' ? tr('child.st.redoChild') : tr('child.st.redo')];
     default:
-      return [undefined, !t.required ? tr('child.st.optional') : t.needs_photo ? tr('child.st.needPhoto') : tr('child.st.markWhenDone')];
+      if (overdue && t.required) return ['bad', viewer === 'child' ? tr('child.st.overdueChild') : tr('child.st.overdue')];
+      return ['todo', !t.required ? tr('child.st.optional') : t.needs_photo ? tr('child.st.needPhoto') : tr('child.st.markWhenDone')];
   }
 }
 
-function Shell({ t, tone, children }: { t: Task; tone: Tone; children: React.ReactNode }) {
+function useTone(tone: Tone) {
+  const p = usePalette();
+  return {
+    todo: { fg: p.muted, bg: p.fill, bar: p.line, mark: 'ellipse-outline' as IconName, word: tr('child.tone.todo') },
+    wait: { fg: p.warn, bg: p.warnSoft, bar: p.warn, mark: 'hourglass-outline' as IconName, word: tr('child.tone.wait') },
+    ok: { fg: p.ok, bg: p.okSoft, bar: p.ok, mark: 'checkmark-circle' as IconName, word: tr('child.tone.ok') },
+    bad: { fg: p.bad, bg: p.badSoft, bar: p.bad, mark: 'alert-circle' as IconName, word: tr('child.tone.bad') },
+  }[tone];
+}
+
+function Shell({ tone, children }: { tone: Tone; children: React.ReactNode }) {
   const p = usePalette();
   const reduce = useReducedMotion();
-  const accent = tone === 'ok' ? p.ok : tone === 'warn' ? p.warn : tone === 'bad' ? p.bad : 'transparent';
+  const c = useTone(tone);
   return (
     <Animated.View
       entering={reduce ? undefined : FadeInDown.duration(220)}
       layout={reduce ? undefined : LinearTransition.springify().damping(20)}
-      style={[styles.card, { backgroundColor: p.card, shadowColor: p.shadow }]}
+      style={[styles.card, { backgroundColor: p.card, shadowColor: p.shadow }, tone !== 'todo' && { borderColor: c.bg, borderWidth: 1 }]}
     >
-      <View style={[styles.accent, { backgroundColor: accent }]} />
+      <View style={[styles.accent, { backgroundColor: c.bar }]} />
       {children}
     </Animated.View>
   );
@@ -46,20 +59,25 @@ function Shell({ t, tone, children }: { t: Task; tone: Tone; children: React.Rea
 
 function Head({ t, tone, text, right }: { t: Task; tone: Tone; text: string; right?: React.ReactNode }) {
   const p = usePalette();
-  const color = tone === 'ok' ? p.ok : tone === 'warn' ? p.warn : tone === 'bad' ? p.bad : p.muted;
+  const c = useTone(tone);
   return (
     <View style={styles.head}>
-      <View style={[styles.emo, { backgroundColor: p.fill }]}>
-        <Text style={{ fontSize: 22 }}>{t.emoji}</Text>
-      </View>
-      <View style={{ flex: 1 }}>
-        <Txt v="headline" numberOfLines={2}>
-          {t.label}
-        </Txt>
-        <Txt v="sub" color={color} style={{ marginTop: 2 }} numberOfLines={2}>
-          {tone === 'ok' ? '✓ ' : tone === 'warn' ? '⏳ ' : tone === 'bad' ? '! ' : ''}
-          {text}
-        </Txt>
+      {/* Label + status are read as one phrase by TalkBack; the tick button stays separately focusable. */}
+      <View accessible accessibilityLabel={`${t.emoji} ${t.label}. ${c.word}: ${text}`} style={styles.headText}>
+        <View style={[styles.emo, { backgroundColor: tone === 'todo' ? p.fill : c.bg }]}>
+          <Text style={{ fontSize: 22 }}>{t.emoji}</Text>
+        </View>
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Txt v="headline" numberOfLines={2} style={tone === 'ok' ? { color: p.ink2 } : undefined}>
+            {t.label}
+          </Txt>
+          <View style={[styles.chip, { backgroundColor: c.bg }]}>
+            <Icon name={c.mark} size={14} color={c.fg} style={{ marginTop: 2 }} />
+            <Txt v="sub" color={c.fg} numberOfLines={2} style={{ flexShrink: 1 }}>
+              {text}
+            </Txt>
+          </View>
+        </View>
       </View>
       {right}
     </View>
@@ -91,11 +109,11 @@ function Thumbs({ t, onOpen }: { t: Task; onOpen: (url: string, caption: string,
   );
 }
 
-function Check({ on, onPress }: { on: boolean; onPress: () => void }) {
+function Check({ on, label, onPress }: { on: boolean; label: string; onPress: () => void }) {
   const p = usePalette();
   return (
-    <Pressable onPress={onPress} hitSlop={10} style={({ pressed }) => [styles.check, { borderColor: on ? p.ok : p.line, backgroundColor: on ? p.ok : 'transparent', transform: [{ scale: pressed ? 0.9 : 1 }] }]}>
-      {on ? <Text style={{ color: '#fff', fontSize: 16, fontWeight: '900' }}>✓</Text> : null}
+    <Pressable onPress={onPress} hitSlop={10} accessibilityRole="checkbox" accessibilityState={{ checked: on }} accessibilityLabel={label} style={({ pressed }) => [styles.check, { borderColor: on ? p.ok : p.line, backgroundColor: on ? p.ok : 'transparent', transform: [{ scale: pressed ? 0.9 : 1 }] }]}>
+      {on ? <Icon name="checkmark" size={20} color="#fff" /> : null}
     </Pressable>
   );
 }
@@ -106,21 +124,24 @@ export function ChildTaskCard({
   onSkip,
   onCheck,
   onOpen,
+  overdue = false,
 }: {
   t: Task;
   onPhoto: (t: Task) => void;
   onSkip: (t: Task) => void;
   onCheck: (t: Task, done: boolean) => void;
   onOpen: (url: string, caption: string, id: number) => void;
+  /** The deadline has passed: unfinished required items turn red. */
+  overdue?: boolean;
 }) {
   const tt = useT();
-  const [tone, text] = statusFor(t, 'child');
+  const [tone, text] = statusFor(t, 'child', overdue);
   // Simple checklist item: one big tick, nothing else.
   if (!t.needs_photo) {
     const on = t.status === 'done' || t.status === 'skip_ok';
     return (
-      <Shell t={t} tone={tone}>
-        <Head t={t} tone={tone} text={text} right={t.status === 'skip_pending' ? null : <Check on={on} onPress={() => onCheck(t, !on)} />} />
+      <Shell tone={tone}>
+        <Head t={t} tone={tone} text={text} right={t.status === 'skip_pending' ? null : <Check on={on} label={t.label} onPress={() => onCheck(t, !on)} />} />
       </Shell>
     );
   }
@@ -128,23 +149,23 @@ export function ChildTaskCard({
   const canSkip = ['todo', 'skip_no', 'redo'].includes(t.status) && t.photos.length === 0;
   const photoLabel = t.kind === 'lesson' ? tt('child.card.takePhoto') : tt('child.card.photo');
   return (
-    <Shell t={t} tone={tone}>
+    <Shell tone={tone}>
       <Head t={t} tone={tone} text={text} />
       <Thumbs t={t} onOpen={onOpen} />
       {t.status === 'done' && t.photos.length < 2 ? (
         <View style={styles.btns}>
-          <Btn small kind="plain" icon="＋" title={tt('child.card.morePage')} onPress={() => onPhoto(t)} />
+          <Btn small kind="plain" icon="add" title={tt('child.card.morePage')} onPress={() => onPhoto(t)} />
         </View>
       ) : open ? (
         <View style={styles.btns}>
           {t.light && t.status === 'todo' ? (
             <>
               <Btn small kind="secondary" title={tt('child.card.noHw')} onPress={() => onSkip(t)} style={{ flex: 1 }} />
-              <Btn small icon="📸" title={photoLabel} onPress={() => onPhoto(t)} style={{ flex: 1 }} />
+              <Btn small icon="camera" title={photoLabel} onPress={() => onPhoto(t)} style={{ flex: 1 }} />
             </>
           ) : (
             <>
-              <Btn small icon="📸" title={photoLabel} onPress={() => onPhoto(t)} style={{ flex: 1 }} />
+              <Btn small icon="camera" title={photoLabel} onPress={() => onPhoto(t)} style={{ flex: 1 }} />
               {canSkip ? <Btn small kind="plain" title={t.kind === 'lesson' ? tt('child.card.noHw') : tt('child.card.notNeeded')} onPress={() => onSkip(t)} /> : null}
             </>
           )}
@@ -159,14 +180,17 @@ export function ParentTaskCard({
   busy,
   onAction,
   onOpen,
+  overdue = false,
 }: {
   t: Task;
   busy: boolean;
   onAction: (t: Task, a: ParentAction) => void;
   onOpen: (url: string, caption: string, id: number) => void;
+  /** The deadline has passed: unfinished required items turn red. */
+  overdue?: boolean;
 }) {
   const tt = useT();
-  const [tone, text] = statusFor(t, 'parent');
+  const [tone, text] = statusFor(t, 'parent', overdue);
   const a = (x: ParentAction) => () => onAction(t, x);
   let actions: React.ReactNode = null;
   if (t.status === 'skip_pending') {
@@ -190,7 +214,7 @@ export function ParentTaskCard({
     actions = <Btn small kind="plain" title={t.needs_photo ? tt('child.card.closeNoPhoto') : tt('child.card.mark')} onPress={a(t.needs_photo ? 'skip_ok' : 'done')} disabled={busy} />;
   }
   return (
-    <Shell t={t} tone={tone}>
+    <Shell tone={tone}>
       <Head t={t} tone={tone} text={text} />
       <Thumbs t={t} onOpen={onOpen} />
       {actions ? <View style={styles.btns}>{actions}</View> : null}
@@ -199,9 +223,11 @@ export function ParentTaskCard({
 }
 
 const styles = StyleSheet.create({
-  card: { borderRadius: radius.l, padding: 14, paddingLeft: 16, marginBottom: 10, overflow: 'hidden', shadowOpacity: 0.06, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 1 },
-  accent: { position: 'absolute', left: 0, top: 14, bottom: 14, width: 4, borderTopRightRadius: 4, borderBottomRightRadius: 4 },
+  card: { borderRadius: radius.l, padding: 14, paddingLeft: 20, marginBottom: 10, overflow: 'hidden', shadowOpacity: 0.06, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 1 },
+  accent: { position: 'absolute', left: 0, top: 0, bottom: 0, width: 6 },
   head: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  headText: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12, minWidth: 0 },
+  chip: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'flex-start', gap: 5, maxWidth: '100%', borderRadius: 999, paddingHorizontal: 9, paddingVertical: 3, marginTop: 5 },
   emo: { width: 46, height: 46, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   thumbs: { flexDirection: 'row', gap: 8, marginTop: 12, flexWrap: 'wrap' },
   thumb: { width: 96, height: 96, borderRadius: 14, borderWidth: 1 },

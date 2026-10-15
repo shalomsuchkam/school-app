@@ -1,11 +1,14 @@
 import { Image } from 'expo-image';
+import { LinearGradient } from 'expo-linear-gradient';
 import type { ReactNode } from 'react';
 import { Modal, Pressable, StyleSheet, View } from 'react-native';
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { Txt } from './ui';
+import { useT } from '@/lib/i18n';
+
+import { Icon, Txt } from './ui';
 
 const MAX = 4;
 function clamp(v: number, lim: number) {
@@ -71,30 +74,40 @@ function Zoomable({ children }: { children: ReactNode }) {
 
 export function PhotoViewer({ url, id, caption, onClose }: { url: string | null; id?: number; caption?: string; onClose: () => void }) {
   const insets = useSafeAreaInsets();
+  const t = useT();
+  const side = { paddingLeft: insets.left + 16, paddingRight: insets.right + 16 };
   return (
-    <Modal visible={!!url} transparent animationType="fade" onRequestClose={onClose} statusBarTranslucent>
+    <Modal visible={!!url} transparent animationType="fade" onRequestClose={onClose} statusBarTranslucent navigationBarTranslucent supportedOrientations={['portrait', 'landscape']}>
       {/* A Modal renders outside the app's root gesture view, so it needs its own on Android. */}
-      <GestureHandlerRootView style={{ flex: 1, backgroundColor: '#000' }}>
+      <GestureHandlerRootView style={styles.root}>
         {url ? (
           <Zoomable>
-            <Image source={{ uri: url, cacheKey: id != null ? `photo-${id}` : undefined }} style={{ flex: 1 }} contentFit="contain" />
+            <Image source={{ uri: url, cacheKey: id != null ? `photo-${id}` : undefined }} style={{ flex: 1 }} contentFit="contain" accessibilityLabel={caption} />
           </Zoomable>
         ) : null}
-        <View style={[styles.bar, { paddingTop: insets.top + 8 }]}>
-          <Txt v="headline" color="#fff" style={{ flex: 1 }} numberOfLines={1}>
-            {caption ?? ''}
-          </Txt>
-          <Pressable onPress={onClose} hitSlop={12} style={styles.close}>
-            <Txt v="headline" color="#fff">
-              ✕
-            </Txt>
+        {/* Chrome sits on soft fades instead of solid bars, so the photo keeps the whole screen. */}
+        <LinearGradient pointerEvents="box-none" colors={['rgba(0,0,0,0.7)', 'rgba(0,0,0,0)']} style={[styles.top, side, { paddingTop: insets.top + 8 }]}>
+          <Pressable onPress={onClose} hitSlop={12} accessibilityRole="button" accessibilityLabel={t('common.close')} style={({ pressed }) => [styles.close, pressed && { backgroundColor: 'rgba(255,255,255,0.32)' }]}>
+            <Icon name="close" size={26} color="#fff" />
           </Pressable>
-        </View>
+        </LinearGradient>
+        <LinearGradient pointerEvents="none" colors={['rgba(0,0,0,0)', 'rgba(0,0,0,0.75)']} style={[styles.bottom, side, { paddingBottom: insets.bottom + 18 }]}>
+          {caption ? (
+            <Txt v="headline" color="#fff" numberOfLines={2} style={{ textAlign: 'center' }}>
+              {caption}
+            </Txt>
+          ) : null}
+          <Txt v="sub" color="rgba(255,255,255,0.65)" style={{ textAlign: 'center', marginTop: 4 }}>
+            {t('child.viewer.zoomHint')}
+          </Txt>
+        </LinearGradient>
       </GestureHandlerRootView>
     </Modal>
   );
 }
 const styles = StyleSheet.create({
-  bar: { position: 'absolute', top: 0, left: 0, right: 0, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingBottom: 12, backgroundColor: 'rgba(0,0,0,0.45)' },
-  close: { width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.18)', alignItems: 'center', justifyContent: 'center' },
+  root: { flex: 1, backgroundColor: '#05040C' },
+  top: { position: 'absolute', top: 0, left: 0, right: 0, flexDirection: 'row', justifyContent: 'flex-end', paddingBottom: 28 },
+  bottom: { position: 'absolute', bottom: 0, left: 0, right: 0, paddingTop: 40 },
+  close: { width: 48, height: 48, borderRadius: 24, backgroundColor: 'rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center' },
 });

@@ -29,6 +29,10 @@ const b: Bundle = {
     'common.photoRead': 'Не удалось прочитать фото',
     'common.language': 'Язык',
     'common.country': 'Страна',
+    'common.copy': 'Копировать',
+    'common.copied': 'Скопировано',
+    'common.share': 'Поделиться',
+    'common.inviteCode': 'Код приглашения',
   },
   kk: {
     'common.wdShort': ['Дс', 'Сс', 'Ср', 'Бс', 'Жм', 'Сб', 'Жс'],
@@ -57,6 +61,10 @@ const b: Bundle = {
     'common.photoRead': 'Фотоны оқу мүмкін болмады',
     'common.language': 'Тіл',
     'common.country': 'Ел',
+    'common.copy': 'Көшіру',
+    'common.copied': 'Көшірілді',
+    'common.share': 'Бөлісу',
+    'common.inviteCode': 'Шақыру коды',
   },
   en: {
     'common.wdShort': ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
@@ -85,6 +93,10 @@ const b: Bundle = {
     'common.photoRead': 'Could not read the photo',
     'common.language': 'Language',
     'common.country': 'Country',
+    'common.copy': 'Copy',
+    'common.copied': 'Copied',
+    'common.share': 'Share',
+    'common.inviteCode': 'Invite code',
   },
 };
 export default b;

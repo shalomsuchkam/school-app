@@ -1,8 +1,9 @@
 // deno-lint-ignore-file no-explicit-any
 import {
   accessOf, activeDay, applyAction, checkItem, childState, deleteFamily, dropOpenTasks, ensureTasks, getFamily, isDone, loadTasks, MAX_PHOTO, overview,
-  purgePhotos, requestSkip, uploadPhoto,
+  purgePhotos, requestSkip, setNote, startSession, uploadPhoto, weeklyReport,
 } from "./core.ts";
+import { holidaysBetween } from "./holidays.ts";
 import { langOf, tr } from "./i18n.ts";
 import { LEGAL_VERSION, legalPage } from "./legal.ts";
 import {
@@ -57,6 +58,7 @@ const billingOn = async () => (await secret("app_billing_enabled")) === "1";
 const publicFamily = (f: any) => ({
   id: f.id, code: f.code, child_name: f.child_name, tz: f.tz, school_weekdays: f.school_weekdays, soft_deadline: f.soft_deadline,
   hard_deadline: f.hard_deadline, remind_times: f.remind_times, photo_retention_days: f.photo_retention_days, country: f.country, lang: f.lang,
+  reward_goal: f.reward_goal ?? null, reward_text: f.reward_text ?? null, track_time: !!f.track_time, auto_holidays: f.auto_holidays !== false,
 });
 
 async function me(d: Device) {
@@ -71,16 +73,27 @@ async function me(d: Device) {
   };
 }
 
-async function setup(familyId: string) {
+async function setup(fam: any) {
+  const familyId = fam.id;
   const [{ data: subjects }, { data: lessons }, { data: items }, { data: off }] = await Promise.all([
     db.from("app_subjects").select("id, name, emoji, light").eq("family_id", familyId).order("name"),
-    db.from("app_lessons").select("weekday, pos, subject_id").eq("family_id", familyId).order("weekday").order("pos"),
+    db.from("app_lessons").select("weekday, week_parity, pos, subject_id").eq("family_id", familyId).order("weekday").order("pos"),
     db.from("app_items").select("id, title, emoji, required, needs_photo, weekdays, pos").eq("family_id", familyId).order("pos").order("id"),
     db.from("app_days_off").select("date").eq("family_id", familyId).order("date"),
   ]);
+  // lessons: every week; lessons_alt["1"|"2"]: odd/even ISO weeks (optional alternating timetable)
   const byDay: Record<string, number[]> = {};
-  for (const l of lessons ?? []) (byDay[l.weekday] ??= []).push(l.subject_id);
-  return { subjects: subjects ?? [], lessons: byDay, items: items ?? [], days_off: (off ?? []).map((o: any) => o.date) };
+  const alt: Record<string, Record<string, number[]>> = { "1": {}, "2": {} };
+  for (const l of lessons ?? []) {
+    const target = l.week_parity ? alt[String(l.week_parity)] : byDay;
+    (target[l.weekday] ??= []).push(l.subject_id);
+  }
+  const today = localParts(fam.tz).date;
+  const end = new Date(Date.now() + 120 * 86400_000).toISOString().slice(0, 10);
+  return {
+    subjects: subjects ?? [], lessons: byDay, lessons_alt: alt, items: items ?? [], days_off: (off ?? []).map((o: any) => o.date),
+    holidays: fam.auto_holidays === false ? [] : holidaysBetween(fam.country ?? "KZ", today, end),
+  };
 }
 
 // ---------- Telegram bot (optional) ----------
@@ -157,6 +170,21 @@ async function handleTelegram(u: any) {
   }
 }
 
+// ---------- weekly report to Telegram: Sunday 19:00 family time ----------
+async function weeklyTelegram(fam: any) {
+  const now = localParts(fam.tz);
+  if (dow(now.date) !== 7 || now.hm < "19:00" || now.hm > "19:30") return;
+  const { error } = await db.from("app_reminder_log").insert({ family_id: fam.id, school_date: now.date, slot: "weekly" });
+  if (error) return;
+  const r = await weeklyReport(fam);
+  if (!r.totals.total) return;
+  const worst = r.subjects.filter((s: any) => s.missed + s.late > 0).slice(0, 3).map((s: any) => `${esc(s.emoji)} ${esc(s.title)}: ${s.missed ? `пропущено ${s.missed}` : ""}${s.missed && s.late ? ", " : ""}${s.late ? `с опозданием ${s.late}` : ""}`);
+  await notifyParents(fam.id, { title: "📊 Итоги недели", body: `Вовремя ${r.totals.on_time} из ${r.totals.total}` }, {
+    html: `📊 <b>${esc(fam.child_name)}: итоги недели</b>\nВовремя: ${r.totals.on_time} из ${r.totals.total}\nС опозданием: ${r.totals.late} · Пропущено: ${r.totals.missed} · Освобождено: ${r.totals.skipped}\n🔥 Серия: ${r.streak}` +
+      (worst.length ? `\n\nСтоит обратить внимание:\n${worst.join("\n")}` : "\n\nОтличная неделя! 🎉"),
+  });
+}
+
 // ---------- reminders (cron, every 5 min) ----------
 const RANK: Record<string, number> = { soft: 0, deadline: 1, final: 2 };
 async function tick() {
@@ -166,6 +194,7 @@ async function tick() {
   for (const fam of fams ?? []) {
     try {
       if (hourly) await purgePhotos(fam);
+      await weeklyTelegram(fam);
       const { now, S, due } = await activeDay(fam);
       if (due !== now.date) continue;
       await ensureTasks(fam, S);
@@ -324,7 +353,7 @@ async function route(req: Request, path: string): Promise<Response> {
     throw new HttpError(402, d.role === "parent" ? "Подписка закончилась" : "Попроси родителя продлить подписку");
   }
 
-  if (path === "/setup" && M === "GET") return json(await setup(famId));
+  if (path === "/setup" && M === "GET") return json(await setup(fam0));
 
   // --- child ---
   if (seg[0] === "child") {
@@ -358,6 +387,11 @@ async function route(req: Request, path: string): Promise<Response> {
       await checkItem(fam, Number(b.task_id), !!b.done);
       return json({ ok: true });
     }
+    if (path === "/child/note" && M === "POST") {
+      await setNote(fam, Number(b.task_id), clean(b.note, 300), true);
+      return json({ ok: true });
+    }
+    if (path === "/child/start" && M === "POST") return json({ started_at: await startSession(fam) });
   }
 
   // --- everyone ---
@@ -372,8 +406,15 @@ async function route(req: Request, path: string): Promise<Response> {
   if (path === "/parent/overview" && M === "GET") return json(await overview(fam));
   if (path === "/parent/task" && M === "POST") {
     const b = await body(req);
-    return json({ ok: true, text: tr(langOf(req), await applyAction(fam, Number(b.id), String(b.action))) });
+    const comment = typeof b.comment === "string" ? clean(b.comment, 300) : undefined;
+    return json({ ok: true, text: tr(langOf(req), await applyAction(fam, Number(b.id), String(b.action), undefined, comment)) });
   }
+  if (path === "/parent/note" && M === "POST") {
+    const b = await body(req);
+    await setNote(fam, Number(b.task_id), clean(b.note, 300), false);
+    return json({ ok: true });
+  }
+  if (path === "/parent/report" && M === "GET") return json(await weeklyReport(fam));
   if (path === "/parent/nudge" && M === "POST") {
     const { S } = await activeDay(fam);
     const left = (await loadTasks(famId, S)).filter((t) => t.required && !isDone(t));
@@ -396,6 +437,11 @@ async function route(req: Request, path: string): Promise<Response> {
     if (Number.isInteger(keep) && keep >= 7 && keep <= 40) patch.photo_retention_days = keep;
     if (["ru", "kk", "en"].includes(b.lang)) patch.lang = b.lang;
     if (/^[A-Z]{2}$/.test(String(b.country ?? ""))) patch.country = b.country;
+    if (b.reward_goal === null) patch.reward_goal = null;
+    else if (Number.isInteger(b.reward_goal) && b.reward_goal >= 1 && b.reward_goal <= 60) patch.reward_goal = b.reward_goal;
+    if (typeof b.reward_text === "string") patch.reward_text = clean(b.reward_text, 80) || null;
+    if (typeof b.track_time === "boolean") patch.track_time = b.track_time;
+    if (typeof b.auto_holidays === "boolean") patch.auto_holidays = b.auto_holidays;
     if (Object.keys(patch).length) await db.from("app_families").update(patch).eq("id", famId);
     const nf = await getFamily(famId);
     // tasks already created for a weekday that is no longer a school day must not hang around as missed days
@@ -433,10 +479,11 @@ async function route(req: Request, path: string): Promise<Response> {
     if (!(wd >= 1 && wd <= 7)) throw new HttpError(400, "День недели 1–7");
     const b = await body(req);
     const ids: number[] = (Array.isArray(b.subject_ids) ? b.subject_ids : []).map(Number).slice(0, 14);
+    const parity = [0, 1, 2].includes(Number(b.week_parity)) ? Number(b.week_parity) : 0;
     const { data: own } = await db.from("app_subjects").select("id").eq("family_id", famId).in("id", ids.length ? ids : [0]);
     const ok = new Set((own ?? []).map((s: any) => s.id));
-    await db.from("app_lessons").delete().eq("family_id", famId).eq("weekday", wd);
-    const rows = ids.filter((i) => ok.has(i)).map((subject_id, i) => ({ family_id: famId, weekday: wd, pos: i + 1, subject_id }));
+    await db.from("app_lessons").delete().eq("family_id", famId).eq("weekday", wd).eq("week_parity", parity);
+    const rows = ids.filter((i) => ok.has(i)).map((subject_id, i) => ({ family_id: famId, weekday: wd, week_parity: parity, pos: i + 1, subject_id }));
     if (rows.length) await db.from("app_lessons").insert(rows);
     return json({ ok: true });
   }

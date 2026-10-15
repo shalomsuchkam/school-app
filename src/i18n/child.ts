@@ -38,6 +38,38 @@ const b: Bundle = {
     'child.logout.text': 'Для входа снова понадобится новый код от родителя.',
     'child.logout.ok': 'Выйти',
 
+    // Home: progress mood line, ring, next-step button
+    'child.mood.zero': {
+      one: 'Поехали! Тебя ждёт {n} задание 💪',
+      few: 'Поехали! Тебя ждут {n} задания 💪',
+      many: 'Поехали! Тебя ждут {n} заданий 💪',
+      other: 'Поехали! Тебя ждут {n} задания 💪',
+    },
+    'child.mood.progress': {
+      one: 'Отлично идёшь! Осталось {n} задание ⭐',
+      few: 'Отлично идёшь! Осталось {n} задания ⭐',
+      many: 'Отлично идёшь! Осталось {n} заданий ⭐',
+      other: 'Отлично идёшь! Осталось {n} задания ⭐',
+    },
+    'child.mood.almost': {
+      one: 'Почти всё! Последнее задание 🚀',
+      few: 'Почти всё! Осталось {n} задания 🚀',
+      many: 'Почти всё! Осталось {n} заданий 🚀',
+      other: 'Почти всё! Осталось {n} задания 🚀',
+    },
+    'child.mood.overdue': {
+      one: 'Срок прошёл, но ещё не поздно — осталось {n} задание ⏰',
+      few: 'Срок прошёл, но ещё не поздно — осталось {n} задания ⏰',
+      many: 'Срок прошёл, но ещё не поздно — осталось {n} заданий ⏰',
+      other: 'Срок прошёл, но ещё не поздно — осталось {n} задания ⏰',
+    },
+    'child.mood.done': '🏆 Ты молодец! Все задания сделаны',
+    'child.ring.a11y': 'Готово {done} из {total}',
+    'child.next.caption': 'Следующий шаг',
+    'child.next.photo': 'Сфотографировать: {label}',
+    'child.next.redo': 'Переснять: {label}',
+    'child.next.check': 'Отметить: {label}',
+
     // Camera
     'child.cam.permTitle': 'Нужен доступ к камере',
     'child.cam.permText': 'Фото делаются только камерой, без галереи — так родители видят, что всё сделано сегодня.',
@@ -49,11 +81,18 @@ const b: Bundle = {
     'child.cam.sendFailText': 'Проверь интернет и попробуй ещё раз.',
     'child.cam.page': 'Страница {page} из 2',
     'child.cam.frame': 'Помести страницу в рамку',
-    'child.cam.sent': '✅ Отправлено',
+    'child.cam.sent': '✅ Отправлено! Так держать 💪',
     'child.cam.page2': 'Сфотографировать 2-ю страницу',
     'child.cam.retake': 'Переснять',
     'child.cam.send': 'Отправить',
     'child.cam.shutter': 'Сделать фото',
+    'child.cam.frameHint': 'Положи тетрадь ровно, чтобы весь лист был в рамке',
+    'child.cam.torch': 'Фонарик',
+    'child.cam.checking': 'Проверяем фото…',
+    'child.cam.looksGood': 'Текст хорошо видно? Тогда отправляй 👍',
+    'child.cam.lowTitle': 'Фото тёмное или размытое',
+    'child.cam.lowText': 'Родителю может быть трудно прочитать. Включи свет или фонарик, держи телефон ровно и переснимай.',
+    'child.cam.sendAnyway': 'Всё равно отправить',
 
     // Task cards: statuses
     'child.st.acceptedChild': 'Принято родителем',
@@ -71,6 +110,17 @@ const b: Bundle = {
     'child.st.optional': 'По желанию',
     'child.st.needPhoto': 'Нужно фото',
     'child.st.markWhenDone': 'Отметь, когда готово',
+    'child.st.overdueChild': 'Срок прошёл — сделай скорее!',
+    'child.st.overdue': 'Не сделано вовремя',
+
+    // Status words for the coloured chip (screen readers)
+    'child.tone.todo': 'Нужно сделать',
+    'child.tone.wait': 'Ждёт ответа',
+    'child.tone.ok': 'Готово',
+    'child.tone.bad': 'Требует внимания',
+
+    // Photo viewer
+    'child.viewer.zoomHint': 'Раздвинь двумя пальцами или нажми дважды, чтобы увеличить',
 
     // Task cards: buttons
     'child.card.takePhoto': 'Сфотографировать',
@@ -141,6 +191,18 @@ const b: Bundle = {
     'child.logout.text': 'Қайта кіру үшін ата-анаңнан жаңа код керек болады.',
     'child.logout.ok': 'Шығу',
 
+    // Home: progress mood line, ring, next-step button
+    'child.mood.zero': { one: 'Бастадық! Сені {n} тапсырма күтіп тұр 💪', other: 'Бастадық! Сені {n} тапсырма күтіп тұр 💪' },
+    'child.mood.progress': { one: 'Керемет! Тағы {n} тапсырма қалды ⭐', other: 'Керемет! Тағы {n} тапсырма қалды ⭐' },
+    'child.mood.almost': { one: 'Аз қалды! Соңғы тапсырма 🚀', other: 'Аз қалды! {n} тапсырма қалды 🚀' },
+    'child.mood.overdue': { one: 'Мерзім өтті, бірақ әлі кеш емес — {n} тапсырма қалды ⏰', other: 'Мерзім өтті, бірақ әлі кеш емес — {n} тапсырма қалды ⏰' },
+    'child.mood.done': '🏆 Жарайсың! Барлық тапсырма орындалды',
+    'child.ring.a11y': '{total} тапсырманың {done} дайын',
+    'child.next.caption': 'Келесі қадам',
+    'child.next.photo': 'Суретке түсір: {label}',
+    'child.next.redo': 'Қайта түсір: {label}',
+    'child.next.check': 'Белгіле: {label}',
+
     // Camera
     'child.cam.permTitle': 'Камераға рұқсат керек',
     'child.cam.permText': 'Фото галереядан емес, тек камерамен түсіріледі — осылай ата-анаң бәрі бүгін орындалғанын көреді.',
@@ -152,11 +214,18 @@ const b: Bundle = {
     'child.cam.sendFailText': 'Интернетті тексеріп, қайта көр.',
     'child.cam.page': '2 беттің {page}-беті',
     'child.cam.frame': 'Бетті жақтаудың ішіне орналастыр',
-    'child.cam.sent': '✅ Жіберілді',
+    'child.cam.sent': '✅ Жіберілді! Жарайсың 💪',
     'child.cam.page2': '2-бетті суретке түсіру',
     'child.cam.retake': 'Қайта түсіру',
     'child.cam.send': 'Жіберу',
     'child.cam.shutter': 'Суретке түсіру',
+    'child.cam.frameHint': 'Дәптерді түзу қой, бүкіл бет жақтаудың ішінде болсын',
+    'child.cam.torch': 'Қалта шам',
+    'child.cam.checking': 'Фотоны тексеріп жатырмыз…',
+    'child.cam.looksGood': 'Мәтін анық көрініп тұр ма? Онда жібере бер 👍',
+    'child.cam.lowTitle': 'Фото қараңғы немесе бұлыңғыр',
+    'child.cam.lowText': 'Ата-анаңа оқу қиын болуы мүмкін. Жарықты не қалта шамды қос, телефонды түзу ұста да, қайта түсір.',
+    'child.cam.sendAnyway': 'Бәрібір жіберу',
 
     // Task cards: statuses
     'child.st.acceptedChild': 'Ата-анаң қабылдады',
@@ -174,6 +243,17 @@ const b: Bundle = {
     'child.st.optional': 'Қалауы бойынша',
     'child.st.needPhoto': 'Фото керек',
     'child.st.markWhenDone': 'Дайын болғанда белгіле',
+    'child.st.overdueChild': 'Мерзім өтті — тезірек орында!',
+    'child.st.overdue': 'Уақытында орындалмады',
+
+    // Status words for the coloured chip (screen readers)
+    'child.tone.todo': 'Орындау керек',
+    'child.tone.wait': 'Жауап күтілуде',
+    'child.tone.ok': 'Дайын',
+    'child.tone.bad': 'Назар аудару керек',
+
+    // Photo viewer
+    'child.viewer.zoomHint': 'Үлкейту үшін екі саусақпен ажырат немесе екі рет бас',
 
     // Task cards: buttons
     'child.card.takePhoto': 'Суретке түсіру',
@@ -244,6 +324,18 @@ const b: Bundle = {
     'child.logout.text': "To sign back in, you'll need a new code from your parent.",
     'child.logout.ok': 'Log out',
 
+    // Home: progress mood line, ring, next-step button
+    'child.mood.zero': { one: "Let's go! {n} task is waiting for you 💪", other: "Let's go! {n} tasks are waiting for you 💪" },
+    'child.mood.progress': { one: 'Great job so far! {n} task left ⭐', other: 'Great job so far! {n} tasks left ⭐' },
+    'child.mood.almost': { one: 'Almost there! Just one more 🚀', other: 'Almost there! {n} tasks left 🚀' },
+    'child.mood.overdue': { one: "The deadline passed, but it's not too late — {n} task left ⏰", other: "The deadline passed, but it's not too late — {n} tasks left ⏰" },
+    'child.mood.done': '🏆 Awesome! Every task is done',
+    'child.ring.a11y': '{done} of {total} done',
+    'child.next.caption': 'Next step',
+    'child.next.photo': 'Take a photo: {label}',
+    'child.next.redo': 'Retake: {label}',
+    'child.next.check': 'Check off: {label}',
+
     // Camera
     'child.cam.permTitle': 'Camera access needed',
     'child.cam.permText': 'Photos come from the camera only, not the gallery — so your parents can see it was all done today.',
@@ -255,11 +347,18 @@ const b: Bundle = {
     'child.cam.sendFailText': 'Check your internet and try again.',
     'child.cam.page': 'Page {page} of 2',
     'child.cam.frame': 'Fit the page inside the frame',
-    'child.cam.sent': '✅ Sent',
+    'child.cam.sent': '✅ Sent! Keep it up 💪',
     'child.cam.page2': 'Take a photo of page 2',
     'child.cam.retake': 'Retake',
     'child.cam.send': 'Send',
     'child.cam.shutter': 'Take photo',
+    'child.cam.frameHint': 'Lay the notebook flat so the whole page fits in the frame',
+    'child.cam.torch': 'Flashlight',
+    'child.cam.checking': 'Checking the photo…',
+    'child.cam.looksGood': 'Is the text easy to read? Then send it 👍',
+    'child.cam.lowTitle': 'The photo looks dark or blurry',
+    'child.cam.lowText': 'Your parent may not be able to read it. Turn on a light or the flashlight, hold the phone steady and retake.',
+    'child.cam.sendAnyway': 'Send anyway',
 
     // Task cards: statuses
     'child.st.acceptedChild': 'Approved by parent',
@@ -277,6 +376,17 @@ const b: Bundle = {
     'child.st.optional': 'Optional',
     'child.st.needPhoto': 'Photo needed',
     'child.st.markWhenDone': 'Check off when done',
+    'child.st.overdueChild': 'Deadline passed — do it quickly!',
+    'child.st.overdue': 'Not done on time',
+
+    // Status words for the coloured chip (screen readers)
+    'child.tone.todo': 'To do',
+    'child.tone.wait': 'Waiting',
+    'child.tone.ok': 'Done',
+    'child.tone.bad': 'Needs attention',
+
+    // Photo viewer
+    'child.viewer.zoomHint': 'Pinch with two fingers or double-tap to zoom',
 
     // Task cards: buttons
     'child.card.takePhoto': 'Take photo',

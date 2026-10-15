@@ -1,14 +1,25 @@
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { Redirect, router } from 'expo-router';
-import { useState } from 'react';
-import { StyleSheet, TextInput, View } from 'react-native';
+import { useRef, useState } from 'react';
+import { Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
+import Animated, { useAnimatedStyle, useSharedValue, withSequence, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { Btn, Field, IconBtn, Txt } from '@/components/ui';
+import { Btn, Field, haptic, IconBtn, Txt } from '@/components/ui';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
-import { useT } from '@/lib/i18n';
-import { radius, type, usePalette } from '@/lib/theme';
+import { tn, useT } from '@/lib/i18n';
+import { font, radius, usePalette } from '@/lib/theme';
+
+const LEN = 6;
+const MAX_W = 560;
+const SLOTS = Array.from({ length: LEN }, (_, i) => i);
+const normalize = (v: string) =>
+  v
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, '')
+    .slice(0, LEN);
 
 export default function Join() {
   const p = usePalette();
@@ -20,11 +31,17 @@ export default function Join() {
   const [busy, setBusy] = useState(false);
   const [joined, setJoined] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [focused, setFocused] = useState(false);
+  const input = useRef<TextInput>(null);
+  const shake = useSharedValue(0);
+  const shakeStyle = useAnimatedStyle(() => ({ transform: [{ translateX: shake.get() }] }));
   // Already signed in (e.g. reached via back navigation): go home instead of joining again.
   if (session && !joined) return <Redirect href={session.role === 'child' ? '/child' : '/parent'} />;
-  const clean = code.toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const clean = normalize(code);
+  const complete = clean.length === LEN;
 
   const submit = async () => {
+    if (!complete || busy) return;
     setBusy(true);
     setError(null);
     try {
@@ -36,45 +53,130 @@ export default function Join() {
       router.replace(r.role === 'child' ? '/child' : '/parent');
     } catch (e) {
       setError((e as Error).message);
+      haptic.warn();
+      shake.set(
+        withSequence(
+        withTiming(-10, { duration: 50 }),
+        withTiming(10, { duration: 70 }),
+        withTiming(-6, { duration: 60 }),
+        withTiming(6, { duration: 60 }),
+        withTiming(0, { duration: 50 }),
+        ),
+      );
     } finally {
       setBusy(false);
     }
   };
 
+  const borderFor = (i: number) => {
+    if (error) return p.bad;
+    if (focused && (i === clean.length || (complete && i === LEN - 1))) return p.brand;
+    if (complete) return p.ok;
+    return i < clean.length ? p.ink2 : p.line;
+  };
+
   return (
     <KeyboardAvoidingView style={{ flex: 1, backgroundColor: p.bg }} behavior="padding">
-      <View style={{ flex: 1, paddingHorizontal: 20, paddingTop: insets.top + 10 }}>
-        <IconBtn icon="←" label={t('common.back')} onPress={() => router.back()} />
-        <Txt v="largeTitle" style={{ marginTop: 18 }}>
-          {t('onboarding.join.title')}
-        </Txt>
-        <Txt v="callout" color={p.muted} style={{ marginTop: 6 }}>
-          {t('onboarding.join.hint')}
-        </Txt>
-        <TextInput
-          value={clean}
-          onChangeText={setCode}
-          autoCapitalize="characters"
-          autoCorrect={false}
-          maxLength={6}
-          placeholder="ABC123"
-          placeholderTextColor={p.line}
-          style={[type.largeTitle, styles.code, { color: p.ink, backgroundColor: p.card, borderColor: clean.length === 6 ? p.brand : p.line }]}
-        />
-        <Field label={t('onboarding.join.name')} value={name} onChangeText={setName} placeholder={t('onboarding.join.namePh')} maxLength={30} />
-        {error ? (
-          <Txt v="callout" color={p.bad}>
-            {error}
+      <ScrollView contentContainerStyle={{ flexGrow: 1, paddingHorizontal: 20, paddingTop: insets.top + 10 }} keyboardShouldPersistTaps="handled">
+        <View style={styles.column}>
+          <IconBtn icon="←" label={t('common.back')} onPress={() => router.back()} />
+          <Txt v="largeTitle" accessibilityRole="header" style={{ marginTop: 18 }}>
+            {t('onboarding.join.title')}
           </Txt>
-        ) : null}
-      </View>
-      <View style={{ paddingHorizontal: 20, paddingBottom: insets.bottom + 16 }}>
-        <Btn title={t('onboarding.join.submit')} onPress={submit} loading={busy} disabled={clean.length !== 6} />
+          <Txt v="callout" color={p.muted} style={{ marginTop: 6 }}>
+            {t('onboarding.join.hint')}
+          </Txt>
+
+          <Txt v="caps" color={p.muted} style={{ marginTop: 28, marginBottom: 10 }}>
+            {t('onboarding.join.codeLabel').toLocaleUpperCase()}
+          </Txt>
+          <Animated.View style={shakeStyle}>
+            <Pressable onPress={() => input.current?.focus()} accessible={false} style={styles.boxes}>
+              {SLOTS.map((i) => {
+                const ch = clean[i];
+                return (
+                  <View
+                    key={i}
+                    style={[
+                      styles.box,
+                      {
+                        borderColor: borderFor(i),
+                        backgroundColor: error ? p.badSoft : complete ? p.okSoft : p.card,
+                        marginRight: i === 2 ? 10 : 0, // visual split 3 + 3
+                      },
+                    ]}
+                  >
+                    <Txt v="largeTitle" color={error ? p.bad : p.ink} style={styles.char}>
+                      {ch ?? ''}
+                    </Txt>
+                  </View>
+                );
+              })}
+              {/* The real input sits invisibly over the boxes: native typing, paste and keyboard handling. */}
+              <TextInput
+                ref={input}
+                value={clean}
+                onChangeText={(v) => {
+                  setCode(normalize(v));
+                  if (error) setError(null);
+                }}
+                onFocus={() => setFocused(true)}
+                onBlur={() => setFocused(false)}
+                onSubmitEditing={submit}
+                autoFocus
+                autoCapitalize="characters"
+                autoCorrect={false}
+                autoComplete="off"
+                spellCheck={false}
+                keyboardType={Platform.OS === 'android' ? 'visible-password' : 'default'}
+                returnKeyType="go"
+                maxLength={LEN + 6}
+                caretHidden
+                accessibilityLabel={t('onboarding.join.codeA11y', { n: clean.length })}
+                style={styles.hidden}
+              />
+            </Pressable>
+          </Animated.View>
+
+          <View style={styles.status}>
+            {error ? (
+              <>
+                <Ionicons name="alert-circle" size={18} color={p.bad} />
+                <Txt v="callout" color={p.bad} style={{ flex: 1 }} accessibilityLiveRegion="polite">
+                  {error}
+                </Txt>
+              </>
+            ) : complete ? (
+              <>
+                <Ionicons name="checkmark-circle" size={18} color={p.ok} />
+                <Txt v="callout" color={p.ok}>
+                  {t('onboarding.join.ready')}
+                </Txt>
+              </>
+            ) : (
+              <Txt v="sub" color={p.muted}>
+                {tn('onboarding.join.left', LEN - clean.length)}
+              </Txt>
+            )}
+          </View>
+
+          <Field label={t('onboarding.join.name')} value={name} onChangeText={setName} placeholder={t('onboarding.join.namePh')} maxLength={30} returnKeyType="go" onSubmitEditing={submit} />
+        </View>
+      </ScrollView>
+      <View style={{ paddingHorizontal: 20, paddingTop: 8, paddingBottom: insets.bottom + 16 }}>
+        <View style={styles.column}>
+          <Btn title={t('onboarding.join.submit')} onPress={submit} loading={busy} disabled={!complete} />
+        </View>
       </View>
     </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  code: { marginTop: 24, marginBottom: 20, textAlign: 'center', letterSpacing: 10, borderRadius: radius.l, borderWidth: 2, paddingVertical: 18 },
+  column: { width: '100%', maxWidth: MAX_W, alignSelf: 'center' },
+  boxes: { flexDirection: 'row', gap: 8, justifyContent: 'center' },
+  box: { flex: 1, maxWidth: 64, aspectRatio: 0.82, borderRadius: radius.m, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
+  char: { fontFamily: font.black, fontSize: 30, lineHeight: 36, fontVariant: ['tabular-nums'], textAlign: 'center' },
+  hidden: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, opacity: 0.015, color: 'transparent', fontSize: 1 },
+  status: { flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 24, marginTop: 12, marginBottom: 14 },
 });

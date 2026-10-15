@@ -6,12 +6,12 @@ import Animated, { FadeIn, FadeInRight, LinearTransition } from 'react-native-re
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { InviteSheet } from '@/components/InviteSheet';
-import { Btn, Chip, Field, Group, IconBtn, Row, TimeStepper, ToggleRow, Txt, WeekdayPicker } from '@/components/ui';
+import { Btn, Chip, Field, Group, haptic, IconBtn, Row, TimeStepper, ToggleRow, Txt, WeekdayPicker } from '@/components/ui';
 import { api, legalUrl } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { toMin, wdLong, wdShort } from '@/lib/format';
-import { getLang, LANGS, setLang, useLang, useT } from '@/lib/i18n';
-import { itemPresets, subjectPresets } from '@/lib/presets';
+import { getLang, LANGS, setLang, tn, useLang, useT } from '@/lib/i18n';
+import { GRADES, gradeTemplate, itemPresets, subjectPresets, type Grade } from '@/lib/presets';
 import { usePalette } from '@/lib/theme';
 
 type Subj = { name: string; emoji: string; light: boolean };
@@ -81,12 +81,42 @@ export default function Onboarding() {
   const [done, setDone] = useState(false);
   const [country, setCountry] = useState(deviceCountry);
   const [consent, setConsent] = useState(false);
+  // Quick start: the grade template last applied, and whether «skip to the last step» was used (Back returns to subjects).
+  const [tpl, setTpl] = useState<Grade | null>(null);
+  const [jumped, setJumped] = useState(false);
 
   const presets = subjectPresets();
   const presetItems = itemPresets();
   const titleOf = (it: Item) => (it.preset === undefined ? it.title : presetItems[it.preset].title);
   const has = (n: string) => subjects.some((s) => s.name === n);
-  const toggleSubject = (s: Subj) => setSubjects(has(s.name) ? subjects.filter((x) => x.name !== s.name) : [...subjects, s]);
+  const toggleSubject = (s: Subj) => {
+    if (!has(s.name)) return setSubjects([...subjects, s]);
+    setSubjects(subjects.filter((x) => x.name !== s.name));
+    // a removed subject also leaves the timetable
+    setPlan(Object.fromEntries(Object.entries(plan).map(([d, list]) => [d, list.filter((n) => n !== s.name)])));
+  };
+  // Replaces subjects and the Mon–Fri timetable with the grade template for the chosen country; everything stays editable.
+  const applyTemplate = (g: Grade) => {
+    const tp = gradeTemplate(country, g);
+    // keep subjects the parent added by hand
+    const own = subjects.filter((s) => !presets.some((x) => x.name === s.name));
+    setSubjects([...tp.subjects, ...own]);
+    setPlan(tp.plan);
+    setPlanDay(days[0] ?? 1);
+    setTpl(g);
+  };
+  const skipToEnd = () => {
+    setJumped(true);
+    setStep(STEPS.length - 1);
+  };
+  const back = () => {
+    if (!step) return router.back();
+    if (jumped && step === STEPS.length - 1) {
+      setJumped(false);
+      return setStep(2);
+    }
+    setStep(step - 1);
+  };
   const dayPlan = plan[planDay] ?? [];
   // same rule as Settings: both deadlines on the same evening, the first one earlier
   const deadlinesOk = toMin(soft) < toMin(hard);
@@ -144,7 +174,7 @@ export default function Onboarding() {
   if (done) {
     return (
       <View style={[styles.doneWrap, { backgroundColor: p.bg, paddingTop: insets.top + 60, paddingBottom: insets.bottom + 20 }]}>
-        <Animated.View entering={FadeIn.duration(400)} style={{ alignItems: 'center' }}>
+        <Animated.View entering={FadeIn.duration(400)} style={[styles.column, { alignItems: 'center' }]}>
           <Text style={{ fontSize: 64 }}>🎉</Text>
           <Txt v="largeTitle" style={{ textAlign: 'center', marginTop: 12 }}>
             {t('onboarding.done.title')}
@@ -153,7 +183,7 @@ export default function Onboarding() {
             {t('onboarding.done.text', { name: child.trim() })}
           </Txt>
         </Animated.View>
-        <View style={{ gap: 10 }}>
+        <View style={[styles.column, { gap: 10 }]}>
           <Btn title={t('onboarding.done.showCode')} onPress={() => setInviteOpen(true)} />
           <Btn title={t('onboarding.done.enter')} kind="plain" onPress={enterApp} />
         </View>
@@ -164,9 +194,9 @@ export default function Onboarding() {
 
   return (
     <KeyboardAvoidingView style={{ flex: 1, backgroundColor: p.bg }} behavior="padding">
-      <View style={{ paddingHorizontal: 20, paddingTop: insets.top + 10 }}>
+      <View style={[styles.column, { paddingHorizontal: 20, paddingTop: insets.top + 10 }]}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-          <IconBtn icon="←" label={t('common.back')} onPress={() => (step ? setStep(step - 1) : router.back())} />
+          <IconBtn icon="←" label={t('common.back')} onPress={back} />
           <View style={[styles.progress, { backgroundColor: p.line }]}>
             <Animated.View layout={LinearTransition.springify().damping(20)} style={[styles.bar, { backgroundColor: p.brand, width: `${((step + 1) / STEPS.length) * 100}%` }]} />
           </View>
@@ -179,7 +209,7 @@ export default function Onboarding() {
         </Txt>
       </View>
 
-      <ScrollView contentContainerStyle={{ padding: 20, paddingTop: 6 }} keyboardShouldPersistTaps="handled">
+      <ScrollView contentContainerStyle={[styles.column, { padding: 20, paddingTop: 6 }]} keyboardShouldPersistTaps="handled">
         <Animated.View key={step} entering={FadeInRight.duration(260)}>
           {step === 0 ? (
             <>
@@ -223,6 +253,55 @@ export default function Onboarding() {
               <Txt v="largeTitle">{t('onboarding.subjects.title')}</Txt>
               <Txt v="callout" color={p.muted} style={{ marginVertical: 10 }}>
                 {t('onboarding.subjects.text')}
+              </Txt>
+              <Txt v="headline" style={{ marginTop: 4 }}>
+                {t('onboarding.tpl.title')}
+              </Txt>
+              <Txt v="sub" color={p.muted} style={{ marginTop: 2, marginBottom: 10 }}>
+                {t(country === 'KZ' ? 'onboarding.tpl.hintKZ' : 'onboarding.tpl.hint')}
+              </Txt>
+              <View style={styles.tplRow}>
+                {GRADES.map(({ grade, emoji }) => {
+                  const on = tpl === grade;
+                  const n = gradeTemplate(country, grade).subjects.length;
+                  return (
+                    <Pressable
+                      key={grade}
+                      onPress={() => {
+                        haptic.tap();
+                        applyTemplate(grade);
+                      }}
+                      accessibilityRole="radio"
+                      accessibilityState={{ selected: on }}
+                      style={({ pressed }) => [
+                        styles.tpl,
+                        { backgroundColor: on ? p.brandSoft : p.card, borderColor: on ? p.brand : p.line, transform: [{ scale: pressed ? 0.97 : 1 }] },
+                      ]}
+                    >
+                      <Text style={{ fontSize: 26 }}>{emoji}</Text>
+                      <Txt v="headline" color={on ? p.brand : p.ink} style={styles.tplTitle} numberOfLines={2}>
+                        {t(`onboarding.tpl.${grade}`)}
+                      </Txt>
+                      <Txt v="sub" color={p.muted}>
+                        {t(`onboarding.tpl.${grade}Grades`)}
+                      </Txt>
+                      <Txt v="sub" color={on ? p.brand : p.muted} style={{ marginTop: 4 }}>
+                        {on ? '✓ ' : ''}
+                        {tn('onboarding.tpl.count', n)}
+                      </Txt>
+                    </Pressable>
+                  );
+                })}
+              </View>
+              {tpl ? (
+                <Animated.View entering={FadeIn.duration(220)} style={[styles.applied, { backgroundColor: p.okSoft }]}>
+                  <Txt v="sub" color={p.ink2} style={{ flex: 1 }}>
+                    {t('onboarding.tpl.applied')}
+                  </Txt>
+                </Animated.View>
+              ) : null}
+              <Txt v="sub" color={p.muted} style={{ marginTop: 18, marginBottom: 8 }}>
+                {t('onboarding.tpl.or')}
               </Txt>
               <View style={styles.wrap}>
                 {presets.map((s) => (
@@ -376,7 +455,15 @@ export default function Onboarding() {
       </ScrollView>
 
       <View style={{ paddingHorizontal: 20, paddingBottom: insets.bottom + 16, paddingTop: 8 }}>
-        <Btn title={step === STEPS.length - 1 ? t('onboarding.create') : step === 3 && !Object.keys(plan).length ? t('onboarding.later') : t('common.next')} onPress={next} disabled={!canNext} loading={busy} />
+        <View style={[styles.column, { gap: 8 }]}>
+          <Btn
+            title={step === STEPS.length - 1 ? t('onboarding.create') : step === 3 && !Object.values(plan).some((l) => l.length) ? t('onboarding.later') : t('common.next')}
+            onPress={next}
+            disabled={!canNext}
+            loading={busy}
+          />
+          {step === 2 && tpl && subjects.length > 0 ? <Btn title={t('onboarding.tpl.skip')} kind="plain" onPress={skipToEnd} /> : null}
+        </View>
       </View>
     </KeyboardAvoidingView>
   );
@@ -386,6 +473,11 @@ const styles = StyleSheet.create({
   progress: { flex: 1, height: 6, borderRadius: 3, overflow: 'hidden' },
   bar: { height: 6, borderRadius: 3 },
   wrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  column: { width: '100%', maxWidth: 640, alignSelf: 'center' },
+  tplTitle: { marginTop: 6, fontSize: 15, lineHeight: 19 },
+  tplRow: { flexDirection: 'row', gap: 8 },
+  tpl: { flex: 1, minWidth: 0, borderWidth: 1.5, borderRadius: 18, paddingVertical: 12, paddingHorizontal: 10 },
+  applied: { flexDirection: 'row', borderRadius: 14, paddingVertical: 10, paddingHorizontal: 12, marginTop: 10 },
   doneWrap: { flex: 1, paddingHorizontal: 24, justifyContent: 'space-between' },
   consent: { flexDirection: 'row', gap: 12, alignItems: 'flex-start', borderWidth: 1.5, borderRadius: 16, padding: 14, marginTop: 18 },
   box: { width: 24, height: 24, borderRadius: 7, borderWidth: 2, alignItems: 'center', justifyContent: 'center', marginTop: 1 },

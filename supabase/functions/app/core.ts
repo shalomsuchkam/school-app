@@ -1,5 +1,6 @@
 // deno-lint-ignore-file no-explicit-any
 import { addDays, db, dow, esc, fmtLong, fmtShort, HttpError, imageType, localParts, toMin } from "./lib.ts";
+import { isHoliday } from "./holidays.ts";
 import { notifyChild, notifyParents } from "./notify.ts";
 
 export const isDone = (t: any) => t.status === "done" || t.status === "skip_ok";
@@ -15,10 +16,21 @@ async function offSet(familyId: string) {
   return new Set<string>((data ?? []).map((r: any) => r.date));
 }
 
-// A school day = one of the family's school weekdays that is not marked as a day off.
-export function schoolDays(weekdays: number[] | null, off: Set<string>) {
+// A school day = one of the family's school weekdays that is not a day off or (optionally) a public holiday.
+export function schoolDays(weekdays: number[] | null, off: Set<string>, holidays?: (d: string) => boolean) {
   const wd = new Set(weekdays?.length ? weekdays : [1, 2, 3, 4, 5]);
-  return (d: string) => wd.has(dow(d)) && !off.has(d);
+  return (d: string) => wd.has(dow(d)) && !off.has(d) && !(holidays && holidays(d));
+}
+const holidaysOf = (fam: any) => (fam.auto_holidays === false ? undefined : (d: string) => isHoliday(fam.country ?? "KZ", d));
+
+// ISO week number parity: 1 = odd week, 2 = even week (for alternating timetables).
+export function weekParity(iso: string) {
+  const d = new Date(iso + "T00:00:00Z");
+  const day = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - day);
+  const y0 = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  const week = Math.ceil(((d.getTime() - y0.getTime()) / 86400000 + 1) / 7);
+  return week % 2 === 1 ? 1 : 2;
 }
 
 export function nextSchoolDay(after: string, isSchool: (d: string) => boolean) {
@@ -31,7 +43,7 @@ export function nextSchoolDay(after: string, isSchool: (d: string) => boolean) {
 
 export async function activeDay(fam: any) {
   const now = localParts(fam.tz);
-  const isSchool = schoolDays(fam.school_weekdays, await offSet(fam.id));
+  const isSchool = schoolDays(fam.school_weekdays, await offSet(fam.id), holidaysOf(fam));
   const S = nextSchoolDay(now.date, isSchool);
   return { now, S, due: addDays(S, -1), isSchool };
 }
@@ -49,12 +61,16 @@ export async function dropOpenTasks(familyId: string, from: string, to: string |
 export async function ensureTasks(fam: any, S: string) {
   const wd = dow(S);
   const [{ data: lessons }, { data: items }, { data: existing }] = await Promise.all([
-    db.from("app_lessons").select("pos, subject_id, app_subjects(name, emoji, light)").eq("family_id", fam.id).eq("weekday", wd).order("pos"),
+    db.from("app_lessons").select("pos, week_parity, subject_id, app_subjects(name, emoji, light)").eq("family_id", fam.id).eq("weekday", wd).order("pos"),
     db.from("app_items").select("*").eq("family_id", fam.id).order("pos").order("id"),
     db.from("app_tasks").select("id, kind, ref_id, status, title, emoji, required, needs_photo, light, pos, app_photos(id, active)").eq("family_id", fam.id).eq("school_date", S),
   ]);
   const desired = new Map<string, any>();
-  for (const l of lessons ?? []) {
+  // alternating timetable: when this weekday has odd/even-week lessons, use the set for S's week; plain lessons otherwise
+  const parity = weekParity(S);
+  const all: any[] = lessons ?? [];
+  const alternating = all.some((l) => l.week_parity);
+  for (const l of alternating ? all.filter((l) => l.week_parity === parity) : all.filter((l) => !l.week_parity)) {
     const k = `lesson:${l.subject_id}`;
     if (desired.has(k) || !l.app_subjects) continue;
     desired.set(k, {
@@ -108,7 +124,7 @@ export function shape(t: any, tz: string) {
   return {
     id: t.id, kind: t.kind, label: t.title, emoji: t.emoji, light: t.light, needs_photo: t.needs_photo,
     required: t.required, status: t.status, skip_reason: t.skip_reason, accepted: t.accepted,
-    done_at: t.done_at, done_hm: hm(t.done_at),
+    done_at: t.done_at, done_hm: hm(t.done_at), note: t.note ?? null, parent_comment: t.parent_comment ?? null,
     photos: t.photos.map((p: any) => ({ id: p.id, url: p.url ?? null, at: p.taken_at, page: p.page_no, hm: hm(p.taken_at) })),
   };
 }
@@ -168,7 +184,70 @@ export async function childState(fam: any) {
     mins_to_hard: dueToday ? toMin(fam.hard_deadline) - toMin(now.hm) : null,
     ...(await streakStats(fam, now.date, S, isSchool)),
     upcoming,
+    reward: fam.reward_goal ? { goal: fam.reward_goal, text: fam.reward_text ?? "" } : null,
+    track_time: !!fam.track_time,
+    started_at: fam.track_time ? await sessionStart(fam.id, S) : null,
     tasks: tasks.map((t) => shape(t, fam.tz)),
+  };
+}
+
+async function sessionStart(familyId: string, S: string) {
+  const { data } = await db.from("app_sessions").select("started_at").eq("family_id", familyId).eq("school_date", S).maybeSingle();
+  return data?.started_at ?? null;
+}
+
+// Optional time tracking: the child taps "Начать уроки"; the first tap of the day counts.
+export async function startSession(fam: any) {
+  if (!fam.track_time) throw new HttpError(400, "Учёт времени выключен");
+  const { S } = await activeDay(fam);
+  await db.from("app_sessions").upsert({ family_id: fam.id, school_date: S }, { onConflict: "family_id,school_date", ignoreDuplicates: true });
+  return await sessionStart(fam.id, S);
+}
+
+// What was assigned: written by the child (for the next school day) or by a parent (any task).
+export async function setNote(fam: any, taskId: number, note: string, byChild: boolean) {
+  if (byChild) await childTask(fam, taskId);
+  else await taskOf(fam, taskId);
+  await db.from("app_tasks").update({ note: note || null }).eq("id", taskId).eq("family_id", fam.id);
+}
+
+// Weekly report for the parent: per day and per subject, last 7 days up to today.
+export async function weeklyReport(fam: any) {
+  const now = localParts(fam.tz);
+  const from = addDays(now.date, -6);
+  const tasks = await loadTasks(fam.id, from, addDays(now.date, 1));
+  const { data: sess } = await db.from("app_sessions").select("school_date, started_at").eq("family_id", fam.id).gte("school_date", from);
+  const startOf = new Map<string, string>((sess ?? []).map((r: any) => [r.school_date, r.started_at]));
+  const days = new Map<string, any[]>();
+  for (const t of tasks) {
+    if (!t.required) continue;
+    if (!days.has(t.school_date)) days.set(t.school_date, []);
+    days.get(t.school_date)!.push(t);
+  }
+  const subjects = new Map<string, { title: string; emoji: string; total: number; onTime: number; late: number; skipped: number; missed: number }>();
+  const perDay = [...days.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1)).map(([date, ts]) => {
+    let onTime = 0, late = 0, skipped = 0, missed = 0;
+    for (const t of ts) {
+      const key = `${t.kind}:${t.ref_id}`;
+      const s = subjects.get(key) ?? { title: t.title, emoji: t.emoji, total: 0, onTime: 0, late: 0, skipped: 0, missed: 0 };
+      s.total++;
+      if (t.status === "skip_ok") { skipped++; s.skipped++; }
+      else if (isDone(t)) {
+        if (doneBy(t.done_at, fam.tz, addDays(date, -1), fam.soft_deadline)) { onTime++; s.onTime++; } else { late++; s.late++; }
+      } else if (date <= now.date) { missed++; s.missed++; }
+      subjects.set(key, s);
+    }
+    const last = ts.filter(isDone).map((t) => t.done_at).filter(Boolean).sort().pop() ?? null;
+    const start = startOf.get(date) ?? null;
+    const minutes = start && last ? Math.max(0, Math.round((new Date(last).getTime() - new Date(start).getTime()) / 60000)) : null;
+    return { date, total: ts.length, on_time: onTime, late, skipped, missed, minutes };
+  });
+  const list = [...subjects.values()];
+  return {
+    from, to: now.date, days: perDay,
+    subjects: list.sort((a, b) => b.missed + b.late - (a.missed + a.late)),
+    totals: perDay.reduce((a, d) => ({ total: a.total + d.total, on_time: a.on_time + d.on_time, late: a.late + d.late, skipped: a.skipped + d.skipped, missed: a.missed + d.missed }), { total: 0, on_time: 0, late: 0, skipped: 0, missed: 0 }),
+    ...(await streakStats(fam, now.date, now.date, schoolDays(fam.school_weekdays, await offSet(fam.id), holidaysOf(fam)))),
   };
 }
 
@@ -221,7 +300,7 @@ export async function checkAllDone(fam: any, S: string, quiet = false) {
 }
 
 // Parent actions; also used by the Telegram buttons. `undoOf` limits 'undo' to that action (Telegram buttons).
-export async function applyAction(fam: any, id: number, action: string, undoOf?: string): Promise<string> {
+export async function applyAction(fam: any, id: number, action: string, undoOf?: string, comment?: string): Promise<string> {
   const t = await taskOf(fam, id);
   const name = t.title;
   const clearAllDone = () => db.from("app_reminder_log").delete().eq("family_id", fam.id).eq("school_date", t.school_date).eq("slot", "all_done");
@@ -246,10 +325,10 @@ export async function applyAction(fam: any, id: number, action: string, undoOf?:
     case "redo": {
       const { data: ph } = await db.from("app_photos").select("id").eq("task_id", id).eq("active", true);
       const ids: number[] = (ph ?? []).map((p: any) => p.id);
-      await save({ status: "redo", accepted: false, done_at: null }, ids);
+      await save({ status: "redo", accepted: false, done_at: null, ...(comment !== undefined ? { parent_comment: comment || null } : {}) }, ids);
       if (ids.length) await db.from("app_photos").update({ active: false }).in("id", ids);
       await clearAllDone();
-      await notifyChild(fam.id, "🔄 Нужно переснять", `${name}: сфотографируй заново`);
+      await notifyChild(fam.id, "🔄 Нужно переснять", comment ? `${name}: ${comment}` : `${name}: сфотографируй заново`);
       return `🔄 Попросили переснять: ${name}`;
     }
     case "skip_ok":
@@ -262,6 +341,10 @@ export async function applyAction(fam: any, id: number, action: string, undoOf?:
       await save({ status: "skip_no", done_at: null });
       await notifyChild(fam.id, "❌ Пропуск не одобрен", `${name}: нужно выполнить`);
       return `❌ Пропуск отклонён: ${name}`;
+    case "comment":
+      await db.from("app_tasks").update({ parent_comment: comment || null }).eq("id", id);
+      if (comment) await notifyChild(fam.id, "💬 Комментарий родителя", `${name}: ${comment}`);
+      return `💬 Комментарий сохранён: ${name}`;
     case "reset":
       await db.from("app_tasks").update({ status: "todo", accepted: false, done_at: null, skip_reason: null, undo: null }).eq("id", id);
       await db.from("app_photos").update({ active: false }).eq("task_id", id);
