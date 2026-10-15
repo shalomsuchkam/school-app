@@ -18,6 +18,7 @@ export const CORS = {
   "access-control-allow-origin": "*",
   "access-control-allow-headers": "content-type, authorization, x-lang",
   "access-control-allow-methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
+  "access-control-expose-headers": "x-min-build",
 };
 export const json = (data: any, status = 200) =>
   new Response(JSON.stringify(data), { status, headers: { ...CORS, "content-type": "application/json" } });

@@ -37,6 +37,9 @@ jobs:
           deno-version: v2.x
       - if: env.SUPABASE_ACCESS_TOKEN != ''
         run: deno check supabase/functions/app/index.ts
+      - name: Unit tests
+        if: env.SUPABASE_ACCESS_TOKEN != ''
+        run: deno test --allow-env --allow-net supabase/functions/app/logic_test.ts
       - name: Deploy edge function "app"
         if: env.SUPABASE_ACCESS_TOKEN != ''
         # the function does its own auth (device tokens, webhook/cron secrets), so the gateway JWT check stays off

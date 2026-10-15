@@ -21,6 +21,8 @@ jobs:
       # RevenueCat public SDK keys (safe to ship in the app); purchases are off when unset
       EXPO_PUBLIC_RC_IOS_KEY: ${{ secrets.RC_IOS_KEY }}
       EXPO_PUBLIC_RC_ANDROID_KEY: ${{ secrets.RC_ANDROID_KEY }}
+      # Expo push service project (server push); empty = push off, local reminders still work
+      EAS_PROJECT_ID: ${{ secrets.EAS_PROJECT_ID }}
     outputs:
       signing: ${{ steps.apk.outputs.signing }}
     steps:
@@ -35,6 +37,10 @@ jobs:
           java-version: '17'
       - run: npm ci
       - run: npx tsc --noEmit
+      - name: Firebase config for push (optional)
+        env:
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+        run: if [ -n "$GOOGLE_SERVICES_JSON" ]; then printf '%s' "$GOOGLE_SERVICES_JSON" > google-services.json; fi
       - run: npx expo prebuild --platform android --no-install
       - name: Build release APK
         id: apk
@@ -91,6 +97,8 @@ jobs:
       # RevenueCat public SDK keys (safe to ship in the app); purchases are off when unset
       EXPO_PUBLIC_RC_IOS_KEY: ${{ secrets.RC_IOS_KEY }}
       EXPO_PUBLIC_RC_ANDROID_KEY: ${{ secrets.RC_ANDROID_KEY }}
+      # Expo push service project (server push); empty = push off, local reminders still work
+      EAS_PROJECT_ID: ${{ secrets.EAS_PROJECT_ID }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4

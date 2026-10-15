@@ -10,6 +10,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Btn, haptic, Icon, Txt } from '@/components/ui';
 import { api } from '@/lib/api';
 import { useT } from '@/lib/i18n';
+import { enqueuePhoto, isNetworkError } from '@/lib/offline';
 
 // Live camera only: deliberately no gallery picker, so every photo is taken right now.
 const MAX_SIDE = 2048;
@@ -48,7 +49,8 @@ export default function CameraScreen() {
   const [dims, setDims] = useState<{ w: number; h: number } | null>(null);
   const [page, setPage] = useState(Number(params.page) || 1);
   const [busy, setBusy] = useState(false);
-  const [sent, setSent] = useState(false);
+  // 'ok' = uploaded; 'queued' = no network, kept on the phone and sent later.
+  const [sent, setSent] = useState<false | 'ok' | 'queued'>(false);
   // Result of the quality probe, tied to the shot it was measured on (a retake drops it automatically).
   const [quality, setQuality] = useState<{ uri: string; low: boolean } | null>(null);
   // Access granted in the phone's Settings only shows up after a fresh check.
@@ -110,10 +112,24 @@ export default function CameraScreen() {
       if (long > MAX_SIDE) ctx.resize((dims?.w ?? 0) >= (dims?.h ?? 0) ? { width: MAX_SIDE } : { height: MAX_SIDE });
       const ref = await ctx.renderAsync();
       const out = await ref.saveAsync({ compress: 0.85, format: SaveFormat.JPEG });
-      await api.photo(taskId, out.uri);
+      try {
+        await api.photo(taskId, out.uri);
+      } catch (e) {
+        if (!isNetworkError(e)) throw e;
+        // Offline: keep the compressed photo and send it once the internet is back.
+        try {
+          await enqueuePhoto(taskId, out.uri, page);
+        } catch {
+          throw e;
+        }
+        haptic.warn();
+        setShot(null);
+        setSent('queued');
+        return;
+      }
       haptic.success();
       setShot(null);
-      if (page < 2) setSent(true);
+      if (page < 2) setSent('ok');
       else router.back();
     } catch (e) {
       Alert.alert(t('child.cam.sendFailTitle'), (e as Error).message || t('child.cam.sendFailText'));
@@ -179,17 +195,19 @@ export default function CameraScreen() {
       <View style={[styles.bottom, { paddingBottom: insets.bottom + 18 }]}>
         {sent ? (
           <View style={{ gap: 10, alignSelf: 'stretch', width: '100%', maxWidth: 560 }}>
-            <Txt v="headline" color="#fff" style={{ textAlign: 'center' }}>
-              {t('child.cam.sent')}
+            <Txt v="headline" color="#fff" style={{ textAlign: 'center' }} accessibilityLiveRegion="polite">
+              {sent === 'queued' ? `📶 ${t('child.queue.saved')}` : t('child.cam.sent')}
             </Txt>
-            <Btn
-              title={t('child.cam.page2')}
-              icon="add"
-              onPress={() => {
-                setSent(false);
-                setPage(2);
-              }}
-            />
+            {page < 2 ? (
+              <Btn
+                title={t('child.cam.page2')}
+                icon="add"
+                onPress={() => {
+                  setSent(false);
+                  setPage(2);
+                }}
+              />
+            ) : null}
             <Btn title={t('common.done')} kind="plain" onPress={() => router.back()} />
           </View>
         ) : shot ? (

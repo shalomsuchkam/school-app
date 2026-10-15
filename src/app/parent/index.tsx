@@ -4,14 +4,34 @@ import { useCallback, useEffect, useState } from 'react';
 import { AppState, Pressable, StyleSheet, View } from 'react-native';
 
 import { Paywall } from '@/components/Paywall';
+import { PhoneLimitGuide } from '@/components/PhoneLimitGuide';
 import { PhotoViewer } from '@/components/PhotoViewer';
 import { ParentTaskCard } from '@/components/TaskCards';
-import { Btn, Chip, Empty, Group, Loading, Row, Screen, SectionLabel, Txt, useToast } from '@/components/ui';
+import { Btn, Chip, Empty, Field, Group, Icon, IconBtn, Loading, Row, Screen, SectionLabel, Sheet, Txt, useToast } from '@/components/ui';
 import { api, ApiError, isDone, isPaywall, type Day, type Overview, type ParentAction, type Task } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
-import { longDate } from '@/lib/format';
-import { useT } from '@/lib/i18n';
+import { longDate, toMin } from '@/lib/format';
+import { tn, useT } from '@/lib/i18n';
 import { gradients, radius, usePalette } from '@/lib/theme';
+
+// What the parent edits in the task sheet: a comment for "retake", a free comment, or the assignment note.
+type ToolMode = 'redo' | 'comment' | 'note';
+type Tool = { task: Task; mode: ToolMode; text: string; initial: string };
+
+const addDays = (iso: string, n: number) => {
+  const d = new Date(iso + 'T00:00:00Z');
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+};
+// The family's calendar date (the server reasons in the family time zone).
+function todayIn(tz: string) {
+  try {
+    return new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+  } catch {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }
+}
 
 export default function Today() {
   const p = usePalette();
@@ -25,6 +45,13 @@ export default function Today() {
   const [openDay, setOpenDay] = useState<string | null>(null);
   const [viewer, setViewer] = useState<{ url: string; caption: string; id: number } | null>(null);
   const [paywall, setPaywall] = useState(false);
+  const [hard, setHard] = useState<string | null>(null);
+  const [today, setToday] = useState<string | null>(null);
+  const [tool, setTool] = useState<Tool | null>(null);
+  // the sheet keeps its last content while it slides away
+  const [toolOpen, setToolOpen] = useState(false);
+  const [toolBusy, setToolBusy] = useState(false);
+  const [guide, setGuide] = useState(false);
   const toast = useToast();
 
   const load = useCallback(async () => {
@@ -32,6 +59,8 @@ export default function Today() {
       const [ov, me] = await Promise.all([api.overview(), api.me()]);
       setData(ov);
       setName(me.family.child_name);
+      setHard(me.family.hard_deadline);
+      setToday(todayIn(me.family.tz));
       setError(null);
       setPaywall(false);
     } catch (e) {
@@ -71,16 +100,46 @@ export default function Today() {
         (e: Error) => toast.show(e.message),
       )
       .finally(load);
-  const act = async (task: Task, a: ParentAction) => {
+  const run = async (task: Task, a: ParentAction, comment?: string) => {
     setBusy(task.id);
     try {
-      const r = await api.action(task.id, a);
+      const r = await api.action(task.id, a, comment);
       toast.show(r.text, a === 'reset' ? undefined : { label: t('parent.undo'), run: () => undo(task) });
       await load();
     } catch (e) {
       toast.show((e as Error).message);
     } finally {
       setBusy(null);
+    }
+  };
+  const openTool = (task: Task, mode: ToolMode) => {
+    const initial = mode === 'comment' ? (task.parent_comment ?? '') : mode === 'note' ? (task.note ?? '') : '';
+    setTool({ task, mode, text: initial, initial });
+    setToolOpen(true);
+  };
+  // "Retake" first asks what to fix (optional), then sends it with the action
+  const act = (task: Task, a: ParentAction) => (a === 'redo' ? openTool(task, 'redo') : run(task, a));
+  const submitTool = async () => {
+    if (!tool) return;
+    const { task, mode } = tool;
+    const text = tool.text.trim();
+    if (mode === 'redo') {
+      setToolOpen(false);
+      return run(task, 'redo', text || undefined);
+    }
+    setToolBusy(true);
+    try {
+      if (mode === 'comment') toast.show((await api.action(task.id, 'comment', text)).text);
+      else {
+        await api.parentNote(task.id, text);
+        toast.show(t('parent.task.saved'));
+      }
+      setToolOpen(false);
+      await load();
+    } catch (e) {
+      toast.show((e as Error).message);
+    } finally {
+      setToolBusy(false);
     }
   };
   const nudge = async () => {
@@ -98,10 +157,19 @@ export default function Today() {
   const left = active.total - active.done;
   const pending = active.tasks.filter((x) => x.status === 'skip_pending');
   const toReview = active.tasks.filter((x) => x.status === 'done' && x.needs_photo && !x.accepted);
+  // after the hard deadline on the due day (the day before the active school day) with required work left
+  const unfinished = active.tasks.filter((x) => x.required && !isDone(x)).length;
+  const overdue = !!hard && today === addDays(data.active, -1) && toMin(data.now_hm) >= toMin(hard) && unfinished > 0;
+  const toolTitle = !tool ? '' : tool.mode === 'redo' ? t('parent.task.redoTitle') : tool.mode === 'comment' ? t('parent.task.comment') : t('parent.task.note');
 
   return (
     <>
-      <Screen title={name || t('parent.tab.today')} subtitle={t('parent.today.subtitle', { date: longDate(active.date) })} onRefresh={load}>
+      <Screen
+        title={name || t('parent.tab.today')}
+        subtitle={t('parent.today.subtitle', { date: longDate(active.date) })}
+        onRefresh={load}
+        right={<IconBtn icon="stats-chart-outline" label={t('parent.today.report')} onPress={() => router.push('/parent/report')} />}
+      >
         <View style={styles.seg}>
           <Chip label={t('parent.today.segDay')} selected={mode === 'day'} onPress={() => setMode('day')} />
           <Chip label={t('parent.today.segHistory')} selected={mode === 'history'} onPress={() => setMode('history')} />
@@ -131,6 +199,21 @@ export default function Today() {
                 <View style={[styles.fill, { width: `${active.total ? (active.done / active.total) * 100 : 0}%` }]} />
               </View>
             </LinearGradient>
+
+            {overdue ? (
+              <View style={[styles.overdue, { backgroundColor: p.badSoft, borderColor: p.bad }]} accessibilityRole="alert">
+                <View style={{ flexDirection: 'row', gap: 10, alignItems: 'center' }}>
+                  <Icon name="phone-portrait-outline" size={22} color={p.bad} />
+                  <Txt v="headline" color={p.bad} style={{ flex: 1 }}>
+                    {t('parent.today.overdueTitle')}
+                  </Txt>
+                </View>
+                <Txt v="callout" style={{ marginTop: 4 }}>
+                  {tn('parent.today.overdueText', unfinished, { hm: hard ?? '' })}
+                </Txt>
+                <Btn title={t('parent.today.overdueBtn')} kind="bad" small icon="lock-closed-outline" onPress={() => setGuide(true)} style={{ marginTop: 10, alignSelf: 'flex-start' }} />
+              </View>
+            ) : null}
 
             {pending.length || toReview.length ? (
               <View style={[styles.attn, { backgroundColor: p.warnSoft }]}>
@@ -162,20 +245,96 @@ export default function Today() {
                         {g.k} · {g.items.filter(isDone).length}/{g.items.length}
                       </SectionLabel>
                       {g.items.map((x) => (
-                        <ParentTaskCard key={x.id} t={x} busy={busy === x.id} onAction={act} onOpen={open} />
+                        <TaskBlock key={x.id} x={x} busy={busy === x.id} act={act} open={open} tool={openTool} overdue={overdue} />
                       ))}
                     </View>
                   ))}
               </>
             )}
+            <Btn title={t('parent.today.report')} icon="📊" kind="secondary" onPress={() => router.push('/parent/report')} style={{ marginTop: 16 }} />
           </>
         ) : (
-          <History days={history} openDay={openDay} setOpenDay={setOpenDay} busy={busy} act={act} open={open} />
+          <History days={history} openDay={openDay} setOpenDay={setOpenDay} busy={busy} act={act} open={open} tool={openTool} />
         )}
       </Screen>
       <PhotoViewer url={viewer?.url ?? null} id={viewer?.id} caption={viewer?.caption} onClose={() => setViewer(null)} />
-      {toast.node}
+      <Sheet visible={toolOpen} title={toolTitle} onClose={() => setToolOpen(false)} overlay={toolOpen ? toast.node : null}>
+        {tool ? (
+          <>
+            <Txt v="headline" style={{ marginBottom: 10 }} numberOfLines={2}>
+              {tool.task.emoji} {tool.task.label}
+            </Txt>
+            <Field
+              value={tool.text}
+              onChangeText={(text) => setTool({ ...tool, text })}
+              placeholder={t(tool.mode === 'redo' ? 'parent.task.redoPh' : tool.mode === 'comment' ? 'parent.task.commentPh' : 'parent.task.notePh')}
+              maxLength={300}
+              multiline
+              autoFocus
+              style={{ minHeight: 88, textAlignVertical: 'top' }}
+            />
+            <Txt v="sub" color={p.muted} style={{ marginBottom: 14, marginLeft: 4 }}>
+              {t(tool.mode === 'redo' ? 'parent.task.redoHint' : tool.mode === 'comment' ? 'parent.task.commentHint' : 'parent.task.noteHint')}
+            </Txt>
+            <Btn
+              title={tool.mode === 'redo' ? t('parent.task.redoBtn') : tool.mode === 'comment' ? t('parent.task.send') : t('common.save')}
+              kind={tool.mode === 'redo' ? 'bad' : 'primary'}
+              loading={toolBusy}
+              disabled={tool.mode !== 'redo' && tool.text.trim() === tool.initial.trim()}
+              onPress={submitTool}
+            />
+          </>
+        ) : null}
+      </Sheet>
+      <PhoneLimitGuide visible={guide} onClose={() => setGuide(false)} />
+      {toolOpen ? null : toast.node}
     </>
+  );
+}
+
+// The card itself belongs to TaskCards; long-press it (or use the links below) to comment or edit the assignment.
+function TaskBlock({
+  x,
+  busy,
+  act,
+  open,
+  tool,
+  overdue,
+}: {
+  x: Task;
+  busy: boolean;
+  act: (t: Task, a: ParentAction) => void;
+  open: (url: string, caption: string, id: number) => void;
+  tool: (t: Task, mode: ToolMode) => void;
+  overdue?: boolean;
+}) {
+  const p = usePalette();
+  const t = useT();
+  const link = (mode: 'comment' | 'note', icon: 'chatbubble-outline' | 'create-outline', value: string | null, label: string) => (
+    <Pressable
+      onPress={() => tool(x, mode)}
+      hitSlop={6}
+      accessibilityRole="button"
+      accessibilityLabel={value ? `${label}: ${value}` : label}
+      style={({ pressed }) => [styles.link, { backgroundColor: pressed ? p.fill : 'transparent' }]}
+    >
+      <Icon name={icon} size={15} color={value ? p.brand : p.muted} />
+      <Txt v="sub" color={value ? p.ink : p.muted} numberOfLines={1} style={{ flexShrink: 1 }}>
+        {value ? `«${value}»` : label}
+      </Txt>
+    </Pressable>
+  );
+  return (
+    <View>
+      {/* not accessible as a whole, so screen readers still reach the card's own buttons */}
+      <Pressable accessible={false} onLongPress={() => tool(x, 'comment')} delayLongPress={400}>
+        <ParentTaskCard t={x} busy={busy} onAction={act} onOpen={open} overdue={overdue} />
+      </Pressable>
+      <View style={styles.tools} accessibilityLabel={t('parent.task.toolsA11y', { name: x.label })}>
+        {link('comment', 'chatbubble-outline', null, t('parent.task.comment'))}
+        {link('note', 'create-outline', null, t('parent.task.note'))}
+      </View>
+    </View>
   );
 }
 
@@ -186,6 +345,7 @@ function History({
   busy,
   act,
   open,
+  tool,
 }: {
   days: Day[];
   openDay: string | null;
@@ -193,6 +353,7 @@ function History({
   busy: number | null;
   act: (t: Task, a: ParentAction) => void;
   open: (url: string, caption: string, id: number) => void;
+  tool: (t: Task, mode: ToolMode) => void;
 }) {
   const p = usePalette();
   const t = useT();
@@ -216,7 +377,7 @@ function History({
             {openDay === d.date ? (
               <View style={{ marginTop: 8 }}>
                 {d.tasks.map((x) => (
-                  <ParentTaskCard key={x.id} t={x} busy={busy === x.id} onAction={act} onOpen={open} />
+                  <TaskBlock key={x.id} x={x} busy={busy === x.id} act={act} open={open} tool={tool} />
                 ))}
               </View>
             ) : null}
@@ -234,4 +395,7 @@ const styles = StyleSheet.create({
   fill: { height: 8, borderRadius: 4, backgroundColor: '#fff' },
   attn: { borderRadius: radius.l, padding: 14, marginTop: 10, flexDirection: 'row' },
   dot: { width: 12, height: 12, borderRadius: 6 },
+  overdue: { borderRadius: radius.l, padding: 14, marginTop: 10, borderWidth: 1 },
+  tools: { flexDirection: 'row', gap: 6, marginTop: -6, marginBottom: 10, paddingHorizontal: 4 },
+  link: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 8, paddingVertical: 5, borderRadius: 8, flexShrink: 1, maxWidth: '55%' },
 });

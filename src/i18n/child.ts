@@ -146,6 +146,36 @@ const b: Bundle = {
     'child.skip.placeholder': 'Напиши причину',
     'child.skip.send': 'Отправить запрос',
 
+    // "What was assigned" note, parent comment
+    'child.note.add': 'Что задали',
+    'child.note.label': 'Задали',
+    'child.note.edit': 'Изменить запись «Что задали»',
+    'child.note.hint': 'Запиши коротко, что задали — например, «§12, упр. 5»',
+    'child.note.placeholder': '§12, упр. 5',
+    'child.note.clear': 'Очистить',
+    'child.note.saveFail': 'Запись не сохранилась',
+    'child.comment.label': 'Комментарий родителя',
+
+    // Homework time tracking
+    'child.time.start': '▶️ Начать уроки',
+    'child.time.hint': 'Нажми, когда садишься за уроки',
+    'child.time.started': 'Старт в {hm}',
+    'child.time.elapsed': 'За уроками уже {dur}',
+
+    // Reward for a streak
+    'child.reward.title': 'Награда',
+    'child.reward.left': { one: 'Остался {n} день', few: 'Осталось {n} дня', many: 'Осталось {n} дней', other: 'Осталось {n} дня' },
+    'child.reward.earned': 'Награда заработана! Покажи родителю 🎉',
+    'child.reward.a11y': 'Дней подряд: {streak} из {goal}',
+
+    // Offline photo queue
+    'child.queue.saved': 'Сохранено, отправится, когда появится интернет',
+    'child.queue.badge': 'Ждут отправки: {n}',
+    'child.queue.badgeHint': 'Фото отправятся сами, когда появится интернет',
+    'child.queue.sent': { one: 'Отправлено {n} фото из очереди ✅', few: 'Отправлено {n} фото из очереди ✅', many: 'Отправлено {n} фото из очереди ✅', other: 'Отправлено {n} фото из очереди ✅' },
+    'child.queue.dropped': { one: '{n} фото не отправлено: задание уже неактуально', few: '{n} фото не отправлено: задание уже неактуально', many: '{n} фото не отправлено: задание уже неактуально', other: '{n} фото не отправлено: задание уже неактуально' },
+    'child.st.queued': 'Фото ждёт интернета',
+
     // Local reminders
     'child.rem.channel': 'Напоминания об уроках',
     'child.rem.timeTitle': '📚 Пора за уроки',
@@ -279,6 +309,36 @@ const b: Bundle = {
     'child.skip.placeholder': 'Себебін жаз',
     'child.skip.send': 'Сұрау жіберу',
 
+    // "What was assigned" note, parent comment
+    'child.note.add': 'Не берілді',
+    'child.note.label': 'Берілгені',
+    'child.note.edit': '«Не берілді» жазбасын өзгерту',
+    'child.note.hint': 'Не берілгенін қысқаша жаз — мысалы, «§12, 5-жаттығу»',
+    'child.note.placeholder': '§12, 5-жаттығу',
+    'child.note.clear': 'Тазарту',
+    'child.note.saveFail': 'Жазба сақталмады',
+    'child.comment.label': 'Ата-ананың пікірі',
+
+    // Homework time tracking
+    'child.time.start': '▶️ Сабаққа кірісу',
+    'child.time.hint': 'Сабаққа отырғанда бас',
+    'child.time.started': '{hm}-де бастадың',
+    'child.time.elapsed': 'Сабаққа {dur} отырдың',
+
+    // Reward for a streak
+    'child.reward.title': 'Сыйлық',
+    'child.reward.left': { one: '{n} күн қалды', other: '{n} күн қалды' },
+    'child.reward.earned': 'Сыйлықты алдың! Ата-анаңа көрсет 🎉',
+    'child.reward.a11y': 'Қатарынан күндер: {goal} ішінен {streak}',
+
+    // Offline photo queue
+    'child.queue.saved': 'Сақталды, интернет пайда болғанда жіберіледі',
+    'child.queue.badge': 'Жіберуді күтуде: {n}',
+    'child.queue.badgeHint': 'Интернет пайда болғанда фото өзі жіберіледі',
+    'child.queue.sent': { one: 'Кезектегі {n} фото жіберілді ✅', other: 'Кезектегі {n} фото жіберілді ✅' },
+    'child.queue.dropped': { one: '{n} фото жіберілмеді: тапсырма енді өзекті емес', other: '{n} фото жіберілмеді: тапсырма енді өзекті емес' },
+    'child.st.queued': 'Фото интернетті күтуде',
+
     // Local reminders
     'child.rem.channel': 'Сабақ туралы еске салғыштар',
     'child.rem.timeTitle': '📚 Сабаққа отыратын уақыт',
@@ -411,6 +471,36 @@ const b: Bundle = {
     'child.skip.other': 'Other reason',
     'child.skip.placeholder': 'Write the reason',
     'child.skip.send': 'Send request',
+
+    // "What was assigned" note, parent comment
+    'child.note.add': 'What was assigned',
+    'child.note.label': 'Assigned',
+    'child.note.edit': 'Edit the "what was assigned" note',
+    'child.note.hint': 'Jot down what was assigned, e.g. "§12, ex. 5"',
+    'child.note.placeholder': '§12, ex. 5',
+    'child.note.clear': 'Clear',
+    'child.note.saveFail': "Couldn't save the note",
+    'child.comment.label': "Parent's comment",
+
+    // Homework time tracking
+    'child.time.start': '▶️ Start homework',
+    'child.time.hint': 'Tap when you sit down to study',
+    'child.time.started': 'Started at {hm}',
+    'child.time.elapsed': '{dur} of homework so far',
+
+    // Reward for a streak
+    'child.reward.title': 'Reward',
+    'child.reward.left': { one: '{n} day to go', other: '{n} days to go' },
+    'child.reward.earned': 'Reward earned! Show it to your parent 🎉',
+    'child.reward.a11y': 'Days in a row: {streak} of {goal}',
+
+    // Offline photo queue
+    'child.queue.saved': "Saved — it'll be sent when you're back online",
+    'child.queue.badge': 'Waiting to send: {n}',
+    'child.queue.badgeHint': "Photos will be sent automatically once you're online",
+    'child.queue.sent': { one: 'Sent {n} queued photo ✅', other: 'Sent {n} queued photos ✅' },
+    'child.queue.dropped': { one: "{n} photo wasn't sent: the task is no longer active", other: "{n} photos weren't sent: the task is no longer active" },
+    'child.st.queued': 'Photo waiting for internet',
 
     // Local reminders
     'child.rem.channel': 'Homework reminders',

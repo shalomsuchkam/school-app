@@ -9,6 +9,17 @@ import { useT } from '@/lib/i18n';
 import { EMOJIS, SUBJECT_PRESETS } from '@/lib/presets';
 import { usePalette } from '@/lib/theme';
 
+type Parity = 0 | 1 | 2;
+// ISO week number parity of a date: 1 = odd week, 2 = even week (matches the server's lessons_alt keys)
+function isoWeekParity(d: Date): 1 | 2 {
+  const x = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  const wd = x.getUTCDay() || 7;
+  x.setUTCDate(x.getUTCDate() + 4 - wd);
+  const week = Math.ceil(((x.getTime() - Date.UTC(x.getUTCFullYear(), 0, 1)) / 86400000 + 1) / 7);
+  return week % 2 ? 1 : 2;
+}
+const hasAlt = (s: Setup) => (['1', '2'] as const).some((k) => Object.values(s.lessons_alt?.[k] ?? {}).some((ids) => ids.length));
+
 export default function Schedule() {
   const p = usePalette();
   const t = useT();
@@ -19,6 +30,12 @@ export default function Schedule() {
     const w = new Date().getDay();
     return w === 0 ? 1 : w;
   });
+  const [parity, setParity] = useState<Parity>(0);
+  // the toggle follows the saved data; switching it on only shows the week picker until lessons are added
+  const [altWanted, setAltWanted] = useState(false);
+  const [nowParity] = useState(() => isoWeekParity(new Date()));
+  // days off are offered from tomorrow on: computed once per mount, not on every render
+  const [start] = useState(() => new Date());
   const [picker, setPicker] = useState(false);
   const [edit, setEdit] = useState<Partial<Subject> | null>(null);
   // picker and editor share one Sheet; keep showing the last content while it slides away
@@ -45,13 +62,21 @@ export default function Schedule() {
   if (!setup || !fam) return <Loading error={error} onRetry={load} />;
 
   const byId = new Map(setup.subjects.map((s) => [s.id, s]));
-  const lessons = setup.lessons[String(day)] ?? [];
+  const altOn = altWanted || hasAlt(setup);
+  const week: Parity = altOn ? parity : 0;
+  const setOf = (w: Parity, d: number) => (w ? (setup.lessons_alt?.[w === 1 ? '1' : '2']?.[String(d)] ?? []) : (setup.lessons[String(d)] ?? []));
+  const lessons = setOf(week, day);
   const isSchool = fam.school_weekdays.includes(day);
 
   const saveLessons = async (ids: number[]) => {
-    setSetup({ ...setup, lessons: { ...setup.lessons, [String(day)]: ids } });
+    const w = week;
+    if (w) {
+      const k = w === 1 ? '1' : '2';
+      const alt = setup.lessons_alt ?? { '1': {}, '2': {} };
+      setSetup({ ...setup, lessons_alt: { ...alt, [k]: { ...alt[k], [String(day)]: ids } } });
+    } else setSetup({ ...setup, lessons: { ...setup.lessons, [String(day)]: ids } });
     try {
-      await api.setLessons(day, ids);
+      await api.setLessons(day, ids, w);
     } catch (e) {
       toast.show((e as Error).message);
       load();
@@ -68,6 +93,43 @@ export default function Schedule() {
     const before = lessons;
     saveLessons(lessons.filter((_, k) => k !== i));
     toast.show(t('parent.schedule.removed'), { label: t('parent.restore'), run: () => saveLessons(before) });
+  };
+  const toggleAlt = (on: boolean) => {
+    if (on) {
+      setAltWanted(true);
+      setParity(nowParity);
+      return;
+    }
+    if (!hasAlt(setup)) {
+      setAltWanted(false);
+      setParity(0);
+      return;
+    }
+    Alert.alert(t('parent.schedule.altOffTitle'), t('parent.schedule.altOffMsg'), [
+      { text: t('common.cancel'), style: 'cancel' },
+      {
+        text: t('parent.schedule.altOff'),
+        style: 'destructive',
+        onPress: async () => {
+          const jobs: Promise<unknown>[] = [];
+          for (const k of ['1', '2'] as const)
+            for (const [d, ids] of Object.entries(setup.lessons_alt?.[k] ?? {})) if (ids.length) jobs.push(api.setLessons(Number(d), [], k === '1' ? 1 : 2));
+          setSetup({ ...setup, lessons_alt: { '1': {}, '2': {} } });
+          setAltWanted(false);
+          setParity(0);
+          try {
+            await Promise.all(jobs);
+          } catch (e) {
+            toast.show((e as Error).message);
+          }
+          load();
+        },
+      },
+    ]);
+  };
+  const weekLabel = (w: Parity) => {
+    const label = t(w === 0 ? 'parent.schedule.every' : w === 1 ? 'parent.schedule.odd' : 'parent.schedule.even');
+    return w && w === nowParity ? t('parent.schedule.now', { label }) : label;
   };
   const toggleSchoolDay = async (on: boolean) => {
     const w = on ? [...fam.school_weekdays, day].sort() : fam.school_weekdays.filter((x) => x !== day);
@@ -106,10 +168,12 @@ export default function Schedule() {
   // next three weeks of school days for the "days off" picker
   const upcoming: string[] = [];
   for (let i = 1; upcoming.length < 15 && i < 40; i++) {
-    const d = new Date();
+    const d = new Date(start);
     d.setDate(d.getDate() + i);
     const w = d.getDay() === 0 ? 7 : d.getDay();
-    if (fam.school_weekdays.includes(w)) upcoming.push(localIso(d));
+    const iso = localIso(d);
+    // public holidays are listed separately (read-only)
+    if (fam.school_weekdays.includes(w) && !setup.holidays?.includes(iso)) upcoming.push(iso);
   }
   const toggleOff = async (date: string) => {
     const off = !setup.days_off.includes(date);
@@ -124,7 +188,7 @@ export default function Schedule() {
           {[1, 2, 3, 4, 5, 6, 7].map((d) => {
             const sel = d === day;
             const school = fam.school_weekdays.includes(d);
-            const n = (setup.lessons[String(d)] ?? []).length;
+            const n = setOf(week, d).length;
             return (
               <Pressable key={d} onPress={() => setDay(d)} style={[styles.day, { backgroundColor: sel ? p.brand : p.card, opacity: school || sel ? 1 : 0.55 }]}>
                 <Txt v="headline" color={sel ? '#fff' : p.ink}>
@@ -138,7 +202,33 @@ export default function Schedule() {
           })}
         </View>
 
-        <SectionLabel>{wdLong(day)}</SectionLabel>
+        <Group style={{ marginTop: 14 }}>
+          <ToggleRow icon="🔁" title={t('parent.schedule.alt')} subtitle={t('parent.schedule.altSub')} value={altOn} onChange={toggleAlt} />
+        </Group>
+        {altOn ? (
+          <>
+            <View style={[styles.seg, { backgroundColor: p.fill }]} accessibilityRole="tablist">
+              {([0, 1, 2] as Parity[]).map((w) => (
+                <Pressable
+                  key={w}
+                  onPress={() => setParity(w)}
+                  accessibilityRole="tab"
+                  accessibilityState={{ selected: week === w }}
+                  style={[styles.segItem, week === w && [styles.segOn, { backgroundColor: p.card, shadowColor: p.shadow }]]}
+                >
+                  <Txt v="sub" color={week === w ? p.ink : p.muted} numberOfLines={1} style={{ textAlign: 'center' }}>
+                    {weekLabel(w)}
+                  </Txt>
+                </Pressable>
+              ))}
+            </View>
+            <Txt v="sub" color={p.muted} style={{ marginTop: 8, marginHorizontal: 6 }}>
+              {t('parent.schedule.altHint')}
+            </Txt>
+          </>
+        ) : null}
+
+        <SectionLabel>{altOn ? `${wdLong(day)} · ${weekLabel(week)}` : wdLong(day)}</SectionLabel>
         <Group>
           <ToggleRow icon="🏫" title={t('parent.schedule.schoolDay')} value={isSchool} onChange={toggleSchoolDay} />
         </Group>
@@ -177,7 +267,11 @@ export default function Schedule() {
               </Group>
             ) : (
               <Group>
-                <Empty icon="📭" title={t('parent.schedule.noLessons')} text={t('parent.schedule.noLessonsText', { add: t('common.add') })} />
+                <Empty icon="📭" title={t('parent.schedule.noLessons')} text={t('parent.schedule.noLessonsText', { add: t('common.add') })}>
+                  {week && setOf(0, day).length ? (
+                    <Btn small kind="secondary" icon="copy-outline" title={t('parent.schedule.copyEvery')} onPress={() => saveLessons(setOf(0, day))} style={{ marginTop: 14 }} />
+                  ) : null}
+                </Empty>
               </Group>
             )}
           </>
@@ -213,6 +307,21 @@ export default function Schedule() {
             <Chip key={d} label={`${setup.days_off.includes(d) ? '🏖 ' : ''}${shortDate(d)}`} selected={setup.days_off.includes(d)} onPress={() => toggleOff(d)} />
           ))}
         </View>
+        {setup.holidays?.length ? (
+          <>
+            <Txt v="sub" color={p.muted} style={{ marginTop: 16, marginBottom: 4, marginLeft: 6 }}>
+              🎉 {t('parent.schedule.holidays')}
+            </Txt>
+            <Txt v="sub" color={p.muted} style={{ marginBottom: 8, marginLeft: 6 }}>
+              {t('parent.schedule.holidaysHint')}
+            </Txt>
+            <View style={styles.wrap}>
+              {setup.holidays.map((d) => (
+                <Chip key={d} label={shortDate(d)} tone="muted" />
+              ))}
+            </View>
+          </>
+        ) : null}
       </Screen>
 
       {/* One Modal for both: swapping two sibling Modals in one update never presents the second on iOS */}
@@ -267,4 +376,7 @@ const styles = StyleSheet.create({
   day: { flex: 1, borderRadius: 14, paddingVertical: 10, alignItems: 'center' },
   mini: { width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
   wrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  seg: { flexDirection: 'row', borderRadius: 12, padding: 3, marginTop: 10 },
+  segItem: { flex: 1, borderRadius: 10, paddingVertical: 8, paddingHorizontal: 4 },
+  segOn: { shadowOpacity: 0.08, shadowRadius: 4, shadowOffset: { width: 0, height: 1 }, elevation: 1 },
 });

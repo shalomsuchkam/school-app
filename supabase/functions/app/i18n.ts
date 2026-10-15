@@ -1,6 +1,12 @@
 // Server messages are written in Russian; clients send x-lang (ru | kk | en) and get them translated here.
 // Texts like "👍 Принято: Математика" are matched by the part before ": " and the rest is kept as is.
 const T: Record<string, { kk: string; en: string }> = {
+  "Ученик не найден": { kk: "Оқушы табылмады", en: "Student not found" },
+  "Не больше 8 учеников в семье": { kk: "Отбасында 8 оқушыдан артық болмайды", en: "At most 8 students per family" },
+  "В семье должен остаться хотя бы один ученик": { kk: "Отбасында кемінде бір оқушы қалуы керек", en: "A family needs at least one student" },
+  "Ошибка сервера": { kk: "Сервер қатесі", en: "Server error" },
+  "Учёт времени выключен": { kk: "Уақыт есебі өшірулі", en: "Time tracking is off" },
+  "💬 Комментарий сохранён": { kk: "💬 Пікір сақталды", en: "💬 Comment saved" },
   "Telegram пока не настроен": { kk: "Telegram әзірге бапталмаған", en: "Telegram is not set up yet" },
   "Вход устарел — подключите устройство заново кодом": { kk: "Кіру мерзімі өтті — құрылғыны кодпен қайта қосыңыз", en: "Sign-in expired — reconnect this device with a code" },
   "Вы единственный родитель. Сначала пригласите второго родителя.": {

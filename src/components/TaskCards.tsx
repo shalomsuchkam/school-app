@@ -109,6 +109,47 @@ function Thumbs({ t, onOpen }: { t: Task; onOpen: (url: string, caption: string,
   );
 }
 
+// "What was assigned" (child-editable on lessons) and the parent's comment on the photos.
+function Notes({ t, onNote }: { t: Task; onNote?: (t: Task) => void }) {
+  const p = usePalette();
+  const tt = useT();
+  const note = t.note?.trim() || null;
+  const comment = t.parent_comment?.trim() || null;
+  const editable = !!onNote && t.kind === 'lesson';
+  if (!note && !comment && !editable) return null;
+  return (
+    <View style={styles.notes}>
+      {comment ? (
+        <View accessible accessibilityLabel={`${tr('child.comment.label')}: ${comment}`} style={[styles.comment, { backgroundColor: p.warnSoft, borderColor: p.warn }]}>
+          <Txt v="caps" color={p.ink2} style={{ textTransform: 'uppercase' }} numberOfLines={1}>
+            💬 {tt('child.comment.label')}
+          </Txt>
+          <Txt v="callout" style={{ marginTop: 2 }}>
+            {comment}
+          </Txt>
+        </View>
+      ) : null}
+      {note || editable ? (
+        <Pressable
+          disabled={!editable}
+          onPress={() => onNote?.(t)}
+          hitSlop={6}
+          accessibilityRole={editable ? 'button' : undefined}
+          accessibilityLabel={note ? `${tr('child.note.label')}: ${note}` : tr('child.note.add')}
+          accessibilityHint={editable && note ? tr('child.note.edit') : undefined}
+          style={({ pressed }) => [styles.note, { backgroundColor: note ? p.fill : 'transparent', borderColor: note ? 'transparent' : p.line, opacity: pressed ? 0.7 : 1 }]}
+        >
+          <Icon name={note ? 'document-text-outline' : 'create-outline'} size={16} color={note ? p.ink2 : p.muted} style={{ marginTop: 2 }} />
+          <Txt v="callout" color={note ? p.ink : p.muted} numberOfLines={4} style={{ flex: 1 }}>
+            {note ?? tt('child.note.add')}
+          </Txt>
+          {editable && note ? <Icon name="pencil" size={14} color={p.muted} style={{ marginTop: 3 }} /> : null}
+        </Pressable>
+      ) : null}
+    </View>
+  );
+}
+
 function Check({ on, label, onPress }: { on: boolean; label: string; onPress: () => void }) {
   const p = usePalette();
   return (
@@ -124,24 +165,35 @@ export function ChildTaskCard({
   onSkip,
   onCheck,
   onOpen,
+  onNote,
   overdue = false,
+  queued = 0,
 }: {
   t: Task;
   onPhoto: (t: Task) => void;
   onSkip: (t: Task) => void;
   onCheck: (t: Task, done: boolean) => void;
   onOpen: (url: string, caption: string, id: number) => void;
+  /** Opens the "what was assigned" editor (lessons only). */
+  onNote?: (t: Task) => void;
   /** The deadline has passed: unfinished required items turn red. */
   overdue?: boolean;
+  /** Photos of this task waiting in the offline queue. */
+  queued?: number;
 }) {
   const tt = useT();
-  const [tone, text] = statusFor(t, 'child', overdue);
+  const [tone0, text0] = statusFor(t, 'child', overdue);
+  // A photo saved offline counts as "on its way" until it actually reaches the server.
+  const waiting = queued > 0 && t.status !== 'done' && t.status !== 'skip_ok';
+  const tone: Tone = waiting ? 'wait' : tone0;
+  const text = waiting ? `${tr('child.st.queued')}${queued > 1 ? ` · ${tn('child.st.photos', queued)}` : ''}` : text0;
   // Simple checklist item: one big tick, nothing else.
   if (!t.needs_photo) {
     const on = t.status === 'done' || t.status === 'skip_ok';
     return (
       <Shell tone={tone}>
         <Head t={t} tone={tone} text={text} right={t.status === 'skip_pending' ? null : <Check on={on} label={t.label} onPress={() => onCheck(t, !on)} />} />
+        <Notes t={t} onNote={onNote} />
       </Shell>
     );
   }
@@ -151,6 +203,7 @@ export function ChildTaskCard({
   return (
     <Shell tone={tone}>
       <Head t={t} tone={tone} text={text} />
+      <Notes t={t} onNote={onNote} />
       <Thumbs t={t} onOpen={onOpen} />
       {t.status === 'done' && t.photos.length < 2 ? (
         <View style={styles.btns}>
@@ -216,6 +269,7 @@ export function ParentTaskCard({
   return (
     <Shell tone={tone}>
       <Head t={t} tone={tone} text={text} />
+      <Notes t={t} />
       <Thumbs t={t} onOpen={onOpen} />
       {actions ? <View style={styles.btns}>{actions}</View> : null}
     </Shell>
@@ -233,5 +287,8 @@ const styles = StyleSheet.create({
   thumb: { width: 96, height: 96, borderRadius: 14, borderWidth: 1 },
   time: { position: 'absolute', left: 6, bottom: 6, backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 8, paddingHorizontal: 6, paddingVertical: 1 },
   btns: { flexDirection: 'row', gap: 8, marginTop: 12, flexWrap: 'wrap' },
+  notes: { gap: 8, marginTop: 10 },
+  comment: { borderRadius: radius.m, borderLeftWidth: 3, paddingHorizontal: 12, paddingVertical: 8 },
+  note: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, borderRadius: radius.m, borderWidth: 1, borderStyle: 'dashed', paddingHorizontal: 12, paddingVertical: 8, minHeight: 40 },
   check: { width: 34, height: 34, borderRadius: 17, borderWidth: 2.5, alignItems: 'center', justifyContent: 'center' },
 });

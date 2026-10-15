@@ -3,16 +3,32 @@ import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
-import { useColorScheme } from 'react-native';
+import { Alert, Linking, Platform, useColorScheme } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
+import { setTooOldHandler } from '@/lib/api';
 import { AuthProvider, useAuth } from '@/lib/auth';
-import { initLang, useLang } from '@/lib/i18n';
+import { initLang, t, useLang } from '@/lib/i18n';
+import { registerPush } from '@/lib/push';
 import { usePalette } from '@/lib/theme';
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
+
+// The server says this build is too old (x-min-build): ask once per launch to update from the store.
+let askedUpdate = false;
+setTooOldHandler(() => {
+  if (askedUpdate) return;
+  askedUpdate = true;
+  // EXPO_PUBLIC_IOS_APP_ID is known after the App Store listing is created
+  const iosId = process.env.EXPO_PUBLIC_IOS_APP_ID;
+  const url = Platform.OS === 'ios' ? (iosId ? `https://apps.apple.com/app/id${iosId}` : 'https://apps.apple.com/') : 'market://details?id=kz.uroki.app';
+  Alert.alert(t('common.updateTitle'), t('common.updateText'), [
+    { text: t('common.cancel'), style: 'cancel' },
+    { text: t('common.update'), onPress: () => Linking.openURL(url).catch(() => {}) },
+  ]);
+});
 
 function Root() {
   const { session } = useAuth();
@@ -25,6 +41,11 @@ function Root() {
   // the whole tree re-renders in the new language when it is switched in Settings
   const lang = useLang();
   const ready = fontsLoaded && langReady && session !== undefined;
+  // Register this phone for server push once signed in (parents are asked for permission here;
+  // the child is asked on the home screen together with local reminders).
+  useEffect(() => {
+    if (session) registerPush(session.role === 'parent').catch(() => {});
+  }, [session]);
   useEffect(() => {
     if (ready) SplashScreen.hideAsync().catch(() => {});
   }, [ready]);

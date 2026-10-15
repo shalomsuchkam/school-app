@@ -38,8 +38,8 @@ async function expoPush(tokens: string[], title: string, body: string) {
 }
 
 async function devices(familyId: string, role: "parent" | "child") {
-  const { data } = await db.from("app_devices").select("id, push_token, tg_chat_id").eq("family_id", familyId).eq("role", role);
-  return (data ?? []) as { id: string; push_token: string | null; tg_chat_id: number | null }[];
+  const { data } = await db.from("app_devices").select("id, push_token, tg_chat_id, child_id").eq("family_id", familyId).eq("role", role);
+  return (data ?? []) as { id: string; push_token: string | null; tg_chat_id: number | null; child_id: number | null }[];
 }
 
 export async function notifyParents(
@@ -57,7 +57,9 @@ export async function notifyParents(
   }
 }
 
-export async function notifyChild(familyId: string, title: string, body: string) {
-  const ds = await devices(familyId, "child");
+// childId limits the push to that child's phones (families can have several children).
+export async function notifyChild(familyId: string, childId: number | null, title: string, body: string) {
+  let ds = await devices(familyId, "child");
+  if (childId) ds = ds.filter((d) => d.child_id === childId);
   return await expoPush(ds.map((d) => d.push_token ?? ""), title, body);
 }

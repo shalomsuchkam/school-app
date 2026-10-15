@@ -1,6 +1,6 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import { router, useFocusEffect } from 'expo-router';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useEffectEvent, useRef, useState } from 'react';
 import { Alert, AppState, Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 import Animated, { FadeInDown, FadeOutDown, ZoomIn, useReducedMotion } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -9,7 +9,7 @@ import { Paywall } from '@/components/Paywall';
 import { Confetti } from '@/components/Confetti';
 import { PhotoViewer } from '@/components/PhotoViewer';
 import { ProgressRing } from '@/components/ProgressRing';
-import { SkipSheet } from '@/components/SkipSheet';
+import { NoteSheet, SkipSheet } from '@/components/SkipSheet';
 import { ChildTaskCard } from '@/components/TaskCards';
 import { Btn, CONTENT_MAX, Empty, haptic, Icon, Loading, Screen, SectionLabel, Txt, useLayout, useToast } from '@/components/ui';
 import { api, ApiError, isPaywall, isDone, type ChildState, type Task } from '@/lib/api';
@@ -17,6 +17,7 @@ import { useAuth } from '@/lib/auth';
 import { duration, longDate, shortDate } from '@/lib/format';
 import { t as tr, tn, useT } from '@/lib/i18n';
 import { exactAlarmsAllowed, openExactAlarmSettings } from '@/lib/exactAlarm';
+import { flushQueue, pendingPhotos, usePhotoQueue, type FlushResult } from '@/lib/offline';
 import { cancelReminders, notificationsAllowed, scheduleReminders } from '@/lib/notify';
 import { gradients, radius, usePalette } from '@/lib/theme';
 
@@ -43,9 +44,34 @@ function hero(s: ChildState, fetchedAt: number, now: number) {
 }
 
 // The one thing to do next: a retake the parent asked for, then any photo task, then a simple tick.
-function nextTask(tasks: Task[]) {
-  const open = tasks.filter((x) => x.required && !isDone(x) && x.status !== 'skip_pending');
+// Tasks whose photo already waits in the offline queue are not "next" any more.
+function nextTask(tasks: Task[], queued: Set<number>) {
+  const open = tasks.filter((x) => x.required && !isDone(x) && x.status !== 'skip_pending' && !queued.has(x.id));
   return open.find((x) => x.status === 'redo') ?? open.find((x) => x.needs_photo) ?? open[0] ?? null;
+}
+
+// "18:05" in the family's time zone (falls back to the device zone).
+function hmOf(iso: string, tz: string) {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  try {
+    return new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: tz }).format(d);
+  } catch {
+    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  }
+}
+
+// Minutes at homework: until now, or until the last tick once everything required is done.
+function sessionMinutes(s: ChildState, now: number, allDone: boolean) {
+  if (!s.started_at) return null;
+  const from = Date.parse(s.started_at);
+  if (Number.isNaN(from)) return null;
+  let to = now;
+  if (allDone) {
+    const ends = s.tasks.map((x) => (x.done_at ? Date.parse(x.done_at) : NaN)).filter((x) => !Number.isNaN(x));
+    if (ends.length) to = Math.max(...ends);
+  }
+  return Math.max(0, Math.floor((to - from) / 60000));
 }
 
 function NextAction({ task, onPress }: { task: Task; onPress: () => void }) {
@@ -103,6 +129,11 @@ export default function ChildHome() {
   const [skip, setSkip] = useState<Task | null>(null);
   const [viewer, setViewer] = useState<{ url: string; caption: string; id: number } | null>(null);
   const [confetti, setConfetti] = useState(0);
+  const [noteFor, setNoteFor] = useState<Task | null>(null);
+  const [starting, setStarting] = useState(false);
+  // Bumped by a successful load while photos wait offline: the effect below then sends them.
+  const [onlineTick, setOnlineTick] = useState(0);
+  const queue = usePhotoQueue();
   const prevAll = useRef<boolean | null>(null);
   const seq = useRef({ sent: 0, shown: 0 });
   // Last payload we rendered: lets a poll that brought nothing new skip the whole re-render.
@@ -121,6 +152,8 @@ export default function ChildHome() {
       seq.current.shown = my;
       setError(null);
       setPaywall(false);
+      // The server answered, so we are online: send photos saved offline (no re-render when there are none).
+      setOnlineTick((n) => (n === 0 || pendingPhotos() > 0 ? n + 1 : n));
       // Permission banners must refresh even when the data is unchanged (e.g. back from Settings).
       const ok = await notificationsAllowed(false);
       setNotifOk(ok);
@@ -138,6 +171,9 @@ export default function ChildHome() {
         hard: st.hard,
         remind_times: st.remind_times,
         upcoming: st.upcoming,
+        reward: st.reward,
+        track_time: st.track_time,
+        started_at: st.started_at,
       });
       if (key === lastKey.current) return;
       lastKey.current = key;
@@ -174,6 +210,19 @@ export default function ChildHome() {
       load();
     }, [load]),
   );
+  const onFlushed = useEffectEvent((r: FlushResult) => {
+    if (r.sent) {
+      toast.show(tn('child.queue.sent', r.sent));
+      lastKey.current = null;
+      load();
+    } else if (r.dropped) toast.show(tn('child.queue.dropped', r.dropped));
+  });
+  const hasQueue = queue.length > 0;
+  useEffect(() => {
+    if (!onlineTick || !hasQueue) return;
+    flushQueue().then((r) => onFlushed(r));
+  }, [onlineTick, hasQueue]);
+
   useEffect(() => {
     const sub = AppState.addEventListener('change', (st) => st === 'active' && load());
     const poll = setInterval(load, 30000);
@@ -192,7 +241,16 @@ export default function ChildHome() {
   const schoolLabel = longDate(s.school_date);
   const lessons = s.tasks.filter((x) => x.kind === 'lesson');
   const items = s.tasks.filter((x) => x.kind === 'item');
-  const next = nextTask([...lessons, ...items]);
+  const queuedBy = new Map<number, number>();
+  for (const q of queue) queuedBy.set(q.task_id, (queuedBy.get(q.task_id) ?? 0) + 1);
+  const next = nextTask([...lessons, ...items], new Set(queuedBy.keys()));
+  const allDone = h.total > 0 && h.left === 0;
+  const startedHm = s.started_at ? hmOf(s.started_at, s.tz) : null;
+  const mins = s.track_time ? sessionMinutes(s, now, allDone) : null;
+  const showStart = s.track_time && !s.started_at && h.left > 0;
+  const reward = s.reward && s.reward.goal > 0 ? s.reward : null;
+  const rewardLeft = reward ? Math.max(0, reward.goal - s.streak) : 0;
+  const rewardPct = reward ? Math.min(1, s.streak / reward.goal) : 0;
 
   const openPhoto = (url: string, caption: string, id: number) => setViewer({ url, caption, id });
   const openCamera = (tk: Task) =>
@@ -200,6 +258,8 @@ export default function ChildHome() {
   const check = async (tk: Task, done: boolean) => {
     haptic.tap();
     setS({ ...s, tasks: s.tasks.map((x) => (x.id === tk.id ? { ...x, status: done ? 'done' : 'todo' } : x)) });
+    // The optimistic state differs from the last payload: let the next load render even if unchanged.
+    lastKey.current = null;
     try {
       await api.check(tk.id, done);
     } catch (e) {
@@ -216,6 +276,36 @@ export default function ChildHome() {
       load();
     } catch (e) {
       toast.show((e as Error).message);
+    }
+  };
+  const saveNote = async (tk: Task, text: string) => {
+    setNoteFor(null);
+    const prev = tk.note;
+    if ((prev ?? '') === text) return;
+    const put = (note: string | null) => setS((cur) => (cur ? { ...cur, tasks: cur.tasks.map((x) => (x.id === tk.id ? { ...x, note } : x)) } : cur));
+    put(text || null);
+    lastKey.current = null;
+    try {
+      await api.childNote(tk.id, text);
+    } catch (e) {
+      put(prev);
+      toast.show(`${t('child.note.saveFail')}: ${(e as Error).message}`);
+    }
+    load();
+  };
+  const startSession = async () => {
+    haptic.tap();
+    setStarting(true);
+    try {
+      const r = await api.startSession();
+      const ts = Date.now();
+      setS((cur) => (cur ? { ...cur, started_at: r.started_at ?? new Date(ts).toISOString() } : cur));
+      setNow(ts);
+      lastKey.current = null;
+    } catch (e) {
+      toast.show((e as Error).message);
+    } finally {
+      setStarting(false);
     }
   };
   const enableNotif = async () => {
@@ -288,6 +378,74 @@ export default function ChildHome() {
           </View>
         </View>
 
+        {s.track_time || reward ? (
+          <View style={styles.cards}>
+            {s.track_time && (showStart || startedHm) ? (
+              <View style={[styles.card, { backgroundColor: p.card }]}>
+                {showStart ? (
+                  <>
+                    <Btn title={t('child.time.start')} onPress={startSession} loading={starting} />
+                    <Txt v="sub" color={p.muted} style={{ textAlign: 'center' }}>
+                      {t('child.time.hint')}
+                    </Txt>
+                  </>
+                ) : (
+                  <View style={styles.cardRow}>
+                    <View style={[styles.cardIcon, { backgroundColor: p.brandSoft }]}>
+                      <Icon name="timer-outline" size={22} color={p.brand} />
+                    </View>
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Txt v="headline">{t('child.time.started', { hm: startedHm ?? '' })}</Txt>
+                      {mins !== null ? (
+                        <Txt v="sub" color={p.muted} style={{ marginTop: 2 }}>
+                          {t('child.time.elapsed', { dur: duration(mins) })}
+                        </Txt>
+                      ) : null}
+                    </View>
+                  </View>
+                )}
+              </View>
+            ) : null}
+            {reward ? (
+              <View style={[styles.card, { backgroundColor: rewardLeft ? p.card : p.okSoft }]}>
+                <Txt v="caps" color={p.muted} style={{ textTransform: 'uppercase' }}>
+                  {t('child.reward.title')}
+                </Txt>
+                <Txt v="headline">🎁 {reward.text}</Txt>
+                <View
+                  accessible
+                  accessibilityRole="progressbar"
+                  accessibilityLabel={t('child.reward.a11y', { streak: Math.min(s.streak, reward.goal), goal: reward.goal })}
+                  accessibilityValue={{ min: 0, max: reward.goal, now: Math.min(s.streak, reward.goal) }}
+                  style={styles.barRow}
+                >
+                  <View style={[styles.barTrack, { backgroundColor: rewardLeft ? p.fill : p.card }]}>
+                    <View style={[styles.barFill, { width: `${Math.round(rewardPct * 100)}%`, backgroundColor: rewardLeft ? p.brand : p.ok }]} />
+                  </View>
+                  <Txt v="sub" color={p.ink2} style={{ fontVariant: ['tabular-nums'] }}>
+                    🔥 {Math.min(s.streak, reward.goal)}/{reward.goal}
+                  </Txt>
+                </View>
+                <Txt v={rewardLeft ? 'sub' : 'callout'} color={rewardLeft ? p.muted : p.ok}>
+                  {rewardLeft ? tn('child.reward.left', rewardLeft) : t('child.reward.earned')}
+                </Txt>
+              </View>
+            ) : null}
+          </View>
+        ) : null}
+
+        {queue.length ? (
+          <View style={[styles.banner, { backgroundColor: p.warnSoft }]} accessible accessibilityLiveRegion="polite">
+            <Icon name="cloud-upload-outline" size={22} color={p.ink2} />
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Txt v="headline">{t('child.queue.badge', { n: queue.length })}</Txt>
+              <Txt v="sub" color={p.ink2}>
+                {t('child.queue.badgeHint')}
+              </Txt>
+            </View>
+          </View>
+        ) : null}
+
         {!notifOk ? (
           <View style={[styles.banner, { backgroundColor: p.warnSoft }]}>
             <Txt v="callout" style={{ flex: 1 }}>
@@ -312,18 +470,19 @@ export default function ChildHome() {
         {!s.tasks.length ? <Empty icon="🌤️" title={t('child.empty.title')} text={t('child.empty.text')} /> : null}
         {lessons.length ? <SectionLabel>{t('child.section.lessons', { done: lessons.filter(isDone).length, total: lessons.length })}</SectionLabel> : null}
         {lessons.map((tk) => (
-          <ChildTaskCard key={tk.id} t={tk} onPhoto={openCamera} onSkip={setSkip} onCheck={check} onOpen={openPhoto} overdue={h.overdue} />
+          <ChildTaskCard key={tk.id} t={tk} onPhoto={openCamera} onSkip={setSkip} onCheck={check} onOpen={openPhoto} onNote={setNoteFor} overdue={h.overdue} queued={queuedBy.get(tk.id) ?? 0} />
         ))}
         {items.length ? <SectionLabel>{t('child.section.items', { done: items.filter(isDone).length, total: items.length })}</SectionLabel> : null}
         {items.map((tk) => (
-          <ChildTaskCard key={tk.id} t={tk} onPhoto={openCamera} onSkip={setSkip} onCheck={check} onOpen={openPhoto} overdue={h.overdue} />
+          <ChildTaskCard key={tk.id} t={tk} onPhoto={openCamera} onSkip={setSkip} onCheck={check} onOpen={openPhoto} overdue={h.overdue} queued={queuedBy.get(tk.id) ?? 0} />
         ))}
       </Screen>
       {/* While the sheet is open the toast goes inside its modal, otherwise errors would hide under it. */}
       <SkipSheet task={skip} onClose={() => setSkip(null)} onSend={sendSkip} overlay={skip ? toast.node : null} />
+      <NoteSheet task={noteFor} onClose={() => setNoteFor(null)} onSave={(text) => noteFor && saveNote(noteFor, text)} overlay={noteFor ? toast.node : null} />
       <PhotoViewer url={viewer?.url ?? null} id={viewer?.id} caption={viewer?.caption} onClose={() => setViewer(null)} />
       <Confetti run={confetti} />
-      {skip ? null : toast.node}
+      {skip || noteFor ? null : toast.node}
     </>
   );
 }
@@ -339,5 +498,13 @@ const styles = StyleSheet.create({
   nextIcon: { width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center' },
   stats: { flexDirection: 'row', gap: 10, marginTop: 10 },
   stat: { flex: 1, borderRadius: radius.l, padding: 14 },
+  cards: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 10 },
+  // Side by side on tablets / landscape, stacked on phones.
+  card: { flexGrow: 1, flexBasis: 280, borderRadius: radius.l, padding: 14, gap: 8 },
+  cardRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  cardIcon: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
+  barRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  barTrack: { flex: 1, height: 10, borderRadius: 5, overflow: 'hidden' },
+  barFill: { height: '100%', borderRadius: 5 },
   banner: { flexDirection: 'row', alignItems: 'center', gap: 10, borderRadius: radius.l, padding: 14, marginTop: 10 },
 });

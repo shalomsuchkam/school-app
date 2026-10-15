@@ -46,6 +46,8 @@ export default function ParentTabs() {
       <Tabs.Screen name="schedule" options={{ title: t('parent.tab.schedule'), tabBarIcon: icon('calendar') }} />
       <Tabs.Screen name="lists" options={{ title: t('parent.tab.lists'), tabBarIcon: icon('checkbox') }} />
       <Tabs.Screen name="settings" options={{ title: t('parent.tab.settings'), tabBarIcon: icon('settings') }} />
+      {/* opened from Today; hidden from the tab bar so it keeps its 4 tabs */}
+      <Tabs.Screen name="report" options={{ href: null, title: t('parent.report.title') }} />
     </Tabs>
   );
 }

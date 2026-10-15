@@ -1,7 +1,7 @@
 // deno-lint-ignore-file no-explicit-any
 import {
   accessOf, activeDay, applyAction, checkItem, childState, deleteFamily, dropOpenTasks, ensureTasks, getFamily, isDone, loadTasks, MAX_PHOTO, overview,
-  purgePhotos, requestSkip, setNote, startSession, uploadPhoto, weeklyReport,
+  children, kidOf, purgePhotos, requestSkip, setNote, startSession, uploadPhoto, weeklyReport,
 } from "./core.ts";
 import { holidaysBetween } from "./holidays.ts";
 import { langOf, tr } from "./i18n.ts";
@@ -11,13 +11,13 @@ import {
 } from "./lib.ts";
 import { notifyChild, notifyParents, tg, tgEnabled } from "./notify.ts";
 
-type Device = { id: string; family_id: string; role: "parent" | "child"; name: string | null; tg_chat_id: number | null };
+type Device = { id: string; family_id: string; role: "parent" | "child"; name: string | null; tg_chat_id: number | null; child_id: number | null };
 
 async function auth(req: Request): Promise<Device> {
   const h = req.headers.get("authorization") ?? "";
   const token = h.startsWith("Bearer ") ? h.slice(7).trim() : "";
   if (!token) throw new HttpError(401, "Нужен вход");
-  const { data } = await db.from("app_devices").select("id, family_id, role, name, tg_chat_id, last_seen").eq("token_hash", await sha256(token)).maybeSingle();
+  const { data } = await db.from("app_devices").select("id, family_id, role, name, tg_chat_id, last_seen, child_id").eq("token_hash", await sha256(token)).maybeSingle();
   if (!data) throw new HttpError(401, "Устройство не найдено — войдите снова");
   // a token unused for half a year is retired: a lost or stolen phone does not keep access forever
   if (data.last_seen && Date.now() - new Date(data.last_seen).getTime() > 180 * 86400_000) {
@@ -37,10 +37,10 @@ const clean = (s: unknown, max = 40) => String(s ?? "").trim().slice(0, max);
 const weekdays = (v: unknown) =>
   Array.isArray(v) ? [...new Set(v.map(Number).filter((n) => Number.isInteger(n) && n >= 1 && n <= 7))].sort() : null;
 
-async function newDevice(familyId: string, role: "parent" | "child", name: string) {
+async function newDevice(familyId: string, role: "parent" | "child", name: string, childId: number | null = null) {
   const token = randomToken();
   const { data, error } = await db.from("app_devices")
-    .insert({ family_id: familyId, role, name: name || null, token_hash: await sha256(token) }).select("id").single();
+    .insert({ family_id: familyId, role, name: name || null, token_hash: await sha256(token), child_id: role === "child" ? childId : null }).select("id").single();
   if (error) throw new HttpError(500, error.message);
   return { token, device_id: data.id };
 }
@@ -63,22 +63,25 @@ const publicFamily = (f: any) => ({
 
 async function me(d: Device) {
   const fam = await getFamily(d.family_id);
-  const { data: members } = await db.from("app_devices").select("id, role, name, tg_chat_id, created_at").eq("family_id", d.family_id).order("created_at");
+  const { data: members } = await db.from("app_devices").select("id, role, name, tg_chat_id, created_at, child_id").eq("family_id", d.family_id).order("created_at");
+  const kids = await children(d.family_id);
   return {
-    device: { id: d.id, role: d.role, name: d.name },
-    family: publicFamily(fam),
+    device: { id: d.id, role: d.role, name: d.name, child_id: d.child_id },
+    family: { ...publicFamily(fam), child_name: kids[0]?.name ?? fam.child_name },
+    children: kids,
     access: accessOf(fam, await billingOn()),
-    members: (members ?? []).map((m: any) => ({ id: m.id, role: m.role, name: m.name, telegram: !!m.tg_chat_id, me: m.id === d.id })),
+    members: (members ?? []).map((m: any) => ({ id: m.id, role: m.role, name: m.name, telegram: !!m.tg_chat_id, me: m.id === d.id, child_id: m.child_id })),
     telegram: { enabled: await tgEnabled(), bot: (await secret("app_bot_username")) || null, linked: !!d.tg_chat_id },
   };
 }
 
 async function setup(fam: any) {
   const familyId = fam.id;
+  const childId = fam.child_id;
   const [{ data: subjects }, { data: lessons }, { data: items }, { data: off }] = await Promise.all([
     db.from("app_subjects").select("id, name, emoji, light").eq("family_id", familyId).order("name"),
-    db.from("app_lessons").select("weekday, week_parity, pos, subject_id").eq("family_id", familyId).order("weekday").order("pos"),
-    db.from("app_items").select("id, title, emoji, required, needs_photo, weekdays, pos").eq("family_id", familyId).order("pos").order("id"),
+    db.from("app_lessons").select("weekday, week_parity, pos, subject_id").eq("child_id", childId).order("weekday").order("pos"),
+    db.from("app_items").select("id, title, emoji, required, needs_photo, weekdays, pos, child_id").eq("family_id", familyId).order("pos").order("id"),
     db.from("app_days_off").select("date").eq("family_id", familyId).order("date"),
   ]);
   // lessons: every week; lessons_alt["1"|"2"]: odd/even ISO weeks (optional alternating timetable)
@@ -91,7 +94,7 @@ async function setup(fam: any) {
   const today = localParts(fam.tz).date;
   const end = new Date(Date.now() + 120 * 86400_000).toISOString().slice(0, 10);
   return {
-    subjects: subjects ?? [], lessons: byDay, lessons_alt: alt, items: items ?? [], days_off: (off ?? []).map((o: any) => o.date),
+    child_id: childId, subjects: subjects ?? [], lessons: byDay, lessons_alt: alt, items: items ?? [], days_off: (off ?? []).map((o: any) => o.date),
     holidays: fam.auto_holidays === false ? [] : holidaysBetween(fam.country ?? "KZ", today, end),
   };
 }
@@ -104,7 +107,7 @@ async function parentDeviceByChat(chat: number) {
 async function statusText(fam: any) {
   const { S } = await activeDay(fam);
   await ensureTasks(fam, S);
-  const tasks = await loadTasks(fam.id, S);
+  const tasks = await loadTasks(fam, S);
   const req = tasks.filter((t) => t.required);
   const icon = (t: any) => (isDone(t) ? "✅" : t.status === "skip_pending" ? "⏳" : t.status === "redo" ? "🔄" : t.status === "skip_no" ? "❌" : "⬜");
   return `📋 <b>${esc(fam.child_name)} · ${esc(fmtLong(S))}</b>\nГотово: ${req.filter(isDone).length} из ${req.length}\n\n` +
@@ -157,7 +160,7 @@ async function handleTelegram(u: any) {
         const fam = await getFamily(dev.family_id);
         return tg("sendMessage", {
           chat_id: m.chat.id, parse_mode: "HTML",
-          text: `✅ <b>Telegram подключён.</b>\nСюда будут приходить фото, запросы на пропуск и тревоги по ${esc(fam.child_name)}.\n\n/status — что сделано сейчас`,
+          text: `✅ <b>Telegram подключён.</b>\nСюда будут приходить фото, запросы на пропуск и тревоги по детям семьи.\n\n/status — что сделано сейчас`,
         });
       }
       return tg("sendMessage", { chat_id: m.chat.id, text: "Ссылка устарела. Откройте приложение → Настройки → Telegram и подключите заново." });
@@ -166,7 +169,10 @@ async function handleTelegram(u: any) {
   const devs = await parentDeviceByChat(m.chat.id);
   if (!devs.length) return tg("sendMessage", { chat_id: m.chat.id, text: "Подключите Telegram в приложении: Настройки → Telegram." });
   if (text.startsWith("/status") || text === "📋 Статус") {
-    for (const d of devs) await tg("sendMessage", { chat_id: m.chat.id, parse_mode: "HTML", text: await statusText(await getFamily(d.family_id)) });
+    for (const d of devs) {
+      const fam = await getFamily(d.family_id);
+      for (const c of await children(fam.id)) await tg("sendMessage", { chat_id: m.chat.id, parse_mode: "HTML", text: await statusText(await kidOf(fam, c.id)) });
+    }
   }
 }
 
@@ -176,6 +182,9 @@ async function weeklyTelegram(fam: any) {
   if (dow(now.date) !== 7 || now.hm < "19:00" || now.hm > "19:30") return;
   const { error } = await db.from("app_reminder_log").insert({ family_id: fam.id, school_date: now.date, slot: "weekly" });
   if (error) return;
+  for (const c of await children(fam.id)) await weeklyFor(await kidOf(fam, c.id));
+}
+async function weeklyFor(fam: any) {
   const r = await weeklyReport(fam);
   if (!r.totals.total) return;
   const worst = r.subjects.filter((s: any) => s.missed + s.late > 0).slice(0, 3).map((s: any) => `${esc(s.emoji)} ${esc(s.title)}: ${s.missed ? `пропущено ${s.missed}` : ""}${s.missed && s.late ? ", " : ""}${s.late ? `с опозданием ${s.late}` : ""}`);
@@ -195,12 +204,24 @@ async function tick() {
     try {
       if (hourly) await purgePhotos(fam);
       await weeklyTelegram(fam);
+      for (const c of await children(fam.id)) fired += await tickChild(await kidOf(fam, c.id));
+    } catch (e) {
+      console.error("tick family", fam.id, e);
+    }
+  }
+  return { families: fams?.length ?? 0, fired };
+}
+
+// One child's reminders for the due day; returns 1 when an alert fired.
+async function tickChild(fam: any): Promise<number> {
+  {
+    {
       const { now, S, due } = await activeDay(fam);
-      if (due !== now.date) continue;
+      if (due !== now.date) return 0;
       await ensureTasks(fam, S);
-      const tasks = await loadTasks(fam.id, S);
+      const tasks = await loadTasks(fam, S);
       const left = tasks.filter((t) => t.required && !isDone(t));
-      if (!left.length) continue;
+      if (!left.length) return 0;
       const slots = [
         ...(fam.remind_times ?? []).map((t: string) => ({ t, kind: "soft" })),
         { t: fam.soft_deadline, kind: "deadline" },
@@ -210,30 +231,27 @@ async function tick() {
       let slot: any = null;
       for (const x of slots.filter((x) => nowM >= toMin(x.t) && nowM - toMin(x.t) <= 30)) {
         // the kind is part of the key: a reminder at the same time as a deadline must not swallow the deadline alert
-        const key = x.kind === "soft" ? x.t : `${x.kind}@${x.t}`;
+        const key = `${x.kind === "soft" ? x.t : `${x.kind}@${x.t}`}#${fam.child_id}`;
         const { error } = await db.from("app_reminder_log").insert({ family_id: fam.id, school_date: S, slot: key });
         if (!error) slot = x;
       }
-      if (!slot) continue;
-      fired++;
+      if (!slot) return 0;
       const names = left.map((t) => t.title).join(", ");
       const list = tasks.filter((t) => t.required).map((t) => `${isDone(t) ? "✅" : "⬜"} ${esc(t.emoji)} ${esc(t.title)}`).join("\n");
       if (slot.kind === "soft") {
-        await notifyChild(fam.id, "📚 Пора за уроки", `Осталось: ${names}`);
+        await notifyChild(fam.id, fam.child_id, "📚 Пора за уроки", `Осталось: ${names}`);
       } else if (slot.kind === "deadline") {
-        await notifyChild(fam.id, `⏰ ${fam.soft_deadline} — срок вышел`, `Не сделано: ${names}`);
+        await notifyChild(fam.id, fam.child_id, `⏰ ${fam.soft_deadline} — срок вышел`, `Не сделано: ${names}`);
         await notifyParents(fam.id, { title: `⏰ ${fam.soft_deadline}: не всё готово`, body: `Осталось: ${names}` },
           { html: `🚨 <b>${fam.soft_deadline} — ${esc(fam.child_name)}: не всё готово на ${esc(fmtShort(S))}</b>\n\n${list}\n\nПоследний срок — ${fam.hard_deadline}.` });
       } else {
-        await notifyChild(fam.id, `🔴 ${fam.hard_deadline} — последний срок`, `Не сделано: ${names}`);
+        await notifyChild(fam.id, fam.child_id, `🔴 ${fam.hard_deadline} — последний срок`, `Не сделано: ${names}`);
         await notifyParents(fam.id, { title: `🔴 ${fam.hard_deadline}: последний срок`, body: `Не сделано: ${names}` },
-          { html: `🔴 <b>${fam.hard_deadline} — последний срок, не готово:</b>\n\n${list}` });
+          { html: `🔴 <b>${fam.hard_deadline} — ${esc(fam.child_name)}: последний срок, не готово:</b>\n\n${list}` });
       }
-    } catch (e) {
-      console.error("tick family", fam.id, e);
+      return 1;
     }
   }
-  return { families: fams?.length ?? 0, fired };
 }
 
 // ---------- subscription sync ----------
@@ -310,6 +328,7 @@ async function route(req: Request, path: string): Promise<Response> {
       ...(tz ? { tz } : {}),
     }).select("*").single();
     if (error) throw new HttpError(500, error.message);
+    await db.from("app_children").insert({ family_id: fam.id, name: fam.child_name });
     return json({ ...(await newDevice(fam.id, "parent", clean(b.parent_name, 30))), role: "parent" });
   }
   if (path === "/join" && M === "POST") {
@@ -320,7 +339,8 @@ async function route(req: Request, path: string): Promise<Response> {
     const { data: used } = await db.from("app_invites").delete().eq("code", code).gt("expires_at", new Date().toISOString()).select("*");
     const inv = used?.[0];
     if (!inv) throw new HttpError(404, "Код не найден или устарел");
-    return json({ ...(await newDevice(inv.family_id, inv.role, clean(b.name, 30))), role: inv.role });
+    const childId = inv.role === "child" ? inv.child_id ?? (await children(inv.family_id))[0]?.id ?? null : null;
+    return json({ ...(await newDevice(inv.family_id, inv.role, clean(b.name, 30), childId)), role: inv.role });
   }
 
   const d = await auth(req);
@@ -353,11 +373,15 @@ async function route(req: Request, path: string): Promise<Response> {
     throw new HttpError(402, d.role === "parent" ? "Подписка закончилась" : "Попроси родителя продлить подписку");
   }
 
-  if (path === "/setup" && M === "GET") return json(await setup(fam0));
+  // which child a request is about: the child's own device, or ?child=<id> from a parent (default: first child)
+  const qChild = Number(new URL(req.url).searchParams.get("child")) || null;
+  const kid = await kidOf(fam0, d.role === "child" ? d.child_id : qChild);
+
+  if (path === "/setup" && M === "GET") return json(await setup(kid));
 
   // --- child ---
   if (seg[0] === "child") {
-    const fam = fam0;
+    const fam = kid;
     if (path === "/child/state" && M === "GET") return json(await childState(fam));
     if (d.role !== "child") throw new HttpError(403, "Только для ученика");
     if (path === "/child/photo" && M === "POST") {
@@ -403,7 +427,40 @@ async function route(req: Request, path: string): Promise<Response> {
   parentOnly(d);
   const fam = fam0;
 
-  if (path === "/parent/overview" && M === "GET") return json(await overview(fam));
+  // children: add, rename, remove (a family keeps at least one)
+  if (path === "/children" && M === "POST") {
+    const b = await body(req);
+    const name = clean(b.name, 30);
+    if (!name) throw new HttpError(400, "Название пустое");
+    const list = await children(famId);
+    if (list.length >= 8) throw new HttpError(400, "Не больше 8 учеников в семье");
+    const { data, error } = await db.from("app_children").insert({ family_id: famId, name, pos: list.length }).select("id, name, pos").single();
+    if (error) throw new HttpError(500, error.message);
+    return json(data);
+  }
+  if (seg[0] === "children" && seg[1] && M === "PATCH") {
+    const b = await body(req);
+    const name = clean(b.name, 30);
+    if (!name) throw new HttpError(400, "Название пустое");
+    await db.from("app_children").update({ name }).eq("id", Number(seg[1])).eq("family_id", famId);
+    const first = (await children(famId))[0];
+    if (first?.id === Number(seg[1])) await db.from("app_families").update({ child_name: name }).eq("id", famId);
+    return json({ ok: true });
+  }
+  if (seg[0] === "children" && seg[1] && M === "DELETE") {
+    const list = await children(famId);
+    if (list.length <= 1) throw new HttpError(409, "В семье должен остаться хотя бы один ученик");
+    const id = Number(seg[1]);
+    if (!list.some((c) => c.id === id)) throw new HttpError(404, "Ученик не найден");
+    // photos of this child's tasks go too
+    const { data: ph } = await db.from("app_photos").select("path, app_tasks!inner(child_id)").eq("app_tasks.child_id", id);
+    const paths = (ph ?? []).map((r: any) => r.path);
+    for (let i = 0; i < paths.length; i += 100) await db.storage.from("app-photos").remove(paths.slice(i, i + 100));
+    await db.from("app_children").delete().eq("id", id).eq("family_id", famId);
+    return json({ ok: true });
+  }
+
+  if (path === "/parent/overview" && M === "GET") return json(await overview(kid));
   if (path === "/parent/task" && M === "POST") {
     const b = await body(req);
     const comment = typeof b.comment === "string" ? clean(b.comment, 300) : undefined;
@@ -414,11 +471,11 @@ async function route(req: Request, path: string): Promise<Response> {
     await setNote(fam, Number(b.task_id), clean(b.note, 300), false);
     return json({ ok: true });
   }
-  if (path === "/parent/report" && M === "GET") return json(await weeklyReport(fam));
+  if (path === "/parent/report" && M === "GET") return json(await weeklyReport(kid));
   if (path === "/parent/nudge" && M === "POST") {
-    const { S } = await activeDay(fam);
-    const left = (await loadTasks(famId, S)).filter((t) => t.required && !isDone(t));
-    const sent = left.length ? await notifyChild(famId, "📚 Напоминание от родителя", `Осталось: ${left.map((t) => t.title).join(", ")}`) : 0;
+    const { S } = await activeDay(kid);
+    const left = (await loadTasks(kid, S)).filter((t) => t.required && !isDone(t));
+    const sent = left.length ? await notifyChild(famId, kid.child_id, "📚 Напоминание от родителя", `Осталось: ${left.map((t) => t.title).join(", ")}`) : 0;
     return json({ ok: true, sent, left: left.length });
   }
 
@@ -443,6 +500,10 @@ async function route(req: Request, path: string): Promise<Response> {
     if (typeof b.track_time === "boolean") patch.track_time = b.track_time;
     if (typeof b.auto_holidays === "boolean") patch.auto_holidays = b.auto_holidays;
     if (Object.keys(patch).length) await db.from("app_families").update(patch).eq("id", famId);
+    if (patch.child_name) {
+      const first = (await children(famId))[0];
+      if (first) await db.from("app_children").update({ name: patch.child_name }).eq("id", first.id);
+    }
     const nf = await getFamily(famId);
     // tasks already created for a weekday that is no longer a school day must not hang around as missed days
     if (patch.school_weekdays) await dropOpenTasks(famId, localParts(nf.tz).date, null, (date) => !nf.school_weekdays.includes(dow(date)));
@@ -482,8 +543,9 @@ async function route(req: Request, path: string): Promise<Response> {
     const parity = [0, 1, 2].includes(Number(b.week_parity)) ? Number(b.week_parity) : 0;
     const { data: own } = await db.from("app_subjects").select("id").eq("family_id", famId).in("id", ids.length ? ids : [0]);
     const ok = new Set((own ?? []).map((s: any) => s.id));
-    await db.from("app_lessons").delete().eq("family_id", famId).eq("weekday", wd).eq("week_parity", parity);
-    const rows = ids.filter((i) => ok.has(i)).map((subject_id, i) => ({ family_id: famId, weekday: wd, week_parity: parity, pos: i + 1, subject_id }));
+    const cid = (await kidOf(fam0, Number(b.child_id) || qChild)).child_id;
+    await db.from("app_lessons").delete().eq("child_id", cid).eq("weekday", wd).eq("week_parity", parity);
+    const rows = ids.filter((i) => ok.has(i)).map((subject_id, i) => ({ family_id: famId, child_id: cid, weekday: wd, week_parity: parity, pos: i + 1, subject_id }));
     if (rows.length) await db.from("app_lessons").insert(rows);
     return json({ ok: true });
   }
@@ -498,17 +560,21 @@ async function route(req: Request, path: string): Promise<Response> {
       if (x.needs_photo !== undefined) o.needs_photo = !!x.needs_photo;
       if (x.weekdays !== undefined) { const w = weekdays(x.weekdays); o.weekdays = w && w.length ? w : null; }
       if (x.pos !== undefined) o.pos = Number(x.pos) || 0;
+      if (x.child_id !== undefined) o.child_id = x.child_id ? Number(x.child_id) : null;
       return o;
     };
     if (M === "POST" && seg.length === 1) {
       const f = fields(b);
       if (!f.title) throw new HttpError(400, "Название пустое");
+      if (f.child_id && !(await children(famId)).some((c) => c.id === f.child_id)) throw new HttpError(404, "Ученик не найден");
       const { data } = await db.from("app_items").insert({ family_id: famId, ...f }).select("*").single();
       return json(data);
     }
     const id = Number(seg[1]);
     if (M === "PATCH") {
-      await db.from("app_items").update(fields(b)).eq("id", id).eq("family_id", famId);
+      const f = fields(b);
+      if (f.child_id && !(await children(famId)).some((c) => c.id === f.child_id)) throw new HttpError(404, "Ученик не найден");
+      await db.from("app_items").update(f).eq("id", id).eq("family_id", famId);
       return json({ ok: true });
     }
     if (M === "DELETE") {
@@ -532,7 +598,8 @@ async function route(req: Request, path: string): Promise<Response> {
     const code = randomCode(6);
     const expires_at = new Date(Date.now() + 48 * 3600 * 1000).toISOString();
     await db.from("app_invites").delete().lt("expires_at", new Date().toISOString());
-    const { error } = await db.from("app_invites").insert({ code, family_id: famId, role, expires_at });
+    const childId = role === "child" ? (await kidOf(fam0, Number(b.child_id) || null)).child_id : null;
+    const { error } = await db.from("app_invites").insert({ code, family_id: famId, role, expires_at, child_id: childId });
     if (error) throw new HttpError(500, error.message);
     return json({ code, role, expires_at });
   }
@@ -561,12 +628,18 @@ Deno.serve(async (req) => {
   const url = new URL(req.url);
   const i = url.pathname.indexOf("/app");
   const path = (i >= 0 ? url.pathname.slice(i + 4) : url.pathname) || "/";
+  let res: Response;
   try {
-    if (path === "/" ) return json({ ok: true, service: "uroki-app" });
-    return await route(req, path);
+    res = path === "/" ? json({ ok: true, service: "uroki-app" }) : await route(req, path);
   } catch (e: any) {
-    if (e instanceof HttpError) return json({ error: tr(langOf(req), e.message) }, e.status);
-    console.error(e);
-    return json({ error: String(e?.message ?? e) }, 500);
+    if (e instanceof HttpError) res = json({ error: tr(langOf(req), e.message) }, e.status);
+    else {
+      console.error(e);
+      res = json({ error: "Ошибка сервера" }, 500); // no internals leak to clients
+    }
   }
+  // oldest app build the server still supports; older apps ask the user to update
+  const minBuild = await secret("app_min_build").catch(() => "");
+  if (minBuild) res.headers.set("x-min-build", minBuild);
+  return res;
 });

@@ -50,3 +50,46 @@ export function SkipSheet({ task, onClose, onSend, overlay }: { task: Task | nul
     </Sheet>
   );
 }
+
+// "What was assigned": a short free-text note on a lesson (e.g. "§12, ex. 5").
+export const NOTE_MAX = 300;
+export function NoteSheet({ task, onClose, onSave, overlay }: { task: Task | null; onClose: () => void; onSave: (note: string) => void; overlay?: ReactNode }) {
+  const p = usePalette();
+  const t = useT();
+  const [text, setText] = useState(task?.note ?? '');
+  // Start from the task's current note every time the sheet opens for a (different) task.
+  const [forId, setForId] = useState(task?.id);
+  if (task && task.id !== forId) {
+    setForId(task.id);
+    setText(task.note ?? '');
+  }
+  if (!task && forId !== undefined) setForId(undefined);
+  const save = () => onSave(text.trim().slice(0, NOTE_MAX));
+  return (
+    <Sheet visible={!!task} title={`${task?.emoji ?? ''} ${task?.label ?? ''}`} onClose={onClose} overlay={overlay}>
+      <Txt v="callout" color={p.muted}>
+        {t('child.note.hint')}
+      </Txt>
+      <Field
+        value={text}
+        onChangeText={setText}
+        placeholder={t('child.note.placeholder')}
+        accessibilityLabel={t('child.note.add')}
+        maxLength={NOTE_MAX}
+        multiline
+        autoFocus
+        returnKeyType="done"
+        submitBehavior="blurAndSubmit"
+        onSubmitEditing={save}
+        style={{ marginTop: 12, minHeight: 88, maxHeight: 180, textAlignVertical: 'top' }}
+      />
+      <Txt v="sub" color={text.length >= NOTE_MAX ? p.bad : p.muted} style={{ alignSelf: 'flex-end', marginTop: -6, fontVariant: ['tabular-nums'] }}>
+        {text.length}/{NOTE_MAX}
+      </Txt>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 12 }}>
+        {task?.note ? <Btn title={t('child.note.clear')} kind="plain" onPress={() => onSave('')} style={{ flexGrow: 1, flexBasis: 120 }} /> : null}
+        <Btn title={t('common.save')} onPress={save} style={{ flexGrow: 2, flexBasis: 160 }} />
+      </View>
+    </Sheet>
+  );
+}

@@ -3,7 +3,8 @@ import { useCallback, useState } from 'react';
 import { Alert, Linking, Pressable, StyleSheet, View } from 'react-native';
 
 import { InviteSheet } from '@/components/InviteSheet';
-import { Btn, Chip, Field, Group, Loading, Row, Screen, SectionLabel, Sheet, TimeStepper, Txt, useToast, WeekdayPicker } from '@/components/ui';
+import { PhoneLimitGuide } from '@/components/PhoneLimitGuide';
+import { Btn, Chip, Field, Group, Loading, Row, Screen, SectionLabel, Sheet, TimeStepper, ToggleRow, Txt, useToast, WeekdayPicker } from '@/components/ui';
 import { openManage } from '@/lib/billing';
 import { api, ApiError, legalUrl, type Me, type Role } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
@@ -21,6 +22,8 @@ export default function Settings() {
   const [newTime, setNewTime] = useState<string | null>(null);
   const [invite, setInvite] = useState<Role | null>(null);
   const [tgBusy, setTgBusy] = useState(false);
+  const [rewardEdit, setRewardEdit] = useState<string | null>(null);
+  const [guide, setGuide] = useState(false);
   const toast = useToast();
 
   const load = useCallback(async () => {
@@ -53,6 +56,10 @@ export default function Settings() {
   const broken = toMin(f.soft_deadline) >= toMin(f.hard_deadline);
   const setSoft = (v: string) => (broken || toMin(v) < toMin(f.hard_deadline) ? patch({ soft_deadline: v }) : toast.show(t('parent.settings.softErr')));
   const setHard = (v: string) => (broken || toMin(v) > toMin(f.soft_deadline) ? patch({ hard_deadline: v }) : toast.show(t('parent.settings.hardErr')));
+
+  const rewardOn = f.reward_goal !== null;
+  const toggleReward = (on: boolean) =>
+    patch(on ? { reward_goal: 10, reward_text: f.reward_text || t('parent.settings.rewardDefault') } : { reward_goal: null });
 
   const connectTelegram = async () => {
     setTgBusy(true);
@@ -170,11 +177,34 @@ export default function Settings() {
 
         <SectionLabel>{t('parent.settings.schoolDays')}</SectionLabel>
         <WeekdayPicker value={f.school_weekdays} onChange={(w) => (w.length ? patch({ school_weekdays: w }) : toast.show(t('parent.needSchoolDay')))} />
+        <Group style={{ marginTop: 12 }}>
+          <ToggleRow icon="🎉" title={t('parent.settings.holidays')} subtitle={t('parent.settings.holidaysSub')} value={f.auto_holidays} onChange={(v) => patch({ auto_holidays: v })} />
+        </Group>
 
         <SectionLabel>{t('parent.settings.deadlines')}</SectionLabel>
         <Group>
           <Row icon="⏰" title={t('parent.settings.soft')} subtitle={t('parent.settings.softSub')} right={<TimeStepper value={f.soft_deadline} onChange={setSoft} clamp />} />
           <Row icon="🌙" title={t('parent.settings.hard')} subtitle={t('parent.settings.hardSub')} right={<TimeStepper value={f.hard_deadline} onChange={setHard} clamp />} />
+          <ToggleRow icon="⏱️" title={t('parent.settings.trackTime')} subtitle={t('parent.settings.trackTimeSub')} value={f.track_time} onChange={(v) => patch({ track_time: v })} />
+        </Group>
+
+        <SectionLabel>{t('parent.settings.reward')}</SectionLabel>
+        <Group>
+          <ToggleRow icon="🏆" title={t('parent.settings.rewardOn')} subtitle={t('parent.settings.rewardOnSub')} value={rewardOn} onChange={toggleReward} />
+          {rewardOn ? (
+            <Row
+              icon="🎯"
+              title={t('parent.settings.rewardGoal')}
+              subtitle={tn('parent.settings.rewardGoalSub', f.reward_goal ?? 10)}
+              right={<DaysStepper value={f.reward_goal ?? 10} min={1} max={60} onChange={(v) => patch({ reward_goal: v })} />}
+            />
+          ) : null}
+          {rewardOn ? <Row icon="🎁" title={t('parent.settings.rewardText')} subtitle={f.reward_text || t('parent.settings.rewardTextPh')} chevron onPress={() => setRewardEdit(f.reward_text ?? '')} /> : null}
+        </Group>
+
+        <SectionLabel>{t('parent.settings.phone')}</SectionLabel>
+        <Group>
+          <Row icon="📵" title={t('parent.settings.phoneRow')} subtitle={t('parent.settings.phoneSub')} chevron onPress={() => setGuide(true)} />
         </Group>
 
         <SectionLabel right={<Btn small kind="secondary" title={t('parent.settings.time')} icon="＋" onPress={() => setNewTime('16:00')} />}>{t('parent.settings.reminders')}</SectionLabel>
@@ -260,7 +290,7 @@ export default function Settings() {
             icon="🗂️"
             title={t('parent.settings.keepPhotos')}
             subtitle={tn('parent.settings.keepSub', f.photo_retention_days)}
-            right={<DaysStepper value={f.photo_retention_days} onChange={(v) => patch({ photo_retention_days: v })} />}
+            right={<DaysStepper value={f.photo_retention_days} min={7} max={40} week onChange={(v) => patch({ photo_retention_days: v })} />}
           />
         </Group>
 
@@ -318,25 +348,41 @@ export default function Settings() {
           }}
         />
       </Sheet>
+      <Sheet visible={rewardEdit !== null} title={t('parent.settings.rewardEdit')} onClose={() => setRewardEdit(null)}>
+        <Field value={rewardEdit ?? ''} onChangeText={setRewardEdit} placeholder={t('parent.settings.rewardTextPh')} maxLength={80} autoFocus />
+        <Btn
+          title={t('common.save')}
+          disabled={!rewardEdit?.trim()}
+          onPress={() => {
+            patch({ reward_text: rewardEdit!.trim() }, t('parent.settings.saved'));
+            setRewardEdit(null);
+          }}
+        />
+      </Sheet>
+      <PhoneLimitGuide visible={guide} onClose={() => setGuide(false)} />
       <InviteSheet role={invite} onClose={() => setInvite(null)} />
       {toast.node}
     </>
   );
 }
 
-// 7–40 days, in steps of one day (long press jumps by a week)
-function DaysStepper({ value, onChange }: { value: number; onChange: (v: number) => void }) {
+// min–max days in steps of one day (long press jumps by a week, or by 5 for counts)
+function DaysStepper({ value, onChange, min, max, week }: { value: number; onChange: (v: number) => void; min: number; max: number; week?: boolean }) {
   const p = usePalette();
   const t = useT();
-  const set = (v: number) => onChange(Math.min(40, Math.max(7, v)));
+  const set = (v: number) => {
+    const next = Math.min(max, Math.max(min, v));
+    if (next !== value) onChange(next);
+  };
   const btn = (d: number, label: string) => (
     <Pressable
       hitSlop={6}
       onPress={() => set(value + d)}
-      onLongPress={() => set(value + d * 7)}
-      disabled={(d < 0 && value <= 7) || (d > 0 && value >= 40)}
-      accessibilityLabel={d < 0 ? t('parent.settings.fewerDays') : t('parent.settings.moreDays')}
-      style={({ pressed }) => [styles.step, { backgroundColor: p.fill, opacity: (d < 0 && value <= 7) || (d > 0 && value >= 40) ? 0.4 : 1, transform: [{ scale: pressed ? 0.9 : 1 }] }]}
+      onLongPress={() => set(value + d * (week ? 7 : 5))}
+      disabled={(d < 0 && value <= min) || (d > 0 && value >= max)}
+      accessibilityRole="button"
+      accessibilityLabel={week ? t(d < 0 ? 'parent.settings.fewerDays' : 'parent.settings.moreDays') : t(d < 0 ? 'parent.settings.fewer' : 'parent.settings.more')}
+      style={({ pressed }) => [styles.step, { backgroundColor: p.fill, opacity: (d < 0 && value <= min) || (d > 0 && value >= max) ? 0.4 : 1, transform: [{ scale: pressed ? 0.9 : 1 }] }]}
     >
       <Txt v="headline">{label}</Txt>
     </Pressable>
