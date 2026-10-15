@@ -4,9 +4,9 @@ import { Alert, Linking, Pressable, StyleSheet, View } from 'react-native';
 
 import { InviteSheet } from '@/components/InviteSheet';
 import { Btn, Chip, Field, Group, Loading, Row, Screen, SectionLabel, Sheet, TimeStepper, Txt, useToast, WeekdayPicker } from '@/components/ui';
-import { api, ApiError, type Me, type Role } from '@/lib/api';
+import { api, ApiError, legalUrl, type Me, type Role } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
-import { toMin } from '@/lib/format';
+import { shortDate, toMin } from '@/lib/format';
 import { usePalette } from '@/lib/theme';
 
 export default function Settings() {
@@ -80,6 +80,38 @@ export default function Settings() {
             .finally(load),
       },
     ]);
+
+  const deleteAll = () =>
+    Alert.alert(
+      'Удалить семью и все данные?',
+      'Будут безвозвратно удалены расписание, задания, история и все фото, а все телефоны семьи отключатся. Подписку в App Store / Google Play отмените отдельно в настройках магазина.',
+      [
+        { text: 'Отмена', style: 'cancel' },
+        {
+          text: 'Удалить всё',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await api.deleteFamily();
+              await signOut();
+              router.replace('/welcome');
+            } catch (e) {
+              toast.show((e as Error).message);
+            }
+          },
+        },
+      ],
+    );
+  const a = me.access;
+  const subTitle = a.free_forever
+    ? 'Бесплатный доступ'
+    : !a.billing
+      ? 'Тестовый доступ'
+      : a.granted_until && new Date(a.granted_until) > new Date()
+        ? `Подарочный доступ до ${shortDate(a.granted_until.slice(0, 10))}`
+        : a.paid_until && a.active
+          ? `${a.trial ? 'Пробный период' : 'Подписка'} до ${shortDate(a.paid_until.slice(0, 10))}`
+          : 'Не активна';
 
   const parents = me.members.filter((m) => m.role === 'parent');
   const children = me.members.filter((m) => m.role === 'child');
@@ -201,9 +233,31 @@ export default function Settings() {
           <Row icon="🔔" title="Уведомления в приложении" subtitle="Включатся после публикации в App Store и Google Play" disabled />
         </Group>
 
+        <SectionLabel>Фото</SectionLabel>
+        <Group>
+          <Row
+            icon="🗂️"
+            title="Хранить фото"
+            subtitle={`${f.photo_retention_days} дн., потом удаляются автоматически`}
+            right={<DaysStepper value={f.photo_retention_days} onChange={(v) => patch({ photo_retention_days: v })} />}
+          />
+        </Group>
+
+        <SectionLabel>Подписка</SectionLabel>
+        <Group>
+          <Row icon="⭐" title={subTitle} subtitle={`Код семьи: ${f.code}`} />
+        </Group>
+
+        <SectionLabel>Документы</SectionLabel>
+        <Group>
+          <Row icon="📄" title="Пользовательское соглашение" chevron onPress={() => Linking.openURL(legalUrl('terms'))} />
+          <Row icon="🔒" title="Политика конфиденциальности" chevron onPress={() => Linking.openURL(legalUrl('privacy'))} />
+        </Group>
+
         <SectionLabel>Аккаунт</SectionLabel>
         <Group>
           <Row icon="🚪" title="Выйти на этом телефоне" danger onPress={logout} />
+          <Row icon="🗑️" title="Удалить семью и все данные" danger onPress={deleteAll} />
         </Group>
         <Txt v="sub" color={p.muted} style={{ textAlign: 'center', marginTop: 20 }}>
           Уроки · версия 1.0
@@ -242,4 +296,34 @@ export default function Settings() {
   );
 }
 
-const styles = StyleSheet.create({ wrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 } });
+// 7–40 days, in steps of one day (long press jumps by a week)
+function DaysStepper({ value, onChange }: { value: number; onChange: (v: number) => void }) {
+  const p = usePalette();
+  const set = (v: number) => onChange(Math.min(40, Math.max(7, v)));
+  const btn = (d: number, label: string) => (
+    <Pressable
+      hitSlop={6}
+      onPress={() => set(value + d)}
+      onLongPress={() => set(value + d * 7)}
+      disabled={(d < 0 && value <= 7) || (d > 0 && value >= 40)}
+      accessibilityLabel={d < 0 ? 'Меньше дней' : 'Больше дней'}
+      style={({ pressed }) => [styles.step, { backgroundColor: p.fill, opacity: (d < 0 && value <= 7) || (d > 0 && value >= 40) ? 0.4 : 1, transform: [{ scale: pressed ? 0.9 : 1 }] }]}
+    >
+      <Txt v="headline">{label}</Txt>
+    </Pressable>
+  );
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+      {btn(-1, '−')}
+      <Txt v="headline" style={{ minWidth: 28, textAlign: 'center' }}>
+        {value}
+      </Txt>
+      {btn(1, '+')}
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  wrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  step: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
+});

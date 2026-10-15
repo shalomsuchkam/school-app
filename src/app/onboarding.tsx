@@ -1,13 +1,13 @@
 import { router } from 'expo-router';
 import { useRef, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import Animated, { FadeIn, FadeInRight, LinearTransition } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { InviteSheet } from '@/components/InviteSheet';
 import { Btn, Chip, Field, Group, IconBtn, Row, TimeStepper, ToggleRow, Txt, WeekdayPicker } from '@/components/ui';
-import { api } from '@/lib/api';
+import { api, legalUrl } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { toMin, WD_LONG, WD_SHORT } from '@/lib/format';
 import { ITEM_PRESETS, SUBJECT_PRESETS } from '@/lib/presets';
@@ -17,6 +17,24 @@ type Subj = { name: string; emoji: string; light: boolean };
 type Item = { title: string; emoji: string; needs_photo: boolean; required: boolean; on: boolean };
 
 const STEPS = ['Знакомство', 'Учебные дни', 'Предметы', 'Расписание', 'Дела на завтра', 'Сроки'];
+
+// Where the family studies: sets the store price region later and the default calendar.
+const COUNTRIES = [
+  { code: 'KZ', label: '🇰🇿 Казахстан' },
+  { code: 'RU', label: '🇷🇺 Россия' },
+  { code: 'UZ', label: '🇺🇿 Узбекистан' },
+  { code: 'KG', label: '🇰🇬 Кыргызстан' },
+  { code: 'BY', label: '🇧🇾 Беларусь' },
+  { code: 'ZZ', label: '🌍 Другая' },
+];
+function deviceCountry() {
+  try {
+    const region = new Intl.Locale(Intl.DateTimeFormat().resolvedOptions().locale).maximize().region ?? '';
+    return COUNTRIES.some((c) => c.code === region) ? region : 'KZ';
+  } catch {
+    return 'KZ';
+  }
+}
 
 // The family lives in the parent's time zone: reminders and deadlines are computed there.
 function deviceTz() {
@@ -47,25 +65,27 @@ export default function Onboarding() {
   const [error, setError] = useState<string | null>(null);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [done, setDone] = useState(false);
+  const [country, setCountry] = useState(deviceCountry);
+  const [consent, setConsent] = useState(false);
 
   const has = (n: string) => subjects.some((s) => s.name === n);
   const toggleSubject = (s: Subj) => setSubjects(has(s.name) ? subjects.filter((x) => x.name !== s.name) : [...subjects, s]);
   const dayPlan = plan[planDay] ?? [];
   // same rule as Settings: both deadlines on the same evening, the first one earlier
   const deadlinesOk = toMin(soft) < toMin(hard);
-  const canNext = [child.trim().length > 0, days.length > 0, subjects.length > 0, true, true, deadlinesOk][step];
+  const canNext = [child.trim().length > 0, days.length > 0, subjects.length > 0, true, true, deadlinesOk && consent][step];
 
   // What a failed attempt already created, so «Создать» again resumes instead of making a second family.
   const made = useRef<{ family: boolean; subjects: Record<string, number>; items: Set<string> }>({ family: false, subjects: {}, items: new Set() });
   const finish = async () => {
-    if (busy || !deadlinesOk) return;
+    if (busy || !deadlinesOk || !consent) return;
     setBusy(true);
     setError(null);
     const m = made.current;
     try {
       const tz = deviceTz();
       if (!m.family) {
-        await signIn(await api.createFamily(child.trim(), parent.trim(), tz));
+        await signIn(await api.createFamily({ child_name: child.trim(), parent_name: parent.trim(), tz, country, lang: 'ru', consent: true }));
         m.family = true;
       }
       // core settings first, so even an interrupted setup never runs on the defaults
@@ -151,6 +171,14 @@ export default function Onboarding() {
               </Txt>
               <Field label="Имя ученика" value={child} onChangeText={setChild} placeholder="Например, Алия" maxLength={30} autoFocus />
               <Field label="Как вас подписать (необязательно)" value={parent} onChangeText={setParent} placeholder="Мама" maxLength={30} />
+              <Txt v="sub" color={p.muted} style={{ marginTop: 6, marginBottom: 8 }}>
+                Страна
+              </Txt>
+              <View style={styles.wrap}>
+                {COUNTRIES.map((c) => (
+                  <Chip key={c.code} label={c.label} selected={country === c.code} onPress={() => setCountry(c.code)} />
+                ))}
+              </View>
             </>
           ) : null}
 
@@ -290,6 +318,27 @@ export default function Onboarding() {
                   Срок должен быть раньше последнего срока — в тот же вечер.
                 </Txt>
               ) : null}
+              <Pressable
+                onPress={() => setConsent(!consent)}
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: consent }}
+                style={[styles.consent, { borderColor: consent ? p.brand : p.line, backgroundColor: p.card }]}
+              >
+                <View style={[styles.box, { borderColor: consent ? p.brand : p.muted, backgroundColor: consent ? p.brand : 'transparent' }]}>
+                  {consent ? <Txt v="sub" color="#fff">✓</Txt> : null}
+                </View>
+                <Txt v="callout" style={{ flex: 1 }}>
+                  Я родитель или законный представитель, принимаю{' '}
+                  <Txt v="callout" color={p.brand} onPress={() => Linking.openURL(legalUrl('terms'))}>
+                    соглашение
+                  </Txt>{' '}
+                  и{' '}
+                  <Txt v="callout" color={p.brand} onPress={() => Linking.openURL(legalUrl('privacy'))}>
+                    политику конфиденциальности
+                  </Txt>{' '}
+                  и соглашаюсь на обработку данных ребёнка.
+                </Txt>
+              </Pressable>
               {error ? (
                 <Txt v="callout" color={p.bad} style={{ marginTop: 14 }}>
                   {error}
@@ -312,4 +361,6 @@ const styles = StyleSheet.create({
   bar: { height: 6, borderRadius: 3 },
   wrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   doneWrap: { flex: 1, paddingHorizontal: 24, justifyContent: 'space-between' },
+  consent: { flexDirection: 'row', gap: 12, alignItems: 'flex-start', borderWidth: 1.5, borderRadius: 16, padding: 14, marginTop: 18 },
+  box: { width: 24, height: 24, borderRadius: 7, borderWidth: 2, alignItems: 'center', justifyContent: 'center', marginTop: 1 },
 });

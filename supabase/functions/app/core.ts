@@ -1,5 +1,5 @@
 // deno-lint-ignore-file no-explicit-any
-import { addDays, db, dow, esc, fmtLong, fmtShort, HttpError, localParts, toMin } from "./lib.ts";
+import { addDays, db, dow, esc, fmtLong, fmtShort, HttpError, imageType, localParts, toMin } from "./lib.ts";
 import { notifyChild, notifyParents } from "./notify.ts";
 
 export const isDone = (t: any) => t.status === "done" || t.status === "skip_ok";
@@ -97,7 +97,8 @@ export async function loadTasks(familyId: string, from: string, to = from): Prom
 export async function signPhotos(tasks: any[]) {
   const paths = tasks.flatMap((t) => t.photos.map((p: any) => p.path));
   if (!paths.length) return;
-  const { data } = await db.storage.from("app-photos").createSignedUrls(paths, 3600);
+  // short-lived: a link forwarded out of the app stops working soon
+  const { data } = await db.storage.from("app-photos").createSignedUrls(paths, 900);
   const m = new Map((data ?? []).map((r: any) => [r.path, r.signedUrl]));
   for (const t of tasks) for (const p of t.photos) p.url = m.get(p.path) ?? null;
 }
@@ -289,6 +290,57 @@ export async function applyAction(fam: any, id: number, action: string, undoOf?:
   throw new HttpError(400, "Неизвестное действие");
 }
 
+// ---------- subscription ----------
+// Billing is switched on by the app_billing_enabled secret once store products exist; until then everyone has access.
+export function accessOf(fam: any, billingOn: boolean) {
+  const now = new Date();
+  const paid = !!fam.paid_until && new Date(fam.paid_until) > now;
+  const granted = !!fam.granted_until && new Date(fam.granted_until) > now;
+  const active = !billingOn || !!fam.free_forever || paid || granted;
+  return {
+    active, billing: billingOn, free_forever: !!fam.free_forever, paid_until: fam.paid_until ?? null, granted_until: fam.granted_until ?? null,
+    trial: paid && fam.billing_period === "trial", store: fam.billing_store ?? null,
+  };
+}
+
+// ---------- data lifecycle ----------
+async function removeObjects(paths: string[]) {
+  for (let i = 0; i < paths.length; i += 100) await db.storage.from("app-photos").remove(paths.slice(i, i + 100));
+}
+
+// Photos older than the family's retention window, and photos replaced by a re-shoot, are deleted for good.
+export async function purgePhotos(fam: any) {
+  const cutoff = new Date(Date.now() - (fam.photo_retention_days ?? 30) * 86400_000).toISOString();
+  const stale = new Date(Date.now() - 86400_000).toISOString();
+  const { data } = await db.from("app_photos").select("id, path, taken_at, active, app_tasks!inner(family_id)")
+    .eq("app_tasks.family_id", fam.id).or(`taken_at.lt."${cutoff}",and(active.eq.false,taken_at.lt."${stale}")`).limit(500);
+  const rows: any[] = data ?? [];
+  if (!rows.length) return 0;
+  await removeObjects(rows.map((r) => r.path));
+  await db.from("app_photos").delete().in("id", rows.map((r) => r.id));
+  return rows.length;
+}
+
+// Account deletion (Apple 5.1.1(v), Google Play): every photo file and every row of the family.
+export async function deleteFamily(familyId: string) {
+  for (;;) {
+    const { data } = await db.storage.from("app-photos").list(familyId, { limit: 100 });
+    const dirs: any[] = data ?? [];
+    if (!dirs.length) break;
+    let removed = 0;
+    for (const d of dirs) {
+      const { data: files } = await db.storage.from("app-photos").list(`${familyId}/${d.name}`, { limit: 1000 });
+      const paths = (files ?? []).map((f: any) => `${familyId}/${d.name}/${f.name}`);
+      if (paths.length) await removeObjects(paths);
+      removed += paths.length;
+    }
+    if (!removed) break;
+  }
+  await db.from("app_trial_claims").update({ family_id: null }).eq("family_id", familyId);
+  const { error } = await db.from("app_families").delete().eq("id", familyId);
+  if (error) throw new HttpError(500, error.message);
+}
+
 // ---------- child actions ----------
 export async function childTask(fam: any, id: number) {
   const { S } = await activeDay(fam);
@@ -298,9 +350,12 @@ export async function childTask(fam: any, id: number) {
 }
 
 export const MAX_PHOTO = 8_000_000;
-export async function uploadPhoto(fam: any, taskId: number, bytes: Uint8Array<ArrayBuffer>, type = "image/jpeg") {
+export async function uploadPhoto(fam: any, taskId: number, bytes: Uint8Array<ArrayBuffer>) {
   if (!bytes.length) throw new HttpError(400, "Нет фото");
   if (bytes.length > MAX_PHOTO) throw new HttpError(413, "Фото слишком большое");
+  // trust the bytes, not the header
+  const type = imageType(bytes);
+  if (!type) throw new HttpError(415, "Это не фото");
   const { t, S } = await childTask(fam, taskId);
   if (t.status === "skip_ok") throw new HttpError(400, "Пропуск уже одобрен");
   const { count } = await db.from("app_photos").select("id", { count: "exact", head: true }).eq("task_id", taskId).eq("active", true);

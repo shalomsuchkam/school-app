@@ -27,6 +27,29 @@ export class HttpError extends Error {
   }
 }
 
+// ---------- request guards ----------
+// Constant-time comparison for shared secrets (cron key, webhook auth, admin key).
+export function safeEq(a: string | null | undefined, b: string | null | undefined) {
+  if (!a || !b) return false;
+  const x = new TextEncoder().encode(a), y = new TextEncoder().encode(b);
+  let d = x.length ^ y.length;
+  for (let i = 0; i < Math.max(x.length, y.length); i++) d |= (x[i] ?? 0) ^ (y[i] ?? 0);
+  return d === 0;
+}
+export const clientIp = (req: Request) => (req.headers.get("x-forwarded-for") ?? "").split(",")[0].trim() || "unknown";
+// Fixed-window limiter backed by app_rate (atomic upsert in SQL). Fails open if the DB call errors.
+export async function limit(key: string, max: number, windowSec: number) {
+  const { data, error } = await db.rpc("app_rate_hit", { k: key, lim: max, win_sec: windowSec });
+  if (!error && data === false) throw new HttpError(429, "Слишком много попыток. Попробуйте позже.");
+}
+// Magic-number check: only real JPEG/PNG/WebP files are stored as photos.
+export function imageType(b: Uint8Array): string | null {
+  if (b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return "image/jpeg";
+  if (b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47) return "image/png";
+  if (b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46 && b[8] === 0x57 && b[9] === 0x45) return "image/webp";
+  return null;
+}
+
 // ---------- crypto / codes ----------
 export async function sha256(s: string) {
   const b = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));

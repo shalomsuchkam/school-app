@@ -46,7 +46,11 @@ export type Day = { date: string; label: string; total: number; done: number; la
 export type Overview = { now_hm: string; active: string; days: Day[]; streak: number; perfect_week: number; days_off: string[] };
 export type Family = {
   id: string;
+  code: string;
   child_name: string;
+  photo_retention_days: number;
+  country: string;
+  lang: 'ru' | 'kk' | 'en';
   tz: string;
   school_weekdays: number[];
   soft_deadline: string;
@@ -54,9 +58,19 @@ export type Family = {
   remind_times: string[];
 };
 export type Member = { id: string; role: Role; name: string | null; telegram: boolean; me: boolean };
+export type Access = {
+  active: boolean;
+  billing: boolean;
+  free_forever: boolean;
+  paid_until: string | null;
+  granted_until: string | null;
+  trial: boolean;
+  store: string | null;
+};
 export type Me = {
   device: { id: string; role: Role; name: string | null };
   family: Family;
+  access: Access;
   members: Member[];
   telegram: { enabled: boolean; bot: string | null; linked: boolean };
 };
@@ -95,7 +109,9 @@ async function call<T>(method: string, path: string, body?: unknown, raw?: Raw):
 
 type Auth = { token: string; role: Role };
 export const api = {
-  createFamily: (child_name: string, parent_name: string, tz?: string) => call<Auth>('POST', '/family', { child_name, parent_name, tz }),
+  createFamily: (f: { child_name: string; parent_name: string; tz?: string; country: string; lang: string; consent: true }) => call<Auth>('POST', '/family', f),
+  deleteFamily: () => call('DELETE', '/family'),
+  billingRefresh: () => call<Access>('POST', '/billing/refresh', {}),
   join: (code: string, name: string) => call<Auth>('POST', '/join', { code, name }),
   me: () => call<Me>('GET', '/me'),
   setup: () => call<Setup>('GET', '/setup'),
@@ -136,5 +152,10 @@ export const api = {
   telegramUnlink: () => call('DELETE', '/telegram'),
   pushToken: (t: string) => call('POST', '/push', { token: t }),
 };
+
+// Public legal pages served by the backend.
+export const legalUrl = (kind: 'terms' | 'privacy', lang = 'ru') => `${API_BASE}/legal/${kind}?lang=${lang === 'en' ? 'en' : 'ru'}`;
+// 402 = the family's subscription is not active.
+export const isPaywall = (e: unknown) => e instanceof ApiError && e.status === 402;
 
 export const isDone = (t: Task) => t.status === 'done' || t.status === 'skip_ok';

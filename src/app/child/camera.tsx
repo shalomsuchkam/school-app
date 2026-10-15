@@ -10,6 +10,8 @@ import { Btn, haptic, Txt } from '@/components/ui';
 import { api } from '@/lib/api';
 
 // Live camera only: deliberately no gallery picker, so every photo is taken right now.
+const MAX_SIDE = 2048;
+
 export default function CameraScreen() {
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ id: string; label: string; emoji: string; page: string }>();
@@ -18,6 +20,7 @@ export default function CameraScreen() {
   const cam = useRef<CameraView>(null);
   const [torch, setTorch] = useState(false);
   const [shot, setShot] = useState<string | null>(null);
+  const [dims, setDims] = useState<{ w: number; h: number } | null>(null);
   const [page, setPage] = useState(Number(params.page) || 1);
   const [busy, setBusy] = useState(false);
   const [sent, setSent] = useState(false);
@@ -53,8 +56,12 @@ export default function CameraScreen() {
   const take = async () => {
     try {
       haptic.tap();
-      const pic = await cam.current?.takePictureAsync({ quality: 0.9 });
-      if (pic?.uri) setShot(pic.uri);
+      // full quality here: the only compression happens once, right before sending
+      const pic = await cam.current?.takePictureAsync({ quality: 1 });
+      if (pic?.uri) {
+        setShot(pic.uri);
+        setDims({ w: pic.width, h: pic.height });
+      }
     } catch {
       Alert.alert('Не получилось', 'Попробуй сфотографировать ещё раз.');
     }
@@ -63,9 +70,12 @@ export default function CameraScreen() {
     if (!shot) return;
     setBusy(true);
     try {
-      // Readable text, quick upload on mobile data.
-      const ref = await ImageManipulator.manipulate(shot).resize({ width: 1600 }).renderAsync();
-      const out = await ref.saveAsync({ compress: 0.82, format: SaveFormat.JPEG });
+      // One gentle pass: long side capped at 2048 px (handwriting stays sharp), JPEG 0.85 — about 300–600 KB.
+      const ctx = ImageManipulator.manipulate(shot);
+      const long = Math.max(dims?.w ?? 0, dims?.h ?? 0);
+      if (long > MAX_SIDE) ctx.resize((dims?.w ?? 0) >= (dims?.h ?? 0) ? { width: MAX_SIDE } : { height: MAX_SIDE });
+      const ref = await ctx.renderAsync();
+      const out = await ref.saveAsync({ compress: 0.85, format: SaveFormat.JPEG });
       await api.photo(taskId, out.uri);
       haptic.success();
       setShot(null);

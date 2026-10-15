@@ -3,13 +3,14 @@ import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, AppState, Pressable, StyleSheet, View } from 'react-native';
 
+import { Paywall } from '@/components/Paywall';
 import { Confetti } from '@/components/Confetti';
 import { PhotoViewer } from '@/components/PhotoViewer';
 import { ProgressRing } from '@/components/ProgressRing';
 import { SkipSheet } from '@/components/SkipSheet';
 import { ChildTaskCard } from '@/components/TaskCards';
 import { Btn, Empty, haptic, Loading, Screen, SectionLabel, Txt, useToast } from '@/components/ui';
-import { api, ApiError, isDone, type ChildState, type Task } from '@/lib/api';
+import { api, ApiError, isPaywall, isDone, type ChildState, type Task } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { duration } from '@/lib/format';
 import { exactAlarmsAllowed, openExactAlarmSettings } from '@/lib/exactAlarm';
@@ -39,6 +40,7 @@ export default function ChildHome() {
   const [now, setNow] = useState(0);
   const [notifOk, setNotifOk] = useState(true);
   const [exactOk, setExactOk] = useState(true);
+  const [paywall, setPaywall] = useState(false);
   const [skip, setSkip] = useState<Task | null>(null);
   const [viewer, setViewer] = useState<{ url: string; caption: string; id: number } | null>(null);
   const [confetti, setConfetti] = useState(0);
@@ -56,6 +58,7 @@ export default function ChildHome() {
       if (my < seq.current.shown) return;
       seq.current.shown = my;
       setError(null);
+      setPaywall(false);
       // Permission banners must refresh even when the data is unchanged (e.g. back from Settings).
       const ok = await notificationsAllowed(false);
       setNotifOk(ok);
@@ -89,6 +92,11 @@ export default function ChildHome() {
       prevAll.current = all;
       if (ok && my === seq.current.shown) await scheduleReminders(st);
     } catch (e) {
+      if (isPaywall(e)) {
+        await cancelReminders();
+        setPaywall(true);
+        return;
+      }
       if (e instanceof ApiError && e.status === 401) {
         await cancelReminders();
         await signOut();
@@ -115,6 +123,7 @@ export default function ChildHome() {
     };
   }, [load]);
 
+  if (paywall) return <Paywall role="child" onActive={load} />;
   if (!s) return <Loading error={error} onRetry={load} />;
 
   const h = hero(s, fetchedAt, now);

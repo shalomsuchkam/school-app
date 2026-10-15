@@ -3,10 +3,11 @@ import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import { AppState, Pressable, StyleSheet, View } from 'react-native';
 
+import { Paywall } from '@/components/Paywall';
 import { PhotoViewer } from '@/components/PhotoViewer';
 import { ParentTaskCard } from '@/components/TaskCards';
 import { Btn, Chip, Empty, Group, Loading, Row, Screen, SectionLabel, Txt, useToast } from '@/components/ui';
-import { api, ApiError, isDone, type Day, type Overview, type ParentAction, type Task } from '@/lib/api';
+import { api, ApiError, isDone, isPaywall, type Day, type Overview, type ParentAction, type Task } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { gradients, radius, usePalette } from '@/lib/theme';
 
@@ -20,6 +21,7 @@ export default function Today() {
   const [busy, setBusy] = useState<number | null>(null);
   const [openDay, setOpenDay] = useState<string | null>(null);
   const [viewer, setViewer] = useState<{ url: string; caption: string; id: number } | null>(null);
+  const [paywall, setPaywall] = useState(false);
   const toast = useToast();
 
   const load = useCallback(async () => {
@@ -28,7 +30,9 @@ export default function Today() {
       setData(ov);
       setName(me.family.child_name);
       setError(null);
+      setPaywall(false);
     } catch (e) {
+      if (isPaywall(e)) return setPaywall(true);
       if (e instanceof ApiError && e.status === 401) {
         await signOut();
         router.replace('/welcome');
@@ -52,6 +56,7 @@ export default function Today() {
     };
   }, [load]);
 
+  if (paywall) return <Paywall role="parent" onActive={load} />;
   if (!data) return <Loading error={error} onRetry={load} />;
 
   // the server restores the task exactly as it was before the last action (photos, skip request)
