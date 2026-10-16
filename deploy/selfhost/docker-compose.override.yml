@@ -1,0 +1,55 @@
+# Uroki override for the official self-hosted Supabase compose file
+# (supabase/supabase/docker/docker-compose.yml at the commit pinned in versions.env).
+# bootstrap.sh copies it next to the upstream file; both are passed with -f.
+# Needs Docker Compose >= 2.24.4 for !reset / !override (bootstrap.sh checks).
+#
+# Exposure model: only Caddy publishes ports (80/443). Docker-published ports bypass ufw, so every upstream
+# port mapping is removed here; Kong stays on 127.0.0.1:8000 for Studio over an SSH tunnel.
+
+services:
+  caddy:
+    container_name: uroki-caddy
+    image: caddy:2.10.0-alpine
+    restart: unless-stopped
+    depends_on:
+      - kong
+    ports:
+      - "80:80/tcp"
+      - "443:443/tcp"
+    environment:
+      API_DOMAIN: ${API_DOMAIN:?set API_DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL}
+      APP_MODE: ${APP_MODE:-maintenance}
+      CLOUD_FN_HOST: ${CLOUD_FN_HOST:-cmranrfjvvmhktntbnpg.supabase.co}
+    volumes:
+      - ./caddy:/etc/caddy:ro
+      - ./volumes/caddy/data:/data
+      - ./volumes/caddy/config:/config
+    networks:
+      default:
+        # Containers resolve the public API name straight to Caddy (no hairpin NAT), see functions below.
+        aliases:
+          - ${API_DOMAIN}
+
+  kong:
+    ports: !override
+      - "127.0.0.1:${KONG_HTTP_PORT:-8000}:8000/tcp"
+    environment:
+      # Kong only sees traffic from Caddy / the docker network; take the client IP from Caddy's header.
+      KONG_TRUSTED_IPS: 0.0.0.0/0,::/0
+      KONG_REAL_IP_HEADER: X-Forwarded-For
+      KONG_REAL_IP_RECURSIVE: "on"
+
+  functions:
+    environment:
+      # The `app` function builds signed photo URLs from SUPABASE_URL (core.ts signPhotos), so it must be the
+      # public https name, not http://kong:8000. Inside docker this name resolves to Caddy (alias above).
+      SUPABASE_URL: https://${API_DOMAIN}
+      # The function does its own auth (device tokens, cron/webhook secrets) == `--no-verify-jwt` in the cloud.
+      VERIFY_JWT: "false"
+
+  # Database pooler and log server stay internal (no host ports).
+  supavisor:
+    ports: !reset []
+  analytics:
+    ports: !reset []

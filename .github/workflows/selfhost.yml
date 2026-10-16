@@ -1,0 +1,132 @@
+name: Self-hosted backend (KZ)
+
+# Manual only. Uploads deploy/selfhost + supabase/functions/app to the Kazakhstan VPS over SSH and runs
+# bootstrap.sh (first install / settings change), redeploy.sh (new function code, mode switch) or a status check.
+# The data migration itself (deploy/selfhost/migrate.sh) is run by hand on the server: cloud credentials never
+# go through GitHub.
+#
+# Repository secrets (Settings -> Secrets and variables -> Actions):
+#   SELFHOST_SSH_HOST         server IPv4 or host name
+#   SELFHOST_SSH_USER         login with passwordless sudo (e.g. "deploy")
+#   SELFHOST_SSH_KEY          private key (ed25519) of a key pair made only for this workflow
+#   SELFHOST_SSH_KNOWN_HOSTS  the server's host key line(s): ssh-keyscan -t ed25519 <host>, checked against the
+#                             fingerprint shown in the ps.kz console (no trust-on-first-use in CI)
+#   SELFHOST_API_DOMAIN       e.g. api.example.kz (A record -> server IPv4)
+#   SELFHOST_ACME_EMAIL       e-mail for Let's Encrypt
+#   SELFHOST_SSH_PORT         optional, default 22
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'redeploy = new function code; bootstrap = install/update the server; status = read-only check'
+        type: choice
+        options: [redeploy, bootstrap, status]
+        default: redeploy
+      app_mode:
+        description: 'What https://API_DOMAIN/functions/v1/app serves (unchanged keeps the current mode)'
+        type: choice
+        options: [unchanged, maintenance, local, cloud]
+        default: unchanged
+
+permissions:
+  contents: read
+
+concurrency:
+  group: selfhost
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    # Add required reviewers to this environment (Settings -> Environments) to gate production changes.
+    environment: selfhost
+    env:
+      SSH_HOST: ${{ secrets.SELFHOST_SSH_HOST }}
+      SSH_USER: ${{ secrets.SELFHOST_SSH_USER }}
+      SSH_KEY: ${{ secrets.SELFHOST_SSH_KEY }}
+      SSH_KNOWN_HOSTS: ${{ secrets.SELFHOST_SSH_KNOWN_HOSTS }}
+      SSH_PORT: ${{ secrets.SELFHOST_SSH_PORT }}
+      API_DOMAIN: ${{ secrets.SELFHOST_API_DOMAIN }}
+      ACME_EMAIL: ${{ secrets.SELFHOST_ACME_EMAIL }}
+      ACTION: ${{ inputs.action }}
+      APP_MODE: ${{ inputs.app_mode }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Check secrets
+        run: |
+          missing=()
+          for v in SSH_HOST SSH_USER SSH_KEY SSH_KNOWN_HOSTS API_DOMAIN ACME_EMAIL; do
+            if [ -z "${!v}" ]; then missing+=("SELFHOST_$v"); fi
+          done
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::error title=Missing secrets::Add repository secrets: ${missing[*]} (see deploy/selfhost/README.md)"
+            exit 1
+          fi
+          if [ "$ACTION" = status ] && [ "$APP_MODE" != unchanged ]; then
+            echo "::error::status is read-only; use redeploy to change the mode"
+            exit 1
+          fi
+
+      - name: Lint deploy scripts
+        run: |
+          cd deploy/selfhost
+          for f in *.sh; do bash -n "$f"; done
+          if command -v shellcheck >/dev/null; then shellcheck -x -S warning ./*.sh; fi
+
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
+        if: inputs.action != 'status'
+        with:
+          deno-version: v2.x
+
+      - name: Type-check and test the function
+        if: inputs.action != 'status'
+        run: |
+          deno check supabase/functions/app/index.ts
+          deno test --allow-env --allow-net supabase/functions/app/logic_test.ts
+
+      - name: Set up SSH
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/selfhost
+          chmod 600 ~/.ssh/selfhost
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          cat > ~/.ssh/config <<EOF
+          Host selfhost
+            HostName ${SSH_HOST}
+            User ${SSH_USER}
+            Port ${SSH_PORT:-22}
+            IdentityFile ~/.ssh/selfhost
+            IdentitiesOnly yes
+            StrictHostKeyChecking yes
+            ServerAliveInterval 30
+          EOF
+          ssh selfhost true
+
+      - name: Upload kit (deploy/selfhost + supabase/functions/app)
+        if: inputs.action != 'status'
+        run: |
+          kit="$RUNNER_TEMP/uroki-kit"
+          mkdir -p "$kit/functions/app"
+          rsync -a --exclude '.env' deploy/selfhost/ "$kit/"
+          rsync -a --exclude '*_test.ts' supabase/functions/app/ "$kit/functions/app/"
+          rsync -az --delete -e ssh "$kit/" selfhost:uroki-kit/
+
+      - name: Run on the server
+        run: |
+          q() { printf '%q' "$1"; }
+          envs="API_DOMAIN=$(q "$API_DOMAIN") ACME_EMAIL=$(q "$ACME_EMAIL")"
+          mode=""
+          if [ "$APP_MODE" != unchanged ]; then mode="--mode $(q "$APP_MODE")"; fi
+          case "$ACTION" in
+            bootstrap) cmd="bash \"\$HOME/uroki-kit/bootstrap.sh\" $mode" ;;
+            redeploy)  cmd="bash \"\$HOME/uroki-kit/redeploy.sh\" $mode" ;;
+            status)    cmd="bash /opt/uroki/kit/redeploy.sh --status" ;;
+            *) echo "::error::unknown action $ACTION"; exit 1 ;;
+          esac
+          ssh selfhost "sudo -n env $envs $cmd"
+
+      - name: Clean up key
+        if: always()
+        run: rm -f ~/.ssh/selfhost

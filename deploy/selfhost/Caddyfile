@@ -1,0 +1,73 @@
+# Uroki API gateway (Caddy, automatic Let's Encrypt HTTPS).
+# Mounted at /etc/caddy/Caddyfile by docker-compose.override.yml. Env comes from the stack .env:
+#   API_DOMAIN, ACME_EMAIL, APP_MODE (local | maintenance | cloud), CLOUD_FN_HOST.
+# Switch modes with: sudo /opt/uroki/kit/redeploy.sh --mode <mode>
+
+{
+	email {$ACME_EMAIL}
+	servers {
+		# ufw only opens 443/tcp; no HTTP/3
+		protocols h1 h2
+	}
+}
+
+# Self-hosted edge function. The function rate-limits by cf-connecting-ip / x-real-ip (lib.ts clientIp):
+# set both to the real peer address so clients cannot spoof them.
+(app-local) {
+	reverse_proxy kong:8000 {
+		header_up Cf-Connecting-Ip {remote_host}
+		header_up X-Real-IP {remote_host}
+	}
+}
+
+# Transition phase: forward to the old Supabase Cloud function (data still in the cloud).
+# Note: behind this proxy the cloud sees every user with the VPS IP, so its per-IP limits
+# (5 new families / hour, 10 joins / 15 min) become global. Keep this phase short.
+(app-cloud) {
+	reverse_proxy https://{$CLOUD_FN_HOST} {
+		header_up Host {upstream_hostport}
+		header_up -Cf-Connecting-Ip
+		header_up -X-Real-IP
+	}
+}
+
+# Cutover window: nothing is written anywhere.
+(app-maintenance) {
+	header Content-Type "application/json; charset=utf-8"
+	header Retry-After 600
+	respond `{"error":"Идут технические работы. Попробуйте через несколько минут."}` 503
+}
+
+{$API_DOMAIN} {
+	encode zstd gzip
+	header -Server
+
+	log {
+		output stdout
+		format json
+	}
+
+	route {
+		@app path /functions/v1/app /functions/v1/app/*
+		handle @app {
+			import app-{$APP_MODE:maintenance}
+		}
+
+		# Short-lived signed photo links issued by the function (createSignedUrls, 15 min)
+		@signed path /storage/v1/object/sign/app-photos/*
+		handle @signed {
+			reverse_proxy kong:8000
+		}
+
+		# REST/Storage for the function itself (it calls SUPABASE_URL=https://API_DOMAIN from inside docker).
+		# Studio, auth, rest, realtime etc. are never reachable from the internet.
+		@internal remote_ip private_ranges
+		handle @internal {
+			reverse_proxy kong:8000
+		}
+
+		handle {
+			respond 404
+		}
+	}
+}
