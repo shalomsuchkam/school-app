@@ -138,6 +138,8 @@ export default function ChildHome() {
   const seq = useRef({ sent: 0, shown: 0 });
   // Last payload we rendered: lets a poll that brought nothing new skip the whole re-render.
   const lastKey = useRef<string | null>(null);
+  // photo links are signed for 15 min: an unchanged payload is still applied every 10 min to renew them
+  const lastAt = useRef(0);
   const toast = useToast();
   const reduce = useReducedMotion();
   const { width } = useWindowDimensions();
@@ -175,9 +177,10 @@ export default function ChildHome() {
         track_time: st.track_time,
         started_at: st.started_at,
       });
-      if (key === lastKey.current) return;
+      if (key === lastKey.current && Date.now() - lastAt.current < 600_000) return;
       lastKey.current = key;
       const ts = Date.now();
+      lastAt.current = ts;
       setS(st);
       setFetchedAt(ts);
       setNow(ts);
@@ -220,7 +223,9 @@ export default function ChildHome() {
   const hasQueue = queue.length > 0;
   useEffect(() => {
     if (!onlineTick || !hasQueue) return;
-    flushQueue().then((r) => onFlushed(r));
+    flushQueue()
+      .then((r) => onFlushed(r))
+      .catch(() => {}); // photos stay queued; the next successful load tries again
   }, [onlineTick, hasQueue]);
 
   useEffect(() => {
@@ -311,7 +316,11 @@ export default function ChildHome() {
   const enableNotif = async () => {
     const ok = await notificationsAllowed(true);
     setNotifOk(ok);
-    if (ok) await scheduleReminders(s);
+    if (ok) {
+      try {
+        await scheduleReminders(s);
+      } catch {} // permission is granted; the next load schedules them again
+    }
     toast.show(ok ? t('child.notif.on') : t('child.notif.denied'));
   };
   const logout = () =>

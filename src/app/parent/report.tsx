@@ -2,8 +2,9 @@ import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
-import { Empty, Group, IconBtn, Loading, Row, Screen, SectionLabel, Txt, useLayout } from '@/components/ui';
-import { api, type Child, type Report } from '@/lib/api';
+import { Paywall } from '@/components/Paywall';
+import { Empty, ErrorBanner, Group, IconBtn, Loading, Row, Screen, SectionLabel, Txt, useLayout } from '@/components/ui';
+import { api, isPaywall, type Child, type Report } from '@/lib/api';
 import { ChildSwitcher, currentChildReady, getCurrentChild, setCurrentChild, useCurrentChild } from '@/lib/currentChild';
 import { duration, isoWeekday, shortDate, wdShort } from '@/lib/format';
 import { tn, useT } from '@/lib/i18n';
@@ -21,6 +22,7 @@ export default function WeeklyReport() {
   const [report, setReport] = useState<Report | null>(null);
   const [trackTime, setTrackTime] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [paywall, setPaywall] = useState(false);
   const [kids, setKids] = useState<Child[]>([]);
   const [childId] = useCurrentChild(kids);
 
@@ -33,7 +35,9 @@ export default function WeeklyReport() {
       setKids(me.children);
       setTrackTime(me.family.track_time);
       setError(null);
+      setPaywall(false);
     } catch (e) {
+      if (isPaywall(e)) return setPaywall(true);
       setError((e as Error).message);
     }
   }, []);
@@ -42,12 +46,16 @@ export default function WeeklyReport() {
       load();
     }, [load]),
   );
+  if (paywall) return <Paywall role="parent" onActive={load} />;
   if (!report) return <Loading error={error} onRetry={load} />;
 
   const color: Record<Kind, string> = { on_time: p.ok, late: p.warn, skipped: p.muted, missed: p.bad };
   const switchChild = (id: number | null) => {
     if (id === null || id === report.child_id) return;
     setCurrentChild(id);
+    // show loading, not the previous child's week, until the new report arrives
+    setReport(null);
+    setError(null);
     load();
   };
   const back = () => (router.canGoBack() ? router.back() : router.replace('/parent'));
@@ -184,6 +192,7 @@ export default function WeeklyReport() {
       right={<IconBtn icon="close" label={t('common.close')} onPress={back} />}
     >
       <ChildSwitcher list={kids} value={childId} onChange={switchChild} />
+      <ErrorBanner error={error} onRetry={load} />
       {!totals.total ? (
         <Empty icon="📊" title={t('parent.report.emptyTitle')} text={t('parent.report.emptyText')} />
       ) : (

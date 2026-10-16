@@ -122,6 +122,9 @@ async function handleTelegram(u: any) {
     const { data: task } = await db.from("app_tasks").select("family_id, status, accepted").eq("id", taskId).maybeSingle();
     const dev = devs.find((d) => d.family_id === task?.family_id);
     if (!task || !dev) return tg("answerCallbackQuery", { callback_query_id: cb.id, text: "Нет доступа" });
+    if (!accessOf(await getFamily(dev.family_id), await billingOn()).active) {
+      return tg("answerCallbackQuery", { callback_query_id: cb.id, text: "Подписка закончилась" });
+    }
     const closeKeyboard = () =>
       tg("editMessageReplyMarkup", { chat_id: cb.message.chat.id, message_id: cb.message.message_id, reply_markup: { inline_keyboard: [] } });
     const expected = kind === "s" ? "skip_pending" : kind === "t" ? "done" : null;
@@ -156,8 +159,6 @@ async function handleTelegram(u: any) {
       if (link && new Date(link.expires_at) > new Date()) {
         await db.from("app_devices").update({ tg_chat_id: m.chat.id }).eq("id", link.device_id);
         await db.from("app_tg_links").delete().eq("code", code);
-        const { data: dev } = await db.from("app_devices").select("family_id").eq("id", link.device_id).single();
-        const fam = await getFamily(dev.family_id);
         return tg("sendMessage", {
           chat_id: m.chat.id, parse_mode: "HTML",
           text: `✅ <b>Telegram подключён.</b>\nСюда будут приходить фото, запросы на пропуск и тревоги по детям семьи.\n\n/status — что сделано сейчас`,
@@ -171,6 +172,10 @@ async function handleTelegram(u: any) {
   if (text.startsWith("/status") || text === "📋 Статус") {
     for (const d of devs) {
       const fam = await getFamily(d.family_id);
+      if (!accessOf(fam, await billingOn()).active) {
+        await tg("sendMessage", { chat_id: m.chat.id, text: "Подписка закончилась — продлите её в приложении." });
+        continue;
+      }
       for (const c of await children(fam.id)) await tg("sendMessage", { chat_id: m.chat.id, parse_mode: "HTML", text: await statusText(await kidOf(fam, c.id)) });
     }
   }
@@ -196,20 +201,40 @@ async function weeklyFor(fam: any) {
 
 // ---------- reminders (cron, every 5 min) ----------
 const RANK: Record<string, number> = { soft: 0, deadline: 1, final: 2 };
-async function tick() {
-  const { data: fams } = await db.from("app_families").select("*");
+// Is any reminder/deadline slot of this family in the last 30 minutes (family time)? Cheap, in-memory:
+// families outside every window cost no queries, so the 5-minute tick scales to thousands of families.
+function inAlertWindow(fam: any) {
+  const nowM = toMin(localParts(fam.tz).hm);
+  return [...(fam.remind_times ?? []), fam.soft_deadline, fam.hard_deadline]
+    .some((t: string) => HM.test(t ?? "") && nowM >= toMin(t) && nowM - toMin(t) <= 30);
+}
+async function tickFamily(fam: any, hourly: boolean, billing: boolean) {
+  if (hourly) await purgePhotos(fam); // retention is kept even for lapsed families
+  if (!accessOf(fam, billing).active) return 0;
+  await weeklyTelegram(fam);
+  if (!inAlertWindow(fam)) return 0;
   let fired = 0;
+  for (const c of await children(fam.id)) fired += await tickChild(await kidOf(fam, c.id));
+  return fired;
+}
+async function tick() {
   const hourly = new Date().getUTCMinutes() < 5;
-  for (const fam of fams ?? []) {
-    try {
-      if (hourly) await purgePhotos(fam);
-      await weeklyTelegram(fam);
-      for (const c of await children(fam.id)) fired += await tickChild(await kidOf(fam, c.id));
-    } catch (e) {
-      console.error("tick family", fam.id, e);
+  const billing = await billingOn();
+  let fired = 0, total = 0;
+  // PostgREST returns at most 1000 rows per request: read families page by page, 8 at a time in parallel
+  for (let from = 0; ; from += 1000) {
+    const { data: fams } = await db.from("app_families").select("*").order("id").range(from, from + 999);
+    if (!fams?.length) break;
+    total += fams.length;
+    for (let i = 0; i < fams.length; i += 8) {
+      const res = await Promise.all(fams.slice(i, i + 8).map((fam: any) =>
+        tickFamily(fam, hourly, billing).catch((e) => (console.error("tick family", fam.id, e), 0))
+      ));
+      fired += res.reduce((a, b) => a + b, 0);
     }
+    if (fams.length < 1000) break;
   }
-  return { families: fams?.length ?? 0, fired };
+  return { families: total, fired };
 }
 
 // One child's reminders for the due day; returns 1 when an alert fired.
@@ -292,8 +317,9 @@ async function route(req: Request, path: string): Promise<Response> {
   if (path === "/billing/revenuecat" && M === "POST") {
     if (!safeEq(req.headers.get("authorization"), await secret("app_rc_webhook_auth"))) return new Response("forbidden", { status: 403 });
     const ev = (await body(req))?.event ?? {};
-    const famId = String(ev.app_user_id ?? "");
-    if (/^[0-9a-f-]{36}$/.test(famId)) await syncSubscription(famId);
+    // TRANSFER (a purchase restored under another family) has no app_user_id: re-check both sides
+    const ids = new Set<string>([ev.app_user_id, ...(ev.transferred_from ?? []), ...(ev.transferred_to ?? [])].map((x) => String(x ?? "")));
+    for (const famId of ids) if (/^[0-9a-f-]{36}$/.test(famId)) await syncSubscription(famId);
     return json({ ok: true });
   }
   // Owner-only: free access for a family by its code (x-admin-key header).
@@ -301,7 +327,9 @@ async function route(req: Request, path: string): Promise<Response> {
     if (!safeEq(req.headers.get("x-admin-key"), await secret("app_admin_key"))) return json({ error: "forbidden" }, 403);
     const b = await body(req);
     const code = clean(b.code, 12).toUpperCase();
-    const patch: any = b.revoke ? { free_forever: false, granted_until: null } : b.days ? { granted_until: new Date(Date.now() + Math.min(Number(b.days), 3650) * 86400_000).toISOString() } : { free_forever: true };
+    const days = Number(b.days);
+    if (b.days !== undefined && !b.revoke && !(Number.isInteger(days) && days >= 1 && days <= 3650)) throw new HttpError(400, "days: 1–3650");
+    const patch: any = b.revoke ? { free_forever: false, granted_until: null } : b.days ? { granted_until: new Date(Date.now() + days * 86400_000).toISOString() } : { free_forever: true };
     const { data } = await db.from("app_families").update(patch).eq("code", code).select("code, child_name, free_forever, granted_until, paid_until");
     if (!data?.length) throw new HttpError(404, "Семья с таким кодом не найдена");
     return json(data[0]);
@@ -332,13 +360,17 @@ async function route(req: Request, path: string): Promise<Response> {
     return json({ ...(await newDevice(fam.id, "parent", clean(b.parent_name, 30))), role: "parent" });
   }
   if (path === "/join" && M === "POST") {
-    await limit(`join:${clientIp(req)}`, 10, 900); // makes guessing 6-character codes pointless
+    await limit(`join:${clientIp(req)}`, 10, 900, true); // makes guessing 6-character codes pointless
     const b = await body(req);
     const code = clean(b.code, 12).toUpperCase().replace(/[^A-Z0-9]/g, "");
     // delete-and-return claims the code atomically: two phones can't both use one invite
     const { data: used } = await db.from("app_invites").delete().eq("code", code).gt("expires_at", new Date().toISOString()).select("*");
     const inv = used?.[0];
-    if (!inv) throw new HttpError(404, "Код не найден или устарел");
+    if (!inv) {
+      // service-wide cap on wrong codes: guessing stays hopeless even from many IP addresses
+      await limit("join-fail", 300, 900, true);
+      throw new HttpError(404, "Код не найден или устарел");
+    }
     const childId = inv.role === "child" ? inv.child_id ?? (await children(inv.family_id))[0]?.id ?? null : null;
     return json({ ...(await newDevice(inv.family_id, inv.role, clean(b.name, 30), childId)), role: inv.role });
   }
@@ -375,7 +407,7 @@ async function route(req: Request, path: string): Promise<Response> {
 
   // which child a request is about: the child's own device, or ?child=<id> from a parent (default: first child)
   const qChild = Number(new URL(req.url).searchParams.get("child")) || null;
-  const kid = await kidOf(fam0, d.role === "child" ? d.child_id : qChild);
+  const kid = await kidOf(fam0, d.role === "child" ? d.child_id : qChild, M !== "GET");
 
   if (path === "/setup" && M === "GET") return json(await setup(kid));
 
@@ -593,6 +625,7 @@ async function route(req: Request, path: string): Promise<Response> {
     return json({ ok: true });
   }
   if (path === "/invite" && M === "POST") {
+    await limit(`inv:${famId}`, 30, 3600);
     const b = await body(req);
     const role = b.role === "parent" ? "parent" : "child";
     const code = randomCode(6);
@@ -632,7 +665,7 @@ Deno.serve(async (req) => {
   try {
     res = path === "/" ? json({ ok: true, service: "uroki-app" }) : await route(req, path);
   } catch (e: any) {
-    if (e instanceof HttpError) res = json({ error: tr(langOf(req), e.message) }, e.status);
+    if (e instanceof HttpError && e.status !== 500) res = json({ error: tr(langOf(req), e.message) }, e.status);
     else {
       console.error(e);
       res = json({ error: "Ошибка сервера" }, 500); // no internals leak to clients

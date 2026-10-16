@@ -12,6 +12,7 @@
       "supportsTablet": true,
       "infoPlist": {
         "CFBundleDisplayName": "Уроки",
+        "CFBundleAllowMixedLocalizations": true,
         "ITSAppUsesNonExemptEncryption": false
       },
       "privacyManifests": {
@@ -135,6 +136,11 @@
         "Уроки"
       ]
     ],
+    "locales": {
+      "ru": "./locales/ru.json",
+      "kk": "./locales/kk.json",
+      "en": "./locales/en.json"
+    },
     "experiments": {
       "typedRoutes": false,
       "reactCompiler": true

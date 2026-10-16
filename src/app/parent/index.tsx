@@ -1,14 +1,14 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import { router, useFocusEffect } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { AppState, Pressable, StyleSheet, View } from 'react-native';
 
 import { Paywall } from '@/components/Paywall';
 import { PhoneLimitGuide } from '@/components/PhoneLimitGuide';
 import { PhotoViewer } from '@/components/PhotoViewer';
 import { ParentTaskCard } from '@/components/TaskCards';
-import { Btn, Chip, Empty, Field, Group, Icon, IconBtn, Loading, Row, Screen, SectionLabel, Sheet, Txt, useToast } from '@/components/ui';
-import { api, ApiError, isDone, isPaywall, type Child, type Day, type Overview, type ParentAction, type Task } from '@/lib/api';
+import { Btn, Chip, Empty, ErrorBanner, Field, Group, Icon, IconBtn, Loading, Row, Screen, SectionLabel, Sheet, Txt, useToast } from '@/components/ui';
+import { api, ApiError, isDone, isPaywall, type Child, type Day, type Me, type Overview, type ParentAction, type Task } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { ChildSwitcher, currentChildReady, getCurrentChild, setCurrentChild, useCurrentChild } from '@/lib/currentChild';
 import { longDate, toMin } from '@/lib/format';
@@ -54,20 +54,33 @@ export default function Today() {
   const [toolOpen, setToolOpen] = useState(false);
   const [toolBusy, setToolBusy] = useState(false);
   const [guide, setGuide] = useState(false);
+  const seq = useRef({ sent: 0, shown: 0 });
+  // Last payload we rendered: lets a poll that brought nothing new skip the whole re-render.
+  const lastKey = useRef<string | null>(null);
+  // photo links are signed for 15 min: an unchanged payload is still applied every 10 min to renew them
+  const lastAt = useRef(0);
   const toast = useToast();
 
   const load = useCallback(async () => {
+    const my = ++seq.current.sent;
     try {
       const cid = await currentChildReady();
       const [ov, me] = await Promise.all([api.overview(cid ?? undefined), api.me()]);
       // the parent switched to another child meanwhile: that request's answer wins
       if (getCurrentChild() !== cid) return;
+      // Overlapping refreshes (focus, poll, resume, actions): never let an older answer overwrite a newer one.
+      if (my < seq.current.shown) return;
+      seq.current.shown = my;
+      setError(null);
+      setPaywall(false);
+      const key = overviewKey(ov, me);
+      if (key === lastKey.current && Date.now() - lastAt.current < 600_000) return;
+      lastKey.current = key;
+      lastAt.current = Date.now();
       setData(ov);
       setKids(me.children);
       setHard(me.family.hard_deadline);
       setToday(todayIn(me.family.tz));
-      setError(null);
-      setPaywall(false);
     } catch (e) {
       if (isPaywall(e)) return setPaywall(true);
       if (e instanceof ApiError && e.status === 401) {
@@ -75,23 +88,22 @@ export default function Today() {
         router.replace('/welcome');
         return;
       }
-      setError((e as Error).message);
+      if (my >= seq.current.shown) setError((e as Error).message);
     }
   }, [signOut]);
 
+  // Refresh on focus, on return to the app and every 30 s, but only while this tab is on screen.
   useFocusEffect(
     useCallback(() => {
       load();
+      const sub = AppState.addEventListener('change', (st) => st === 'active' && load());
+      const poll = setInterval(load, 30000);
+      return () => {
+        sub.remove();
+        clearInterval(poll);
+      };
     }, [load]),
   );
-  useEffect(() => {
-    const sub = AppState.addEventListener('change', (st) => st === 'active' && load());
-    const poll = setInterval(load, 30000);
-    return () => {
-      sub.remove();
-      clearInterval(poll);
-    };
-  }, [load]);
 
   if (paywall) return <Paywall role="parent" onActive={load} />;
   if (!data) return <Loading error={error} onRetry={load} />;
@@ -160,6 +172,10 @@ export default function Today() {
     if (id === null || id === data.child_id) return;
     setCurrentChild(id);
     setOpenDay(null);
+    // show loading, not the previous child's tasks (an action there would hit the wrong child)
+    setData(null);
+    setError(null);
+    lastKey.current = null;
     load();
   };
 
@@ -182,6 +198,7 @@ export default function Today() {
         right={<IconBtn icon="stats-chart-outline" label={t('parent.today.report')} onPress={() => router.push('/parent/report')} />}
       >
         <ChildSwitcher list={kids} value={childId} onChange={switchChild} />
+        <ErrorBanner error={error} onRetry={load} />
         <View style={styles.seg}>
           <Chip label={t('parent.today.segDay')} selected={mode === 'day'} onPress={() => setMode('day')} />
           <Chip label={t('parent.today.segHistory')} selected={mode === 'history'} onPress={() => setMode('history')} />
@@ -302,6 +319,16 @@ export default function Today() {
       {toolOpen ? null : toast.node}
     </>
   );
+}
+
+// The server hands back fresh objects and rotated signed photo URLs on every poll: compare without them.
+function overviewKey(ov: Overview, me: Me) {
+  return JSON.stringify({
+    ov: { ...ov, days: ov.days.map((d) => ({ ...d, tasks: d.tasks.map((tk) => ({ ...tk, photos: tk.photos.map((ph) => ph.id) })) })) },
+    children: me.children,
+    hard: me.family.hard_deadline,
+    today: todayIn(me.family.tz),
+  });
 }
 
 // The card itself belongs to TaskCards; long-press it (or use the links below) to comment or edit the assignment.

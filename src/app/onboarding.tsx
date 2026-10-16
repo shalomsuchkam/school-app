@@ -352,7 +352,12 @@ export default function Onboarding() {
                         icon={s?.emoji}
                         title={`${i + 1}. ${n}`}
                         right={
-                          <Pressable hitSlop={10} onPress={() => setPlan({ ...plan, [planDay]: dayPlan.filter((_, j) => j !== i) })}>
+                          <Pressable
+                            hitSlop={10}
+                            accessibilityRole="button"
+                            accessibilityLabel={t('onboarding.schedule.removeA11y', { name: n })}
+                            onPress={() => setPlan({ ...plan, [planDay]: dayPlan.filter((_, j) => j !== i) })}
+                          >
                             <Txt v="headline" color={p.muted}>
                               ✕
                             </Txt>
@@ -434,11 +439,11 @@ export default function Onboarding() {
                 </View>
                 <Txt v="callout" style={{ flex: 1 }}>
                   {t('onboarding.consent.a')}{' '}
-                  <Txt v="callout" color={p.brand} onPress={() => Linking.openURL(legalUrl('terms'))}>
+                  <Txt v="callout" color={p.brand} onPress={() => Linking.openURL(legalUrl('terms', lang))}>
                     {t('onboarding.consent.terms')}
                   </Txt>{' '}
                   {t('onboarding.consent.and')}{' '}
-                  <Txt v="callout" color={p.brand} onPress={() => Linking.openURL(legalUrl('privacy'))}>
+                  <Txt v="callout" color={p.brand} onPress={() => Linking.openURL(legalUrl('privacy', lang))}>
                     {t('onboarding.consent.privacy')}
                   </Txt>{' '}
                   {t('onboarding.consent.b')}

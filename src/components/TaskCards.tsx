@@ -91,7 +91,12 @@ function Thumbs({ t, onOpen }: { t: Task; onOpen: (url: string, caption: string,
     <View style={styles.thumbs}>
       {t.photos.map((ph) =>
         ph.url ? (
-          <Pressable key={ph.id} onPress={() => onOpen(ph.url!, `${t.label} · ${ph.hm ?? ''}`, ph.id)}>
+          <Pressable
+            key={ph.id}
+            onPress={() => onOpen(ph.url!, `${t.label} · ${ph.hm ?? ''}`, ph.id)}
+            accessibilityRole="imagebutton"
+            accessibilityLabel={tr('child.photo.openA11y', { caption: ph.hm ? `${t.label}, ${ph.hm}` : t.label })}
+          >
             {/* Signed URLs rotate every refresh; the photo id keeps the cached image. No transition:
                 the rotated URL counts as a new source, so a fade here replays as a flicker on each poll. */}
             <Image source={{ uri: ph.url, cacheKey: `photo-${ph.id}` }} style={[styles.thumb, { borderColor: p.line }]} contentFit="cover" transition={0} />

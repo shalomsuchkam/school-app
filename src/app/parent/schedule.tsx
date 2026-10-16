@@ -2,7 +2,7 @@ import { useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { Alert, Pressable, StyleSheet, View } from 'react-native';
 
-import { Btn, Chip, EmojiPicker, Empty, Field, Group, Loading, Row, Screen, SectionLabel, Sheet, ToggleRow, Txt, useToast } from '@/components/ui';
+import { Btn, Chip, EmojiPicker, Empty, ErrorBanner, Field, Group, Loading, Row, Screen, SectionLabel, Sheet, ToggleRow, Txt, useToast } from '@/components/ui';
 import { api, type Child, type Family, type Setup, type Subject } from '@/lib/api';
 import { ChildSwitcher, currentChildReady, getCurrentChild, setCurrentChild, useCurrentChild } from '@/lib/currentChild';
 import { localIso, shortDate, wdLong, wdShort } from '@/lib/format';
@@ -75,15 +75,18 @@ export default function Schedule() {
   const lessons = setOf(week, day);
   const isSchool = fam.school_weekdays.includes(day);
 
-  const saveLessons = async (ids: number[]) => {
-    const w = week;
-    if (w) {
+  // `to` pins the child, weekday and week: an undo from an older render must not write into whatever is shown now
+  const saveLessons = async (ids: number[], to = { cid: setup.child_id, d: day, w: week }) => {
+    const { cid, d, w } = to;
+    setSetup((cur) => {
+      if (!cur || cur.child_id !== cid) return cur; // switched to another child meanwhile
+      if (!w) return { ...cur, lessons: { ...cur.lessons, [String(d)]: ids } };
       const k = w === 1 ? '1' : '2';
-      const alt = setup.lessons_alt ?? { '1': {}, '2': {} };
-      setSetup({ ...setup, lessons_alt: { ...alt, [k]: { ...alt[k], [String(day)]: ids } } });
-    } else setSetup({ ...setup, lessons: { ...setup.lessons, [String(day)]: ids } });
+      const alt = cur.lessons_alt ?? { '1': {}, '2': {} };
+      return { ...cur, lessons_alt: { ...alt, [k]: { ...alt[k], [String(d)]: ids } } };
+    });
     try {
-      await api.setLessons(day, ids, w, setup.child_id);
+      await api.setLessons(d, ids, w, cid);
     } catch (e) {
       toast.show((e as Error).message);
       load();
@@ -98,8 +101,9 @@ export default function Schedule() {
   };
   const removeAt = (i: number) => {
     const before = lessons;
-    saveLessons(lessons.filter((_, k) => k !== i));
-    toast.show(t('parent.schedule.removed'), { label: t('parent.restore'), run: () => saveLessons(before) });
+    const to = { cid: setup.child_id, d: day, w: week };
+    saveLessons(lessons.filter((_, k) => k !== i), to);
+    toast.show(t('parent.schedule.removed'), { label: t('parent.restore'), run: () => saveLessons(before, to) });
   };
   const toggleAlt = (on: boolean) => {
     if (on) {
@@ -137,6 +141,9 @@ export default function Schedule() {
   const switchChild = (id: number | null) => {
     if (id === null || id === setup.child_id) return;
     setCurrentChild(id);
+    // show loading, not the previous child's timetable (an edit there would go to the wrong child)
+    setSetup(null);
+    setError(null);
     // the alternating-weeks toggle follows the other child's saved data
     setAltWanted(false);
     setParity(0);
@@ -150,7 +157,12 @@ export default function Schedule() {
     const w = on ? [...fam.school_weekdays, day].sort() : fam.school_weekdays.filter((x) => x !== day);
     if (!w.length) return toast.show(t('parent.needSchoolDay'));
     setFam({ ...fam, school_weekdays: w });
-    await api.updateFamily({ school_weekdays: w }).catch((e) => toast.show((e as Error).message));
+    try {
+      await api.updateFamily({ school_weekdays: w });
+    } catch (e) {
+      toast.show((e as Error).message);
+      load(); // back to the saved days
+    }
   };
   const saveSubject = async () => {
     if (!edit?.name?.trim()) return;
@@ -193,24 +205,37 @@ export default function Schedule() {
   const toggleOff = async (date: string) => {
     const off = !setup.days_off.includes(date);
     setSetup({ ...setup, days_off: off ? [...setup.days_off, date].sort() : setup.days_off.filter((x) => x !== date) });
-    await api.dayOff(date, off).catch((e) => toast.show((e as Error).message));
+    try {
+      await api.dayOff(date, off);
+    } catch (e) {
+      toast.show((e as Error).message);
+      load(); // back to the saved days off
+    }
   };
 
   return (
     <>
       <Screen title={t('parent.tab.schedule')} subtitle={t('parent.schedule.subtitle')} onRefresh={load}>
         <ChildSwitcher list={kids} value={childId} onChange={switchChild} />
+        <ErrorBanner error={error} onRetry={load} />
         <View style={styles.days}>
           {[1, 2, 3, 4, 5, 6, 7].map((d) => {
             const sel = d === day;
             const school = fam.school_weekdays.includes(d);
             const n = setOf(week, d).length;
             return (
-              <Pressable key={d} onPress={() => setDay(d)} style={[styles.day, { backgroundColor: sel ? p.brand : p.card, opacity: school || sel ? 1 : 0.55 }]}>
-                <Txt v="headline" color={sel ? '#fff' : p.ink}>
+              <Pressable
+                key={d}
+                onPress={() => setDay(d)}
+                accessibilityRole="button"
+                accessibilityState={{ selected: sel }}
+                style={[styles.day, { backgroundColor: sel ? p.brand : p.card, opacity: school || sel ? 1 : 0.55 }]}
+              >
+                {/* seven cells share the width: shrink the text instead of wrapping or clipping it */}
+                <Txt v="headline" color={sel ? '#fff' : p.ink} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
                   {wdShort(d)}
                 </Txt>
-                <Txt v="sub" color={sel ? 'rgba(255,255,255,0.8)' : p.muted}>
+                <Txt v="sub" color={sel ? 'rgba(255,255,255,0.8)' : p.muted} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
                   {school ? n || '–' : t('parent.schedule.dayOff')}
                 </Txt>
               </Pressable>
@@ -256,21 +281,41 @@ export default function Schedule() {
               <Group>
                 {lessons.map((id, i) => {
                   const s = byId.get(id);
+                  const name = s?.name ?? t('parent.schedule.subject');
                   return (
                     <Row
                       key={`${id}-${i}`}
                       icon={s?.emoji ?? '📘'}
-                      title={`${i + 1}. ${s?.name ?? t('parent.schedule.subject')}`}
+                      title={`${i + 1}. ${name}`}
                       subtitle={s?.light ? t('parent.schedule.light') : undefined}
                       right={
                         <View style={{ flexDirection: 'row', gap: 4 }}>
-                          <Pressable hitSlop={6} disabled={i === 0} onPress={() => move(i, -1)} style={[styles.mini, { backgroundColor: p.fill, opacity: i === 0 ? 0.35 : 1 }]}>
+                          <Pressable
+                            hitSlop={6}
+                            disabled={i === 0}
+                            onPress={() => move(i, -1)}
+                            accessibilityRole="button"
+                            accessibilityLabel={t('parent.schedule.upA11y', { name })}
+                            accessibilityState={{ disabled: i === 0 }}
+                            style={[styles.mini, { backgroundColor: p.fill, opacity: i === 0 ? 0.35 : 1 }]}>
                             <Txt v="callout">↑</Txt>
                           </Pressable>
-                          <Pressable hitSlop={6} disabled={i === lessons.length - 1} onPress={() => move(i, 1)} style={[styles.mini, { backgroundColor: p.fill, opacity: i === lessons.length - 1 ? 0.35 : 1 }]}>
+                          <Pressable
+                            hitSlop={6}
+                            disabled={i === lessons.length - 1}
+                            onPress={() => move(i, 1)}
+                            accessibilityRole="button"
+                            accessibilityLabel={t('parent.schedule.downA11y', { name })}
+                            accessibilityState={{ disabled: i === lessons.length - 1 }}
+                            style={[styles.mini, { backgroundColor: p.fill, opacity: i === lessons.length - 1 ? 0.35 : 1 }]}>
                             <Txt v="callout">↓</Txt>
                           </Pressable>
-                          <Pressable hitSlop={6} onPress={() => removeAt(i)} style={[styles.mini, { backgroundColor: p.badSoft }]}>
+                          <Pressable
+                            hitSlop={6}
+                            onPress={() => removeAt(i)}
+                            accessibilityRole="button"
+                            accessibilityLabel={t('parent.schedule.removeA11y', { name })}
+                            style={[styles.mini, { backgroundColor: p.badSoft }]}>
                             <Txt v="callout" color={p.bad}>
                               ✕
                             </Txt>
@@ -309,7 +354,17 @@ export default function Schedule() {
         ) : (
           <View style={styles.wrap}>
             {SUBJECT_PRESETS.map((s) => (
-              <Chip key={s.name} label={`＋ ${s.emoji} ${s.name}`} tone="muted" onPress={() => api.addSubject(s).then(load)} />
+              <Chip
+                key={s.name}
+                label={`＋ ${s.emoji} ${s.name}`}
+                tone="muted"
+                onPress={() =>
+                  api
+                    .addSubject(s)
+                    .then(load)
+                    .catch((e) => toast.show((e as Error).message))
+                }
+              />
             ))}
           </View>
         )}

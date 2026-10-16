@@ -1,11 +1,12 @@
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { Alert, Linking, Pressable, StyleSheet, View } from 'react-native';
+import { Alert, Linking, Modal, Pressable, StyleSheet, View } from 'react-native';
 
 import { InviteSheet } from '@/components/InviteSheet';
+import { Paywall } from '@/components/Paywall';
 import { PhoneLimitGuide } from '@/components/PhoneLimitGuide';
 import { Btn, Chip, Field, Group, Icon, Loading, Row, Screen, SectionLabel, Sheet, TimeStepper, ToggleRow, Txt, useToast, WeekdayPicker } from '@/components/ui';
-import { openManage } from '@/lib/billing';
+import { billingAvailable, openManage } from '@/lib/billing';
 import { api, ApiError, legalUrl, type Child, type Me, type Role } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { shortDate, toMin } from '@/lib/format';
@@ -29,6 +30,7 @@ export default function Settings() {
   const [tgBusy, setTgBusy] = useState(false);
   const [rewardEdit, setRewardEdit] = useState<string | null>(null);
   const [guide, setGuide] = useState(false);
+  const [paywall, setPaywall] = useState(false);
   const toast = useToast();
 
   const load = useCallback(async () => {
@@ -127,6 +129,8 @@ export default function Settings() {
         : a.paid_until && a.active
           ? t(a.trial ? 'parent.settings.subTrial' : 'parent.settings.subPaid', { date: shortDate(a.paid_until.slice(0, 10)) })
           : t('parent.settings.subInactive');
+  // no store subscription yet (trial, gift or lapsed): subscribing is possible before access runs out
+  const canSubscribe = a.billing && !a.free_forever && !a.store && billingAvailable();
 
   const changeLang = (l: Lang) => {
     if (l === getLang()) return;
@@ -395,6 +399,7 @@ export default function Settings() {
             chevron={!!a.store}
             onPress={a.store ? () => openManage() : undefined}
           />
+          {canSubscribe ? <Row icon="💳" title={t('parent.settings.subscribe')} chevron onPress={() => setPaywall(true)} /> : null}
         </Group>
 
         <SectionLabel>{t('parent.settings.docs')}</SectionLabel>
@@ -457,6 +462,16 @@ export default function Settings() {
           }}
         />
       </Sheet>
+      <Modal visible={paywall} animationType="slide" onRequestClose={() => setPaywall(false)}>
+        <Paywall
+          role="parent"
+          onClose={() => setPaywall(false)}
+          onActive={() => {
+            setPaywall(false);
+            load();
+          }}
+        />
+      </Modal>
       <PhoneLimitGuide visible={guide} onClose={() => setGuide(false)} />
       <InviteSheet
         role={invite}

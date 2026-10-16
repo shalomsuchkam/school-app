@@ -63,6 +63,7 @@ const b: Bundle = {
     'onboarding.schedule.text': 'Нажимайте предметы по порядку уроков. Можно пропустить и заполнить позже во вкладке «Расписание».',
     'onboarding.schedule.empty': 'Пока нет уроков',
     'onboarding.schedule.emptyHint': 'Нажмите предметы ниже',
+    'onboarding.schedule.removeA11y': 'Убрать «{name}»',
     // step 4
     'onboarding.items.title': 'Что подготовить к утру?',
     'onboarding.items.text': 'Пункты появляются в списке каждый учебный день. Для части можно требовать фото.',
@@ -194,6 +195,7 @@ const b: Bundle = {
     'onboarding.schedule.text': 'Пәндерді сабақ ретімен басыңыз. Бұл қадамды өткізіп, кейін «Кесте» бөлімінде толтыруға болады.',
     'onboarding.schedule.empty': 'Әзірге сабақ жоқ',
     'onboarding.schedule.emptyHint': 'Төмендегі пәндерді басыңыз',
+    'onboarding.schedule.removeA11y': '«{name}» алып тастау',
     'onboarding.items.title': 'Таңертеңге не дайындау керек?',
     'onboarding.items.text': 'Тармақтар тізімде әр оқу күні пайда болады. Кейбіреуіне фото талап етуге болады.',
     'onboarding.items.withPhoto': 'Фотомен',
@@ -315,6 +317,7 @@ const b: Bundle = {
     'onboarding.schedule.text': 'Tap subjects in lesson order. You can skip this and fill it in later on the Schedule tab.',
     'onboarding.schedule.empty': 'No lessons yet',
     'onboarding.schedule.emptyHint': 'Tap subjects below',
+    'onboarding.schedule.removeA11y': 'Remove “{name}”',
     'onboarding.items.title': 'What to get ready for the morning?',
     'onboarding.items.text': 'Items appear on the list every school day. Some can require a photo.',
     'onboarding.items.withPhoto': 'With photo',

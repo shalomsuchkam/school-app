@@ -210,7 +210,7 @@ export const api = {
 };
 
 // Public legal pages served by the backend.
-export const legalUrl = (kind: 'terms' | 'privacy', lang = 'ru') => `${API_BASE}/legal/${kind}?lang=${lang === 'en' ? 'en' : 'ru'}`;
+export const legalUrl = (kind: 'terms' | 'privacy', lang = 'ru') => `${API_BASE}/legal/${kind}?lang=${lang === 'en' || lang === 'kk' ? lang : 'ru'}`;
 // 402 = the family's subscription is not active.
 export const isPaywall = (e: unknown) => e instanceof ApiError && e.status === 402;
 

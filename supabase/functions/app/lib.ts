@@ -37,11 +37,13 @@ export function safeEq(a: string | null | undefined, b: string | null | undefine
   for (let i = 0; i < Math.max(x.length, y.length); i++) d |= (x[i] ?? 0) ^ (y[i] ?? 0);
   return d === 0;
 }
-export const clientIp = (req: Request) => (req.headers.get("x-forwarded-for") ?? "").split(",")[0].trim() || "unknown";
-// Fixed-window limiter backed by app_rate (atomic upsert in SQL). Fails open if the DB call errors.
-export async function limit(key: string, max: number, windowSec: number) {
+// Cloudflare sets cf-connecting-ip itself (a client can't forge it, unlike the left part of x-forwarded-for).
+export const clientIp = (req: Request) =>
+  req.headers.get("cf-connecting-ip") || req.headers.get("x-real-ip") || (req.headers.get("x-forwarded-for") ?? "").split(",").pop()!.trim() || "unknown";
+// Fixed-window limiter backed by app_rate (atomic upsert in SQL). Fails open on a DB error unless failClosed.
+export async function limit(key: string, max: number, windowSec: number, failClosed = false) {
   const { data, error } = await db.rpc("app_rate_hit", { k: key, lim: max, win_sec: windowSec });
-  if (!error && data === false) throw new HttpError(429, "Слишком много попыток. Попробуйте позже.");
+  if ((error && failClosed) || (!error && data === false)) throw new HttpError(429, "Слишком много попыток. Попробуйте позже.");
 }
 // Magic-number check: only real JPEG/PNG/WebP files are stored as photos.
 export function imageType(b: Uint8Array): string | null {

@@ -18,9 +18,11 @@ export async function children(familyId: string) {
   const { data } = await db.from("app_children").select("id, name, pos").eq("family_id", familyId).order("pos").order("id");
   return (data ?? []) as { id: number; name: string; pos: number }[];
 }
-export async function kidOf(fam: any, childId?: number | null) {
+export async function kidOf(fam: any, childId?: number | null, strict = true) {
   const list = await children(fam.id);
-  const c = (childId && list.find((x) => x.id === childId)) || list[0];
+  // for changes an explicit id must match (a stale id must not silently act on a sibling); reads and
+  // "no id" use the first child
+  const c = (childId && list.find((x) => x.id === childId)) || (strict && childId ? undefined : list[0]);
   if (!c) throw new HttpError(404, "Ученик не найден");
   return { ...fam, child_id: c.id, child_name: c.name };
 }
@@ -37,14 +39,11 @@ export function schoolDays(weekdays: number[] | null, off: Set<string>, holidays
 }
 const holidaysOf = (fam: any) => (fam.auto_holidays === false ? undefined : (d: string) => isHoliday(fam.country ?? "KZ", d));
 
-// ISO week number parity: 1 = odd week, 2 = even week (for alternating timetables).
+// Week parity for alternating timetables: 1 = odd week, 2 = even week. Counted as weeks since Monday 2024-01-01
+// (ISO week 1), so it matches ISO numbering in 2024–2026 but never repeats a parity across a 53-week year.
 export function weekParity(iso: string) {
-  const d = new Date(iso + "T00:00:00Z");
-  const day = d.getUTCDay() || 7;
-  d.setUTCDate(d.getUTCDate() + 4 - day);
-  const y0 = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-  const week = Math.ceil(((d.getTime() - y0.getTime()) / 86400000 + 1) / 7);
-  return week % 2 === 1 ? 1 : 2;
+  const days = Math.round((Date.parse(iso + "T00:00:00Z") - Date.UTC(2024, 0, 1)) / 86400000);
+  return Math.floor(days / 7) % 2 === 0 ? 1 : 2;
 }
 
 export function nextSchoolDay(after: string, isSchool: (d: string) => boolean) {

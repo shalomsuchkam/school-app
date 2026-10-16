@@ -17,6 +17,8 @@ const supported = Platform.OS !== 'web';
 
 let items: QueuedPhoto[] = [];
 let loaded: Promise<void> | null = null;
+// The stored list could not be read (keychain locked…): keep it and the files intact for this session.
+let readFailed = false;
 let flushing: Promise<FlushResult> | null = null;
 const listeners = new Set<() => void>();
 const subscribe = (f: () => void) => {
@@ -35,8 +37,14 @@ export const isNetworkError = (e: unknown) => e instanceof ApiError && e.status 
 function ensureLoaded() {
   if (!supported) return Promise.resolve();
   loaded ??= (async () => {
+    let raw: string | null;
     try {
-      const raw = await storage.get(KEY);
+      raw = await storage.get(KEY);
+    } catch {
+      readFailed = true;
+      return;
+    }
+    try {
       const list = raw ? (JSON.parse(raw) as QueuedPhoto[]) : [];
       if (Array.isArray(list)) set(list.filter((q) => q && typeof q.task_id === 'number' && typeof q.uri === 'string'), false);
     } catch {}
@@ -47,7 +55,7 @@ function ensureLoaded() {
 function set(next: QueuedPhoto[], persist = true) {
   items = next;
   listeners.forEach((f) => f());
-  if (persist) storage.set(KEY, JSON.stringify(next)).catch(() => {});
+  if (persist && !readFailed) storage.set(KEY, JSON.stringify(next)).catch(() => {});
 }
 
 function remove(q: QueuedPhoto) {
@@ -93,8 +101,9 @@ export function flushQueue(): Promise<FlushResult> {
           remove(q);
           sent++;
         } catch (e) {
-          // The task is gone (another day, deleted subject…): this photo can never be delivered.
-          if (e instanceof ApiError && (e.status === 400 || e.status === 404)) {
+          // Any other client error (task gone, another day, deleted subject…): this photo can never be delivered.
+          // 401 (signed out), 402 (paywall), 408 and 429 (try again later) keep it.
+          if (e instanceof ApiError && e.status >= 400 && e.status < 500 && ![401, 402, 408, 429].includes(e.status)) {
             remove(q);
             dropped++;
             continue;
@@ -113,10 +122,22 @@ export function flushQueue(): Promise<FlushResult> {
 
 // Files left behind by an interrupted write once the queue is empty.
 function cleanupOrphans() {
+  if (readFailed) return; // they may belong to the list we could not read
   try {
     const dir = queueDir();
     if (dir.exists) for (const x of dir.list()) x.delete();
   } catch {}
+}
+
+/** Forgets every queued photo (sign-out: they belong to the previous account). */
+export async function clearPhotoQueue() {
+  if (!supported) return;
+  await flushing?.catch(() => {});
+  readFailed = false;
+  loaded = Promise.resolve();
+  set([], false);
+  cleanupOrphans();
+  await storage.del(KEY).catch(() => {});
 }
 
 /** Current queue length (outside React, e.g. inside a fetch callback). */

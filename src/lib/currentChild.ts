@@ -48,6 +48,14 @@ export function setCurrentChild(id: number) {
   storage.set(KEY, String(id)).catch(() => {});
 }
 
+// Sign-out: the next account starts from its own first child.
+export async function clearCurrentChild() {
+  current = null;
+  ready = Promise.resolve(null);
+  emit();
+  await storage.del(KEY).catch(() => {});
+}
+
 // A stored id that is not (or no longer) in the family falls back to the first child, as the server does.
 export const pickChild = (children: Child[], id: number | null = current) => children.find((c) => c.id === id)?.id ?? children[0]?.id ?? null;
 

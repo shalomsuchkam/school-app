@@ -37,6 +37,9 @@ Deno.test("alternating weeks: ISO week parity", () => {
   eq(weekParity("2026-01-05"), 2); // ISO week 2
   eq(weekParity("2026-01-01"), 1); // ISO week 1
   eq(weekParity("2026-10-12") !== weekParity("2026-10-19"), true);
+  // 2026 has 53 ISO weeks: parity must still alternate into 2027
+  eq(weekParity("2026-12-28") !== weekParity("2027-01-04"), true);
+  eq(weekParity("2026-12-31"), weekParity("2026-12-28"));
 });
 
 Deno.test("subscription access", () => {

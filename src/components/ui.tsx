@@ -3,9 +3,11 @@ import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
+  AccessibilityInfo,
   ActivityIndicator,
   Animated as RNAnimated,
   Modal,
+  Platform,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -472,11 +474,19 @@ export function Sheet({
   const p = usePalette();
   const t = useT();
   const insets = useSafeAreaInsets();
+  const { height } = useWindowDimensions();
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose} statusBarTranslucent>
       <Pressable style={[StyleSheet.absoluteFill, { backgroundColor: p.scrim }]} onPress={onClose} />
       <KeyboardAvoidingView behavior="padding" style={{ flex: 1, justifyContent: 'flex-end' }} pointerEvents="box-none">
-        <View style={[styles.sheet, { backgroundColor: p.bgElevated, paddingBottom: insets.bottom + 16, width: '100%', maxWidth: 600, alignSelf: 'center' }]}>
+        {/* never taller than the window below the status bar: on small phones, landscape or large text the
+            content scrolls and the header with the close button stays on screen */}
+        <View
+          style={[
+            styles.sheet,
+            { backgroundColor: p.bgElevated, paddingBottom: insets.bottom + 16, width: '100%', maxWidth: 600, alignSelf: 'center', maxHeight: height - insets.top - 12, flexShrink: 1 },
+          ]}
+        >
           <View style={[styles.grip, { backgroundColor: p.border }]} />
           <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
             <Txt v="title" accessibilityRole="header" style={{ flex: 1 }}>
@@ -486,7 +496,7 @@ export function Sheet({
               <Icon name="close" size={18} color={p.muted} />
             </Pressable>
           </View>
-          <ScrollView keyboardShouldPersistTaps="handled" style={{ maxHeight: 560 }} showsVerticalScrollIndicator={false}>
+          <ScrollView keyboardShouldPersistTaps="handled" style={{ flexGrow: 0, flexShrink: 1 }} showsVerticalScrollIndicator={false}>
             {children}
           </ScrollView>
         </View>
@@ -506,6 +516,8 @@ export function useToast() {
     RNAnimated.timing(opacity, { toValue: 0, duration: 200, useNativeDriver: true }).start(({ finished }) => finished && setState(null));
   const show = (msg: string, action?: { label: string; run: () => void }) => {
     setState({ msg, action });
+    // TalkBack reads the toast through its live region; VoiceOver needs an explicit announcement
+    if (Platform.OS === 'ios') AccessibilityInfo.announceForAccessibility(msg);
     RNAnimated.timing(opacity, { toValue: 1, duration: 160, useNativeDriver: true }).start();
     if (timer.current) clearTimeout(timer.current);
     timer.current = setTimeout(hide, action ? 4500 : 2600);
@@ -522,7 +534,7 @@ function ToastView({ opacity, msg, action, onAction }: { opacity: RNAnimated.Val
   // inside a Sheet the keyboard may be open: keep the toast above it
   const kb = useKeyboardState((k) => (k.isVisible ? k.height : 0));
   return (
-    <RNAnimated.View pointerEvents="box-none" style={[styles.toast, { opacity, bottom: Math.max(insets.bottom + 92, kb + 16), backgroundColor: p.ink }]}>
+    <RNAnimated.View pointerEvents="box-none" accessibilityLiveRegion="polite" style={[styles.toast, { opacity, bottom: Math.max(insets.bottom + 92, kb + 16), backgroundColor: p.ink }]}>
       <Txt v="callout" color={p.bg} style={{ flex: 1 }}>
         {msg}
       </Txt>
@@ -583,6 +595,22 @@ export function Loading({ error, onRetry }: { error?: string | null; onRetry?: (
     );
   }
   return <LoadingSkeleton label={t('common.loading')} />;
+}
+
+// A failed refresh while older data is still on screen: say so instead of silently showing stale data.
+export function ErrorBanner({ error, onRetry }: { error: string | null; onRetry?: () => void }) {
+  const p = usePalette();
+  const t = useT();
+  if (!error) return null;
+  return (
+    <View accessibilityRole="alert" accessibilityLiveRegion="polite" style={[styles.banner, { backgroundColor: p.badSoft }]}>
+      <Icon name="cloud-offline-outline" size={20} color={p.bad} />
+      <Txt v="sub" style={{ flex: 1 }}>
+        {t('common.loadFail', { error })}
+      </Txt>
+      {onRetry ? <Btn small kind="plain" title={t('common.retry')} onPress={onRetry} /> : null}
+    </View>
+  );
 }
 
 // Mirrors a typical Screen: large title, a hero card and a grouped list of rows.
@@ -656,5 +684,6 @@ const styles = StyleSheet.create({
   close: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
   toast: { position: 'absolute', left: 16, right: 16, borderRadius: radius.m, paddingHorizontal: 16, paddingVertical: 14, flexDirection: 'row', alignItems: 'center', gap: 12 },
   empty: { alignItems: 'center', paddingVertical: 36, paddingHorizontal: 20 },
+  banner: { flexDirection: 'row', alignItems: 'center', gap: 10, borderRadius: radius.l, paddingVertical: 8, paddingHorizontal: 12, marginBottom: 12 },
   emptyIcon: { width: 72, height: 72, borderRadius: 36, alignItems: 'center', justifyContent: 'center' },
 });
