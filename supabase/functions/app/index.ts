@@ -503,7 +503,7 @@ async function route(req: Request, path: string): Promise<Response> {
     await setNote(fam, Number(b.task_id), clean(b.note, 300), false);
     return json({ ok: true });
   }
-  if (path === "/parent/report" && M === "GET") return json(await weeklyReport(kid));
+  if (path === "/parent/report" && M === "GET") return json(await weeklyReport(kid, Number(new URL(req.url).searchParams.get("days")) || 7));
   if (path === "/parent/nudge" && M === "POST") {
     const { S } = await activeDay(kid);
     const left = (await loadTasks(kid, S)).filter((t) => t.required && !isDone(t));

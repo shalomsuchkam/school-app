@@ -45,6 +45,6 @@
 3. **Ключ подписи Android** → секреты `ANDROID_KEYSTORE_B64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`.
 4. **Push:** аккаунт Expo (бесплатно) → `EAS_PROJECT_ID`; Firebase → `GOOGLE_SERVICES_JSON`; ключ APNs загрузить в Expo.
 5. **Автовыкладка сервера:** `SUPABASE_ACCESS_TOKEN` в секретах репозитория.
-6. **Реквизиты оператора** (ИП/ТОО, БИН, адрес, страна) — без нового деплоя: в таблицу `app_secrets` ключи `app_operator_ru`, `app_operator_kk`, `app_operator_en` и рабочий ящик `app_support_email`. Страницы соглашения сразу покажут их.
+6. ✅ **Реквизиты оператора** внесены: ИП «KonG Service», ИИН/БИН 021018500443, г. Алматы, urokikazakhstan@gmail.com (хранятся в `app_secrets`: `app_operator_ru|kk|en`, `app_support_email` — меняются без деплоя).
 8. ⚠️ **Закон РК «О персональных данных»** (ст. 12) требует хранить базы с данными граждан РК на территории Казахстана. Сейчас база в ЕС (Supabase, Франкфурт). До массового запуска в РК — консультация юриста; вариант — сервер в РК (PS Cloud, Kazteleport и т.п.) для казахстанских семей.
 7. **Бесплатный доступ** (только владелец): `POST /admin/grant` с заголовком `x-admin-key` (`app_secrets.app_admin_key`), тело `{"code":"<код семьи>"}` — навсегда, `{"code":"…","days":30}` — на срок, `{"code":"…","revoke":true}` — отозвать.

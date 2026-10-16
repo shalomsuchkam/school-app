@@ -200,7 +200,7 @@ const TITLES: Record<L, Record<"terms" | "privacy" | "delete", string>> = {
 export async function legalPage(kind: "terms" | "privacy" | "delete", lang: string) {
   const l: L = lang === "en" || lang === "kk" ? lang : "ru";
   const op = esc((await secret(`app_operator_${l}`)) || FALLBACK_OPERATOR[l]);
-  const mail = esc((await secret("app_support_email")) || "support@uroki.app");
+  const mail = esc((await secret("app_support_email")) || "urokikazakhstan@gmail.com");
   const html = `<!doctype html><html lang="${l}"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>${TITLES[l][kind]}</title>
 <style>body{font:16px/1.55 -apple-system,system-ui,Segoe UI,Roboto,sans-serif;max-width:720px;margin:0 auto;padding:20px 16px 48px;color:#1b1b29;background:#fff}

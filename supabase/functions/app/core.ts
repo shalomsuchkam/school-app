@@ -225,21 +225,22 @@ export async function setNote(fam: any, taskId: number, note: string, byChild: b
   await db.from("app_tasks").update({ note: note || null }).eq("id", taskId).eq("family_id", fam.id);
 }
 
-// Weekly report for the parent: per day and per subject, last 7 days up to today.
-export async function weeklyReport(fam: any) {
+// Report for the parent: per day and per subject, the last `days` days up to today (7 for the weekly report,
+// up to 31 for the monthly PDF export).
+export async function weeklyReport(fam: any, days = 7) {
   const now = localParts(fam.tz);
-  const from = addDays(now.date, -6);
+  const from = addDays(now.date, -(Math.min(31, Math.max(7, days)) - 1));
   const tasks = await loadTasks(fam, from, addDays(now.date, 1));
   const { data: sess } = await db.from("app_sessions").select("school_date, started_at").eq("child_id", fam.child_id).gte("school_date", from);
   const startOf = new Map<string, string>((sess ?? []).map((r: any) => [r.school_date, r.started_at]));
-  const days = new Map<string, any[]>();
+  const byDay = new Map<string, any[]>();
   for (const t of tasks) {
     if (!t.required) continue;
-    if (!days.has(t.school_date)) days.set(t.school_date, []);
-    days.get(t.school_date)!.push(t);
+    if (!byDay.has(t.school_date)) byDay.set(t.school_date, []);
+    byDay.get(t.school_date)!.push(t);
   }
   const subjects = new Map<string, { title: string; emoji: string; total: number; onTime: number; late: number; skipped: number; missed: number }>();
-  const perDay = [...days.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1)).map(([date, ts]) => {
+  const perDay = [...byDay.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1)).map(([date, ts]) => {
     let onTime = 0, late = 0, skipped = 0, missed = 0;
     for (const t of ts) {
       const key = `${t.kind}:${t.ref_id}`;
