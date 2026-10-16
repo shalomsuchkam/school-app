@@ -885,5 +885,60 @@ const extra: Bundle = {
   },
 };
 
-const b: Bundle = { ru: { ...base.ru, ...extra.ru }, kk: { ...base.kk, ...extra.kk }, en: { ...base.en, ...extra.en } };
+// Several children in one family: switcher, per-child list items, the «Students» section and child invites.
+const kids: Bundle = {
+  ru: {
+    'parent.kids.all': 'Все',
+    'parent.kids.switchA11y': 'Выбор ученика',
+    'parent.lists.forWhom': 'Для кого',
+    'parent.settings.students': 'Ученики',
+    'parent.settings.renameSub': 'Нажмите, чтобы переименовать',
+    'parent.settings.addChild': 'Добавить ученика',
+    'parent.settings.addChildTitle': 'Новый ученик',
+    'parent.settings.childNamePh': 'Имя',
+    'parent.settings.childAdded': 'Ученик добавлен',
+    'parent.settings.childRemoved': 'Ученик удалён',
+    'parent.settings.removeChildTitle': 'Удалить ученика «{name}»?',
+    'parent.settings.removeChildMsg': 'Расписание, задания и фото этого ученика будут удалены безвозвратно.',
+    'parent.settings.removeChildA11y': 'Удалить ученика {name}',
+    'parent.settings.inviteWho': 'Для какого ученика нужен код?',
+    'parent.invite.codeFor': 'Код для {name}',
+  },
+  kk: {
+    'parent.kids.all': 'Барлығы',
+    'parent.kids.switchA11y': 'Оқушыны таңдау',
+    'parent.lists.forWhom': 'Кімге арналған',
+    'parent.settings.students': 'Оқушылар',
+    'parent.settings.renameSub': 'Есімін өзгерту үшін басыңыз',
+    'parent.settings.addChild': 'Оқушы қосу',
+    'parent.settings.addChildTitle': 'Жаңа оқушы',
+    'parent.settings.childNamePh': 'Есімі',
+    'parent.settings.childAdded': 'Оқушы қосылды',
+    'parent.settings.childRemoved': 'Оқушы жойылды',
+    'parent.settings.removeChildTitle': '«{name}» оқушысын жою керек пе?',
+    'parent.settings.removeChildMsg': 'Бұл оқушының сабақ кестесі, тапсырмалары мен фотолары біржола жойылады.',
+    'parent.settings.removeChildA11y': '{name} оқушысын жою',
+    'parent.settings.inviteWho': 'Код қай оқушыға керек?',
+    'parent.invite.codeFor': '{name} үшін код',
+  },
+  en: {
+    'parent.kids.all': 'Everyone',
+    'parent.kids.switchA11y': 'Choose student',
+    'parent.lists.forWhom': 'For whom',
+    'parent.settings.students': 'Students',
+    'parent.settings.renameSub': 'Tap to rename',
+    'parent.settings.addChild': 'Add student',
+    'parent.settings.addChildTitle': 'New student',
+    'parent.settings.childNamePh': 'Name',
+    'parent.settings.childAdded': 'Student added',
+    'parent.settings.childRemoved': 'Student removed',
+    'parent.settings.removeChildTitle': 'Remove student “{name}”?',
+    'parent.settings.removeChildMsg': 'This student’s timetable, tasks and photos will be deleted for good.',
+    'parent.settings.removeChildA11y': 'Remove student {name}',
+    'parent.settings.inviteWho': 'Which student is the code for?',
+    'parent.invite.codeFor': 'Code for {name}',
+  },
+};
+
+const b: Bundle = { ru: { ...base.ru, ...extra.ru, ...kids.ru }, kk: { ...base.kk, ...extra.kk, ...kids.kk }, en: { ...base.en, ...extra.en, ...kids.en } };
 export default b;

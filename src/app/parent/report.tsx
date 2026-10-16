@@ -3,7 +3,8 @@ import { useCallback, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { Empty, Group, IconBtn, Loading, Row, Screen, SectionLabel, Txt, useLayout } from '@/components/ui';
-import { api, type Report } from '@/lib/api';
+import { api, type Child, type Report } from '@/lib/api';
+import { ChildSwitcher, currentChildReady, getCurrentChild, setCurrentChild, useCurrentChild } from '@/lib/currentChild';
 import { duration, isoWeekday, shortDate, wdShort } from '@/lib/format';
 import { tn, useT } from '@/lib/i18n';
 import { radius, usePalette } from '@/lib/theme';
@@ -20,11 +21,16 @@ export default function WeeklyReport() {
   const [report, setReport] = useState<Report | null>(null);
   const [trackTime, setTrackTime] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [kids, setKids] = useState<Child[]>([]);
+  const [childId] = useCurrentChild(kids);
 
   const load = useCallback(async () => {
     try {
-      const [r, me] = await Promise.all([api.report(), api.me()]);
+      const cid = await currentChildReady();
+      const [r, me] = await Promise.all([api.report(cid ?? undefined), api.me()]);
+      if (getCurrentChild() !== cid) return; // switched to another child meanwhile
       setReport(r);
+      setKids(me.children);
       setTrackTime(me.family.track_time);
       setError(null);
     } catch (e) {
@@ -39,6 +45,11 @@ export default function WeeklyReport() {
   if (!report) return <Loading error={error} onRetry={load} />;
 
   const color: Record<Kind, string> = { on_time: p.ok, late: p.warn, skipped: p.muted, missed: p.bad };
+  const switchChild = (id: number | null) => {
+    if (id === null || id === report.child_id) return;
+    setCurrentChild(id);
+    load();
+  };
   const back = () => (router.canGoBack() ? router.back() : router.replace('/parent'));
   const { totals } = report;
   const maxTotal = Math.max(1, ...report.days.map((d) => d.total));
@@ -172,6 +183,7 @@ export default function WeeklyReport() {
       onRefresh={load}
       right={<IconBtn icon="close" label={t('common.close')} onPress={back} />}
     >
+      <ChildSwitcher list={kids} value={childId} onChange={switchChild} />
       {!totals.total ? (
         <Empty icon="📊" title={t('parent.report.emptyTitle')} text={t('parent.report.emptyText')} />
       ) : (

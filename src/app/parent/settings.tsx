@@ -4,9 +4,9 @@ import { Alert, Linking, Pressable, StyleSheet, View } from 'react-native';
 
 import { InviteSheet } from '@/components/InviteSheet';
 import { PhoneLimitGuide } from '@/components/PhoneLimitGuide';
-import { Btn, Chip, Field, Group, Loading, Row, Screen, SectionLabel, Sheet, TimeStepper, ToggleRow, Txt, useToast, WeekdayPicker } from '@/components/ui';
+import { Btn, Chip, Field, Group, Icon, Loading, Row, Screen, SectionLabel, Sheet, TimeStepper, ToggleRow, Txt, useToast, WeekdayPicker } from '@/components/ui';
 import { openManage } from '@/lib/billing';
-import { api, ApiError, legalUrl, type Me, type Role } from '@/lib/api';
+import { api, ApiError, legalUrl, type Child, type Me, type Role } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { shortDate, toMin } from '@/lib/format';
 import { getLang, LANGS, setLang, tn, useT, type Lang } from '@/lib/i18n';
@@ -18,7 +18,12 @@ export default function Settings() {
   const t = useT();
   const [me, setMe] = useState<Me | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [nameEdit, setNameEdit] = useState<string | null>(null);
+  const [childEdit, setChildEdit] = useState<{ id: number; name: string } | null>(null);
+  const [newChild, setNewChild] = useState<string | null>(null);
+  const [childBusy, setChildBusy] = useState(false);
+  // several children: first ask which child the invite code is for
+  const [invitePick, setInvitePick] = useState(false);
+  const [inviteChild, setInviteChild] = useState<Child | null>(null);
   const [newTime, setNewTime] = useState<string | null>(null);
   const [invite, setInvite] = useState<Role | null>(null);
   const [tgBusy, setTgBusy] = useState(false);
@@ -133,6 +138,69 @@ export default function Settings() {
 
   const parents = me.members.filter((m) => m.role === 'parent');
   const children = me.members.filter((m) => m.role === 'child');
+  const kids = me.children;
+  const kidName = (id: number | null) => (id ? kids.find((c) => c.id === id)?.name : undefined);
+
+  const renameChild = async () => {
+    if (!childEdit?.name.trim()) return;
+    setChildBusy(true);
+    try {
+      await api.renameChild(childEdit.id, childEdit.name.trim());
+      setChildEdit(null);
+      toast.show(t('parent.settings.saved'));
+      load();
+    } catch (e) {
+      toast.show((e as Error).message);
+    } finally {
+      setChildBusy(false);
+    }
+  };
+  const addChild = async () => {
+    if (!newChild?.trim()) return;
+    setChildBusy(true);
+    try {
+      await api.addChild(newChild.trim());
+      setNewChild(null);
+      toast.show(t('parent.settings.childAdded'));
+      load();
+    } catch (e) {
+      toast.show((e as Error).message);
+    } finally {
+      setChildBusy(false);
+    }
+  };
+  // the server keeps at least one child and explains why when asked to remove the last one
+  const removeChild = (c: Child) =>
+    Alert.alert(t('parent.settings.removeChildTitle', { name: c.name }), t('parent.settings.removeChildMsg'), [
+      { text: t('common.cancel'), style: 'cancel' },
+      {
+        text: t('common.delete'),
+        style: 'destructive',
+        onPress: () =>
+          api
+            .removeChild(c.id)
+            .then(
+              () => toast.show(t('parent.settings.childRemoved')),
+              (e: Error) => Alert.alert(e.message),
+            )
+            .finally(load),
+      },
+    ]);
+  const openInviteChild = () => {
+    if (kids.length < 2) {
+      setInviteChild(null);
+      return setInvite('child');
+    }
+    setInvitePick(true);
+  };
+  const pickInviteChild = (c: Child) => {
+    setInvitePick(false);
+    // two Modals swapped in one update never present the second on iOS: open the code sheet once this one has slid away
+    setTimeout(() => {
+      setInviteChild(c);
+      setInvite('child');
+    }, 350);
+  };
 
   // Without a parent device nobody could invite, approve skips or edit the schedule again.
   const offerInvite = (title: string, msg: string) =>
@@ -170,9 +238,32 @@ export default function Settings() {
   return (
     <>
       <Screen title={t('parent.tab.settings')} onRefresh={load}>
-        <SectionLabel>{t('parent.settings.student')}</SectionLabel>
+        <SectionLabel>{t('parent.settings.students')}</SectionLabel>
         <Group>
-          <Row icon="🎓" title={f.child_name} subtitle={t('parent.settings.nameSub')} chevron onPress={() => setNameEdit(f.child_name)} />
+          {kids.map((c) => (
+            <Row
+              key={c.id}
+              icon="🎓"
+              title={c.name}
+              subtitle={kids.length > 1 ? t('parent.settings.renameSub') : t('parent.settings.nameSub')}
+              onPress={() => setChildEdit({ id: c.id, name: c.name })}
+              right={
+                kids.length > 1 ? (
+                  <Pressable
+                    hitSlop={8}
+                    onPress={() => removeChild(c)}
+                    accessibilityRole="button"
+                    accessibilityLabel={t('parent.settings.removeChildA11y', { name: c.name })}
+                    style={({ pressed }) => [styles.trash, { backgroundColor: pressed ? p.badSoft : p.fill }]}
+                  >
+                    <Icon name="trash-outline" size={17} color={p.bad} />
+                  </Pressable>
+                ) : undefined
+              }
+              chevron
+            />
+          ))}
+          <Row icon="add" title={t('parent.settings.addChild')} chevron onPress={() => setNewChild('')} />
         </Group>
 
         <SectionLabel>{t('parent.settings.schoolDays')}</SectionLabel>
@@ -227,7 +318,7 @@ export default function Settings() {
               key={m.id}
               icon={m.role === 'parent' ? '🧑' : '🎒'}
               title={`${m.name || (m.role === 'parent' ? t('parent.settings.parent') : t('parent.settings.student'))}${m.me ? t('parent.settings.you') : ''}`}
-              subtitle={`${m.role === 'parent' ? t('parent.settings.parent') : t('parent.settings.student')}${m.telegram ? ' · Telegram' : ''}`}
+              subtitle={`${m.role === 'parent' ? t('parent.settings.parent') : t('parent.settings.student')}${m.role === 'child' && kids.length > 1 && kidName(m.child_id) ? ` · ${kidName(m.child_id)}` : ''}${m.telegram ? ' · Telegram' : ''}`}
               right={
                 !m.me ? (
                   <Pressable hitSlop={8} onPress={() => removeMember(m.id, m.name || t('parent.settings.device'))}>
@@ -239,7 +330,7 @@ export default function Settings() {
               }
             />
           ))}
-          <Row icon="➕" title={t('parent.settings.inviteChild')} chevron onPress={() => setInvite('child')} />
+          <Row icon="➕" title={t('parent.settings.inviteChild')} chevron onPress={openInviteChild} />
           <Row icon="👪" title={t('parent.settings.inviteParent')} chevron onPress={() => setInvite('parent')} />
         </Group>
 
@@ -322,16 +413,23 @@ export default function Settings() {
         </Txt>
       </Screen>
 
-      <Sheet visible={nameEdit !== null} title={t('parent.settings.childName')} onClose={() => setNameEdit(null)}>
-        <Field value={nameEdit ?? ''} onChangeText={setNameEdit} maxLength={30} autoFocus />
-        <Btn
-          title={t('common.save')}
-          disabled={!nameEdit?.trim()}
-          onPress={() => {
-            patch({ child_name: nameEdit!.trim() }, t('parent.settings.saved'));
-            setNameEdit(null);
-          }}
-        />
+      <Sheet visible={childEdit !== null} title={t('parent.settings.childName')} onClose={() => setChildEdit(null)} overlay={childEdit ? toast.node : null}>
+        <Field value={childEdit?.name ?? ''} onChangeText={(name) => childEdit && setChildEdit({ ...childEdit, name })} maxLength={30} autoFocus />
+        <Btn title={t('common.save')} disabled={!childEdit?.name.trim()} loading={childBusy} onPress={renameChild} />
+      </Sheet>
+      <Sheet visible={newChild !== null} title={t('parent.settings.addChildTitle')} onClose={() => setNewChild(null)} overlay={newChild !== null ? toast.node : null}>
+        <Field value={newChild ?? ''} onChangeText={setNewChild} placeholder={t('parent.settings.childNamePh')} maxLength={30} autoFocus onSubmitEditing={addChild} />
+        <Btn title={t('common.add')} disabled={!newChild?.trim()} loading={childBusy} onPress={addChild} />
+      </Sheet>
+      <Sheet visible={invitePick} title={t('parent.settings.inviteChild')} onClose={() => setInvitePick(false)}>
+        <Txt v="callout" color={p.muted} style={{ marginBottom: 12 }}>
+          {t('parent.settings.inviteWho')}
+        </Txt>
+        <View style={styles.wrap}>
+          {kids.map((c) => (
+            <Chip key={c.id} label={c.name} onPress={() => pickInviteChild(c)} />
+          ))}
+        </View>
       </Sheet>
       <Sheet visible={newTime !== null} title={t('parent.settings.newReminder')} onClose={() => setNewTime(null)}>
         <View style={{ alignItems: 'center', marginVertical: 10 }}>
@@ -360,8 +458,13 @@ export default function Settings() {
         />
       </Sheet>
       <PhoneLimitGuide visible={guide} onClose={() => setGuide(false)} />
-      <InviteSheet role={invite} onClose={() => setInvite(null)} />
-      {toast.node}
+      <InviteSheet
+        role={invite}
+        childId={invite === 'child' ? inviteChild?.id : undefined}
+        childName={invite === 'child' ? inviteChild?.name : undefined}
+        onClose={() => setInvite(null)}
+      />
+      {childEdit !== null || newChild !== null ? null : toast.node}
     </>
   );
 }
@@ -400,5 +503,6 @@ function DaysStepper({ value, onChange, min, max, week }: { value: number; onCha
 
 const styles = StyleSheet.create({
   wrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  trash: { width: 34, height: 34, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
   step: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
 });

@@ -3,7 +3,8 @@ import { useCallback, useState } from 'react';
 import { Alert, Pressable, StyleSheet, View } from 'react-native';
 
 import { Btn, Chip, EmojiPicker, Empty, Field, Group, Loading, Row, Screen, SectionLabel, Sheet, ToggleRow, Txt, useToast } from '@/components/ui';
-import { api, type Family, type Setup, type Subject } from '@/lib/api';
+import { api, type Child, type Family, type Setup, type Subject } from '@/lib/api';
+import { ChildSwitcher, currentChildReady, getCurrentChild, setCurrentChild, useCurrentChild } from '@/lib/currentChild';
 import { localIso, shortDate, wdLong, wdShort } from '@/lib/format';
 import { useT } from '@/lib/i18n';
 import { EMOJIS, SUBJECT_PRESETS } from '@/lib/presets';
@@ -26,6 +27,8 @@ export default function Schedule() {
   const [setup, setSetup] = useState<Setup | null>(null);
   const [fam, setFam] = useState<Family | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [kids, setKids] = useState<Child[]>([]);
+  const [childId] = useCurrentChild(kids);
   const [day, setDay] = useState(() => {
     const w = new Date().getDay();
     return w === 0 ? 1 : w;
@@ -46,8 +49,12 @@ export default function Schedule() {
 
   const load = useCallback(async () => {
     try {
-      const [s, me] = await Promise.all([api.setup(), api.me()]);
+      // lessons are per child; subjects are shared by the family
+      const cid = await currentChildReady();
+      const [s, me] = await Promise.all([api.setup(cid ?? undefined), api.me()]);
+      if (getCurrentChild() !== cid) return; // switched to another child meanwhile
       setSetup(s);
+      setKids(me.children);
       setFam(me.family);
       setError(null);
     } catch (e) {
@@ -76,7 +83,7 @@ export default function Schedule() {
       setSetup({ ...setup, lessons_alt: { ...alt, [k]: { ...alt[k], [String(day)]: ids } } });
     } else setSetup({ ...setup, lessons: { ...setup.lessons, [String(day)]: ids } });
     try {
-      await api.setLessons(day, ids, w);
+      await api.setLessons(day, ids, w, setup.child_id);
     } catch (e) {
       toast.show((e as Error).message);
       load();
@@ -113,7 +120,7 @@ export default function Schedule() {
         onPress: async () => {
           const jobs: Promise<unknown>[] = [];
           for (const k of ['1', '2'] as const)
-            for (const [d, ids] of Object.entries(setup.lessons_alt?.[k] ?? {})) if (ids.length) jobs.push(api.setLessons(Number(d), [], k === '1' ? 1 : 2));
+            for (const [d, ids] of Object.entries(setup.lessons_alt?.[k] ?? {})) if (ids.length) jobs.push(api.setLessons(Number(d), [], k === '1' ? 1 : 2, setup.child_id));
           setSetup({ ...setup, lessons_alt: { '1': {}, '2': {} } });
           setAltWanted(false);
           setParity(0);
@@ -126,6 +133,14 @@ export default function Schedule() {
         },
       },
     ]);
+  };
+  const switchChild = (id: number | null) => {
+    if (id === null || id === setup.child_id) return;
+    setCurrentChild(id);
+    // the alternating-weeks toggle follows the other child's saved data
+    setAltWanted(false);
+    setParity(0);
+    load();
   };
   const weekLabel = (w: Parity) => {
     const label = t(w === 0 ? 'parent.schedule.every' : w === 1 ? 'parent.schedule.odd' : 'parent.schedule.even');
@@ -184,6 +199,7 @@ export default function Schedule() {
   return (
     <>
       <Screen title={t('parent.tab.schedule')} subtitle={t('parent.schedule.subtitle')} onRefresh={load}>
+        <ChildSwitcher list={kids} value={childId} onChange={switchChild} />
         <View style={styles.days}>
           {[1, 2, 3, 4, 5, 6, 7].map((d) => {
             const sel = d === day;

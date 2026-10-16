@@ -10,7 +10,8 @@ import { Btn, haptic, Sheet, Skeleton, Txt } from './ui';
 const MONO = Platform.select({ ios: 'Menlo', default: 'monospace' });
 const TRACKING = 8;
 
-export function InviteSheet({ role, onClose }: { role: Role | null; onClose: () => void }) {
+// childId (with its name) ties a child's code to one of several children; without it the server uses the first child.
+export function InviteSheet({ role, childId, childName, onClose }: { role: Role | null; childId?: number; childName?: string; onClose: () => void }) {
   const p = usePalette();
   const t = useT();
   const [code, setCode] = useState<string | null>(null);
@@ -20,7 +21,7 @@ export function InviteSheet({ role, onClose }: { role: Role | null; onClose: () 
     if (!role) return;
     let alive = true;
     api
-      .invite(role)
+      .invite(role, role === 'child' ? childId : undefined)
       .then((r) => alive && setCode(r.code))
       .catch((e) => alive && setError((e as Error).message));
     return () => {
@@ -29,7 +30,7 @@ export function InviteSheet({ role, onClose }: { role: Role | null; onClose: () 
       setError(null);
       setCopied(false);
     };
-  }, [role]);
+  }, [role, childId]);
   // "Copied" confirmation reverts to the normal label after a moment
   useEffect(() => {
     if (!copied) return;
@@ -53,7 +54,7 @@ export function InviteSheet({ role, onClose }: { role: Role | null; onClose: () 
       </Txt>
       <View style={[styles.box, { backgroundColor: p.brandSoft }]}>
         <Txt v="caps" color={p.brand} style={{ textTransform: 'uppercase', marginBottom: 10 }}>
-          {t('common.inviteCode')}
+          {role === 'child' && childName ? t('parent.invite.codeFor', { name: childName }) : t('common.inviteCode')}
         </Txt>
         {code ? (
           <Txt

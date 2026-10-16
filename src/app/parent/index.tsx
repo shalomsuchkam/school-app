@@ -8,8 +8,9 @@ import { PhoneLimitGuide } from '@/components/PhoneLimitGuide';
 import { PhotoViewer } from '@/components/PhotoViewer';
 import { ParentTaskCard } from '@/components/TaskCards';
 import { Btn, Chip, Empty, Field, Group, Icon, IconBtn, Loading, Row, Screen, SectionLabel, Sheet, Txt, useToast } from '@/components/ui';
-import { api, ApiError, isDone, isPaywall, type Day, type Overview, type ParentAction, type Task } from '@/lib/api';
+import { api, ApiError, isDone, isPaywall, type Child, type Day, type Overview, type ParentAction, type Task } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
+import { ChildSwitcher, currentChildReady, getCurrentChild, setCurrentChild, useCurrentChild } from '@/lib/currentChild';
 import { longDate, toMin } from '@/lib/format';
 import { tn, useT } from '@/lib/i18n';
 import { gradients, radius, usePalette } from '@/lib/theme';
@@ -38,7 +39,8 @@ export default function Today() {
   const { signOut } = useAuth();
   const t = useT();
   const [data, setData] = useState<Overview | null>(null);
-  const [name, setName] = useState('');
+  const [kids, setKids] = useState<Child[]>([]);
+  const [childId] = useCurrentChild(kids);
   const [error, setError] = useState<string | null>(null);
   const [mode, setMode] = useState<'day' | 'history'>('day');
   const [busy, setBusy] = useState<number | null>(null);
@@ -56,9 +58,12 @@ export default function Today() {
 
   const load = useCallback(async () => {
     try {
-      const [ov, me] = await Promise.all([api.overview(), api.me()]);
+      const cid = await currentChildReady();
+      const [ov, me] = await Promise.all([api.overview(cid ?? undefined), api.me()]);
+      // the parent switched to another child meanwhile: that request's answer wins
+      if (getCurrentChild() !== cid) return;
       setData(ov);
-      setName(me.family.child_name);
+      setKids(me.children);
       setHard(me.family.hard_deadline);
       setToday(todayIn(me.family.tz));
       setError(null);
@@ -144,13 +149,19 @@ export default function Today() {
   };
   const nudge = async () => {
     try {
-      const r = await api.nudge();
+      const r = await api.nudge(data.child_id);
       toast.show(!r.left ? t('parent.today.allDone') : r.sent ? t('parent.today.nudgeSent') : t('parent.today.pushLater'));
     } catch (e) {
       toast.show((e as Error).message);
     }
   };
   const open = (url: string, caption: string, id: number) => setViewer({ url, caption, id });
+  const switchChild = (id: number | null) => {
+    if (id === null || id === data.child_id) return;
+    setCurrentChild(id);
+    setOpenDay(null);
+    load();
+  };
 
   const active = data.days.find((d) => d.date === data.active)!;
   const history = data.days.filter((d) => d.date !== data.active);
@@ -165,11 +176,12 @@ export default function Today() {
   return (
     <>
       <Screen
-        title={name || t('parent.tab.today')}
+        title={kids.find((c) => c.id === data.child_id)?.name || data.child_name || t('parent.tab.today')}
         subtitle={t('parent.today.subtitle', { date: longDate(active.date) })}
         onRefresh={load}
         right={<IconBtn icon="stats-chart-outline" label={t('parent.today.report')} onPress={() => router.push('/parent/report')} />}
       >
+        <ChildSwitcher list={kids} value={childId} onChange={switchChild} />
         <View style={styles.seg}>
           <Chip label={t('parent.today.segDay')} selected={mode === 'day'} onPress={() => setMode('day')} />
           <Chip label={t('parent.today.segHistory')} selected={mode === 'history'} onPress={() => setMode('history')} />

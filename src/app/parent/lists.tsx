@@ -3,11 +3,12 @@ import { useCallback, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { Btn, Chip, EmojiPicker, Empty, Field, Group, Loading, Row, Screen, SectionLabel, Sheet, ToggleRow, Txt, useToast, WeekdayPicker } from '@/components/ui';
-import { api, type Family, type Item } from '@/lib/api';
+import { api, type Child, type Family, type Item } from '@/lib/api';
+import { ChildSwitcher, setCurrentChild, useCurrentChild } from '@/lib/currentChild';
 import { weekdaysLabel } from '@/lib/format';
 import { useT } from '@/lib/i18n';
 import { EMOJIS, ITEM_PRESETS } from '@/lib/presets';
-import { usePalette } from '@/lib/theme';
+import { radius, usePalette } from '@/lib/theme';
 
 type Draft = Partial<Item> & { everyDay?: boolean };
 
@@ -18,6 +19,10 @@ export default function Lists() {
   const [fam, setFam] = useState<Family | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
+  const [kids, setKids] = useState<Child[]>([]);
+  const [childId] = useCurrentChild(kids);
+  // items belong to the family (for everyone or one child): the view shows all of them unless filtered by a child
+  const [showAll, setShowAll] = useState(true);
   const toast = useToast();
   // A delete is held back while its «Вернуть» toast is up, so undo keeps the same item (and its tasks).
   const pending = useRef<{ id: number; timer: ReturnType<typeof setTimeout> } | null>(null);
@@ -27,6 +32,7 @@ export default function Lists() {
       const [s, me] = await Promise.all([api.setup(), api.me()]);
       setItems(s.items.filter((x) => x.id !== pending.current?.id));
       setFam(me.family);
+      setKids(me.children);
       setError(null);
     } catch (e) {
       setError((e as Error).message);
@@ -47,8 +53,25 @@ export default function Lists() {
   );
   if (!items || !fam) return <Loading error={error} onRetry={load} />;
 
+  const multi = kids.length > 1;
+  const filter = multi && !showAll ? childId : null;
+  const kidName = (id: number | null | undefined) => (id ? kids.find((c) => c.id === id)?.name : undefined);
+  const shown = filter === null ? items : items.filter((x) => !x.child_id || x.child_id === filter);
+  const switchChild = (id: number | null) => {
+    setShowAll(id === null);
+    if (id !== null) setCurrentChild(id);
+  };
   const openNew = (preset?: (typeof ITEM_PRESETS)[number]) =>
-    setDraft({ title: preset?.title ?? '', emoji: preset?.emoji ?? '✅', needs_photo: preset?.needs_photo ?? false, required: preset?.required ?? true, weekdays: null, everyDay: true });
+    setDraft({
+      title: preset?.title ?? '',
+      emoji: preset?.emoji ?? '✅',
+      needs_photo: preset?.needs_photo ?? false,
+      required: preset?.required ?? true,
+      weekdays: null,
+      everyDay: true,
+      // filtered by a child: a new item is for that child (changeable in the sheet)
+      child_id: filter,
+    });
   const save = async () => {
     if (!draft?.title?.trim()) return;
     const body = {
@@ -57,6 +80,8 @@ export default function Lists() {
       needs_photo: !!draft.needs_photo,
       required: draft.required !== false,
       weekdays: draft.everyDay || !draft.weekdays?.length ? null : draft.weekdays,
+      // null = for every child; left untouched for a single-child family
+      ...(multi ? { child_id: kidName(draft.child_id) ? draft.child_id : null } : {}),
     };
     try {
       if (draft.id) await api.updateItem(draft.id, body);
@@ -90,18 +115,31 @@ export default function Lists() {
   return (
     <>
       <Screen title={t('parent.tab.lists')} subtitle={t('parent.lists.subtitle')} onRefresh={load} right={<Btn small title={t('common.add')} icon="＋" onPress={() => openNew()} />}>
-        {items.length ? (
+        <ChildSwitcher list={kids} value={filter} onChange={switchChild} all />
+        {shown.length ? (
           <Group>
-            {items.map((it) => (
-              <Row
-                key={it.id}
-                icon={it.emoji}
-                title={it.title}
-                subtitle={`${weekdaysLabel(it.weekdays)} · ${it.needs_photo ? t('parent.lists.withPhoto') : t('parent.lists.withCheck')}${it.required ? '' : t('parent.lists.optional')}`}
-                chevron
-                onPress={() => setDraft({ ...it, everyDay: !it.weekdays?.length })}
-              />
-            ))}
+            {shown.map((it) => {
+              const who = multi ? kidName(it.child_id) : undefined;
+              return (
+                <Row
+                  key={it.id}
+                  icon={it.emoji}
+                  title={it.title}
+                  subtitle={`${weekdaysLabel(it.weekdays)} · ${it.needs_photo ? t('parent.lists.withPhoto') : t('parent.lists.withCheck')}${it.required ? '' : t('parent.lists.optional')}`}
+                  right={
+                    who ? (
+                      <View style={[styles.tag, { backgroundColor: p.brandSoft }]}>
+                        <Txt v="sub" color={p.brand} numberOfLines={1}>
+                          {who}
+                        </Txt>
+                      </View>
+                    ) : undefined
+                  }
+                  chevron
+                  onPress={() => setDraft({ ...it, everyDay: !it.weekdays?.length })}
+                />
+              );
+            })}
           </Group>
         ) : (
           <Group>
@@ -129,6 +167,19 @@ export default function Lists() {
           {t('parent.icon')}
         </Txt>
         <EmojiPicker value={draft?.emoji ?? '✅'} options={EMOJIS} onChange={(emoji) => setDraft({ ...draft, emoji })} />
+        {multi ? (
+          <View style={{ marginTop: 14 }}>
+            <Txt v="sub" color={p.muted} style={{ marginBottom: 8, marginLeft: 4 }}>
+              {t('parent.lists.forWhom')}
+            </Txt>
+            <View style={styles.wrap}>
+              <Chip label={t('parent.kids.all')} selected={!kidName(draft?.child_id)} onPress={() => setDraft({ ...draft, child_id: null })} />
+              {kids.map((c) => (
+                <Chip key={c.id} label={c.name} selected={draft?.child_id === c.id} onPress={() => setDraft({ ...draft, child_id: c.id })} />
+              ))}
+            </View>
+          </View>
+        ) : null}
         <Group style={{ marginTop: 14 }}>
           <ToggleRow icon="📸" title={t('parent.lists.needsPhoto')} subtitle={t('parent.lists.needsPhotoSub')} value={!!draft?.needs_photo} onChange={(needs_photo) => setDraft({ ...draft, needs_photo })} />
           <ToggleRow icon="❗" title={t('parent.lists.required')} subtitle={t('parent.lists.requiredSub')} value={draft?.required !== false} onChange={(required) => setDraft({ ...draft, required })} />
@@ -150,4 +201,7 @@ export default function Lists() {
   );
 }
 
-const styles = StyleSheet.create({ wrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 } });
+const styles = StyleSheet.create({
+  wrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  tag: { borderRadius: radius.s, paddingHorizontal: 8, paddingVertical: 2, maxWidth: 110 },
+});
