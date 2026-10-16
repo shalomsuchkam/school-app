@@ -132,6 +132,25 @@
       ],
       "expo-font",
       [
+        "react-native-android-widget",
+        {
+          "widgets": [
+            {
+              "name": "Tomorrow",
+              "label": "Уроки",
+              "minWidth": "180dp",
+              "minHeight": "110dp",
+              "targetCellWidth": 3,
+              "targetCellHeight": 2,
+              "maxResizeWidth": "400dp",
+              "maxResizeHeight": "300dp",
+              "resizeMode": "horizontal|vertical",
+              "updatePeriodMillis": 1800000
+            }
+          ]
+        }
+      ],
+      [
         "./plugins/withAndroidLabel",
         "Уроки"
       ]

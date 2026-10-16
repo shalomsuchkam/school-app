@@ -177,6 +177,15 @@ const b: Bundle = {
     'child.queue.dropped': { one: '{n} фото не отправлено: задание уже неактуально', few: '{n} фото не отправлено: задание уже неактуально', many: '{n} фото не отправлено: задание уже неактуально', other: '{n} фото не отправлено: задание уже неактуально' },
     'child.st.queued': 'Фото ждёт интернета',
 
+    // Home-screen widget (Android)
+    'child.widget.caption': 'Следующий учебный день',
+    'child.widget.progress': 'Готово {done} из {total}',
+    'child.widget.allDone': 'Всё готово! 🎉',
+    'child.widget.noTasks': 'Заданий нет',
+    'child.widget.more': { one: 'и ещё {n} задание', few: 'и ещё {n} задания', many: 'и ещё {n} заданий', other: 'и ещё {n} задания' },
+    'child.widget.stale': 'Откройте приложение, чтобы обновить',
+    'child.widget.empty': 'Откройте «Уроки», чтобы увидеть задания',
+
     // Local reminders
     'child.rem.channel': 'Напоминания об уроках',
     'child.rem.timeTitle': '📚 Пора за уроки',
@@ -341,6 +350,15 @@ const b: Bundle = {
     'child.queue.dropped': { one: '{n} фото жіберілмеді: тапсырма енді өзекті емес', other: '{n} фото жіберілмеді: тапсырма енді өзекті емес' },
     'child.st.queued': 'Фото интернетті күтуде',
 
+    // Home-screen widget (Android)
+    'child.widget.caption': 'Келесі оқу күні',
+    'child.widget.progress': 'Дайын: {done}/{total}',
+    'child.widget.allDone': 'Бәрі дайын! 🎉',
+    'child.widget.noTasks': 'Тапсырма жоқ',
+    'child.widget.more': { one: 'тағы {n} тапсырма', other: 'тағы {n} тапсырма' },
+    'child.widget.stale': 'Жаңарту үшін қолданбаны ашыңыз',
+    'child.widget.empty': 'Тапсырмаларды көру үшін «Уроки» қолданбасын ашыңыз',
+
     // Local reminders
     'child.rem.channel': 'Сабақ туралы еске салғыштар',
     'child.rem.timeTitle': '📚 Сабаққа отыратын уақыт',
@@ -504,6 +522,15 @@ const b: Bundle = {
     'child.queue.sent': { one: 'Sent {n} queued photo ✅', other: 'Sent {n} queued photos ✅' },
     'child.queue.dropped': { one: "{n} photo wasn't sent: the task is no longer active", other: "{n} photos weren't sent: the task is no longer active" },
     'child.st.queued': 'Photo waiting for internet',
+
+    // Home-screen widget (Android)
+    'child.widget.caption': 'Next school day',
+    'child.widget.progress': '{done} of {total} done',
+    'child.widget.allDone': 'All done! 🎉',
+    'child.widget.noTasks': 'No tasks',
+    'child.widget.more': { one: 'and {n} more task', other: 'and {n} more tasks' },
+    'child.widget.stale': 'Open the app to refresh',
+    'child.widget.empty': 'Open Uroki to see your tasks',
 
     // Local reminders
     'child.rem.channel': 'Homework reminders',

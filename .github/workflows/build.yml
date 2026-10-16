@@ -13,13 +13,28 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # UI and unit tests (jest); both builds wait for them, so a failing test fails the run before any build starts
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test -- --ci
+
   android:
+    needs: test
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
       BUILD_NUMBER: ${{ github.run_number }}
       # RevenueCat public SDK keys (safe to ship in the app); purchases are off when unset
       EXPO_PUBLIC_RC_IOS_KEY: ${{ secrets.RC_IOS_KEY }}
+      EXPO_PUBLIC_API_URL: ${{ secrets.EXPO_PUBLIC_API_URL }}
       EXPO_PUBLIC_RC_ANDROID_KEY: ${{ secrets.RC_ANDROID_KEY }}
       # Expo push service project (server push); empty = push off, local reminders still work
       EAS_PROJECT_ID: ${{ secrets.EAS_PROJECT_ID }}
@@ -90,12 +105,14 @@ jobs:
           path: out/Uroki.*
 
   ios:
+    needs: test
     runs-on: macos-latest
     timeout-minutes: 90
     env:
       BUILD_NUMBER: ${{ github.run_number }}
       # RevenueCat public SDK keys (safe to ship in the app); purchases are off when unset
       EXPO_PUBLIC_RC_IOS_KEY: ${{ secrets.RC_IOS_KEY }}
+      EXPO_PUBLIC_API_URL: ${{ secrets.EXPO_PUBLIC_API_URL }}
       EXPO_PUBLIC_RC_ANDROID_KEY: ${{ secrets.RC_ANDROID_KEY }}
       # Expo push service project (server push); empty = push off, local reminders still work
       EAS_PROJECT_ID: ${{ secrets.EAS_PROJECT_ID }}

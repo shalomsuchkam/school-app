@@ -4,6 +4,7 @@ import { setToken, type Role } from './api';
 import { clearCurrentChild } from './currentChild';
 import { clearPhotoQueue } from './offline';
 import { storage } from './storage';
+import { clearWidget } from './widget';
 
 export type Session = { token: string; role: Role } | null;
 type Ctx = { session: Session | undefined; signIn: (s: { token: string; role: Role }) => Promise<void>; signOut: () => Promise<void> };
@@ -32,8 +33,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await storage.del(KEY);
     setToken(null);
     setSession(null);
-    // per-account local state: queued homework photos and the child a parent was looking at
-    await Promise.all([clearPhotoQueue(), clearCurrentChild()]).catch(() => {});
+    // per-account local state: queued homework photos, the child a parent was looking at, the child's home-screen widget
+    await Promise.all([clearPhotoQueue(), clearCurrentChild(), clearWidget()]).catch(() => {});
   };
   return <AuthContext.Provider value={{ session, signIn, signOut }}>{children}</AuthContext.Provider>;
 }

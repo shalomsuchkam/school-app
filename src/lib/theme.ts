@@ -49,6 +49,8 @@ const dark: typeof light = {
   shadow: '#000000',
 };
 export type Palette = typeof light;
+// For surfaces outside React Native views (the Android home-screen widget renders both schemes).
+export const palettes = { light, dark };
 export function usePalette(): Palette {
   return useColorScheme() === 'dark' ? dark : light;
 }

@@ -20,6 +20,7 @@ import { exactAlarmsAllowed, openExactAlarmSettings } from '@/lib/exactAlarm';
 import { flushQueue, pendingPhotos, usePhotoQueue, type FlushResult } from '@/lib/offline';
 import { cancelReminders, notificationsAllowed, scheduleReminders } from '@/lib/notify';
 import { gradients, radius, usePalette } from '@/lib/theme';
+import { syncWidget } from '@/lib/widget';
 
 type Mood = 'zero' | 'progress' | 'almost' | 'done' | 'overdue';
 
@@ -182,6 +183,7 @@ export default function ChildHome() {
       const ts = Date.now();
       lastAt.current = ts;
       setS(st);
+      syncWidget(st); // home-screen widget (Android): what is left for the next school day
       setFetchedAt(ts);
       setNow(ts);
       const req = st.tasks.filter((x) => x.required);

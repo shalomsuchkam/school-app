@@ -1,13 +1,14 @@
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { Platform, StyleSheet, View } from 'react-native';
 
 import { Paywall } from '@/components/Paywall';
-import { Empty, ErrorBanner, Group, IconBtn, Loading, Row, Screen, SectionLabel, Txt, useLayout } from '@/components/ui';
+import { Btn, Empty, ErrorBanner, Group, IconBtn, Loading, Row, Screen, SectionLabel, Txt, useLayout, useToast } from '@/components/ui';
 import { api, isPaywall, type Child, type Report } from '@/lib/api';
 import { ChildSwitcher, currentChildReady, getCurrentChild, setCurrentChild, useCurrentChild } from '@/lib/currentChild';
 import { duration, isoWeekday, shortDate, wdShort } from '@/lib/format';
 import { tn, useT } from '@/lib/i18n';
+import { PDF_DAYS, shareReportPdf } from '@/lib/reportPdf';
 import { radius, usePalette } from '@/lib/theme';
 
 type Kind = 'on_time' | 'late' | 'skipped' | 'missed';
@@ -25,6 +26,8 @@ export default function WeeklyReport() {
   const [paywall, setPaywall] = useState(false);
   const [kids, setKids] = useState<Child[]>([]);
   const [childId] = useCurrentChild(kids);
+  const [pdfBusy, setPdfBusy] = useState(false);
+  const toast = useToast();
 
   const load = useCallback(async () => {
     try {
@@ -57,6 +60,18 @@ export default function WeeklyReport() {
     setReport(null);
     setError(null);
     load();
+  };
+  // The screen shows one week; the PDF covers the last 30 days of the child on screen, fetched on demand.
+  const exportPdf = async () => {
+    setPdfBusy(true);
+    try {
+      await shareReportPdf(await api.report(report.child_id, PDF_DAYS));
+    } catch (e) {
+      if (isPaywall(e)) setPaywall(true);
+      else toast.show((e as Error).message);
+    } finally {
+      setPdfBusy(false);
+    }
   };
   const back = () => (router.canGoBack() ? router.back() : router.replace('/parent'));
   const { totals } = report;
@@ -190,6 +205,7 @@ export default function WeeklyReport() {
       subtitle={t('parent.report.range', { from: shortDate(report.from), to: shortDate(report.to) })}
       onRefresh={load}
       right={<IconBtn icon="close" label={t('common.close')} onPress={back} />}
+      footer={toast.node}
     >
       <ChildSwitcher list={kids} value={childId} onChange={switchChild} />
       <ErrorBanner error={error} onRetry={load} />
@@ -226,6 +242,15 @@ export default function WeeklyReport() {
           )}
         </>
       )}
+      {/* printing to PDF needs the native print module: not in the web preview */}
+      {Platform.OS !== 'web' ? (
+        <View style={styles.pdf}>
+          <Btn kind="secondary" icon="document-text-outline" title={t('parent.pdf.export')} loading={pdfBusy} onPress={exportPdf} />
+          <Txt v="sub" color={p.muted} style={{ textAlign: 'center' }}>
+            {t('parent.pdf.exportHint')}
+          </Txt>
+        </View>
+      ) : null}
     </Screen>
   );
 }
@@ -245,4 +270,5 @@ const styles = StyleSheet.create({
   minTrack: { flex: 1, height: 10, borderRadius: 5, overflow: 'hidden' },
   mini: { width: 56, height: 8, borderRadius: 4, overflow: 'hidden', flexDirection: 'row' },
   cols: { flexDirection: 'row', gap: 16, alignItems: 'flex-start' },
+  pdf: { marginTop: 24, gap: 8 },
 });

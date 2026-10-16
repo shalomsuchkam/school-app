@@ -5,7 +5,8 @@ import { Platform } from 'react-native';
 import { getLang, t } from './i18n';
 
 // Client for the `app` edge function (multi-family backend of the mobile app).
-export const API_BASE = 'https://cmranrfjvvmhktntbnpg.supabase.co/functions/v1/app';
+// EXPO_PUBLIC_API_URL (build secret) points builds at the self-hosted server in Kazakhstan once it runs.
+export const API_BASE = process.env.EXPO_PUBLIC_API_URL || 'https://cmranrfjvvmhktntbnpg.supabase.co/functions/v1/app';
 
 export type Role = 'parent' | 'child';
 export type TaskStatus = 'todo' | 'done' | 'redo' | 'skip_pending' | 'skip_ok' | 'skip_no';
@@ -184,7 +185,11 @@ export const api = {
   overview: (child?: number) => call<Overview>('GET', `/parent/overview${child ? `?child=${child}` : ''}`),
   action: (id: number, action: ParentAction, comment?: string) => call<{ text: string }>('POST', '/parent/task', { id, action, comment }),
   parentNote: (task_id: number, note: string) => call('POST', '/parent/note', { task_id, note }),
-  report: (child?: number) => call<Report>('GET', `/parent/report${child ? `?child=${child}` : ''}`),
+  // days: period length ending today (server accepts 7..31; default = the current week)
+  report: (child?: number, days?: number) => {
+    const q = [child ? `child=${child}` : '', days ? `days=${Math.min(31, Math.max(7, Math.round(days)))}` : ''].filter(Boolean).join('&');
+    return call<Report>('GET', `/parent/report${q ? `?${q}` : ''}`);
+  },
   addChild: (name: string) => call<Child>('POST', '/children', { name }),
   renameChild: (id: number, name: string) => call('PATCH', `/children/${id}`, { name }),
   removeChild: (id: number) => call('DELETE', `/children/${id}`),
