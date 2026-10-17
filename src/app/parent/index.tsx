@@ -1,4 +1,3 @@
-import { LinearGradient } from 'expo-linear-gradient';
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useRef, useState } from 'react';
 import { AppState, Pressable, StyleSheet, View } from 'react-native';
@@ -7,13 +6,13 @@ import { Paywall } from '@/components/Paywall';
 import { PhoneLimitGuide } from '@/components/PhoneLimitGuide';
 import { PhotoViewer } from '@/components/PhotoViewer';
 import { ParentTaskCard } from '@/components/TaskCards';
-import { Btn, Chip, Empty, ErrorBanner, Field, Group, Icon, IconBtn, Loading, Row, Screen, SectionLabel, Sheet, Txt, useToast } from '@/components/ui';
+import { Badge, Banner, Btn, Card, Empty, ErrorBanner, Field, Group, haptic, Icon, IconBtn, Loading, PressableScale, Row, Screen, SectionLabel, Segmented, SegmentBar, Sheet, Txt, useLayout, useToast } from '@/components/ui';
 import { api, ApiError, isDone, isPaywall, type Child, type Day, type Me, type Overview, type ParentAction, type Task } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { ChildSwitcher, currentChildReady, getCurrentChild, setCurrentChild, useCurrentChild } from '@/lib/currentChild';
 import { longDate, toMin } from '@/lib/format';
 import { tn, useT } from '@/lib/i18n';
-import { gradients, radius, usePalette } from '@/lib/theme';
+import { elevation, radius, space, usePalette } from '@/lib/theme';
 
 // What the parent edits in the task sheet: a comment for "retake", a free comment, or the assignment note.
 type ToolMode = 'redo' | 'comment' | 'note';
@@ -60,6 +59,7 @@ export default function Today() {
   // photo links are signed for 15 min: an unchanged payload is still applied every 10 min to renew them
   const lastAt = useRef(0);
   const toast = useToast();
+  const { pad } = useLayout();
 
   const load = useCallback(async () => {
     const my = ++seq.current.sent;
@@ -187,6 +187,16 @@ export default function Today() {
   // after the hard deadline on the due day (the day before the active school day) with required work left
   const unfinished = active.tasks.filter((x) => x.required && !isDone(x)).length;
   const overdue = !!hard && today === addDays(data.active, -1) && toMin(data.now_hm) >= toMin(hard) && unfinished > 0;
+  // the active day split by state, for the status bar
+  const counts = active.tasks.reduce(
+    (c, x) => {
+      if (x.status === 'skip_pending') c.wait++;
+      else if (x.status === 'redo' || x.status === 'skip_no') c.bad++;
+      else if (isDone(x)) c.ok++;
+      return c;
+    },
+    { ok: 0, wait: 0, bad: 0 },
+  );
   const toolTitle = !tool ? '' : tool.mode === 'redo' ? t('parent.task.redoTitle') : tool.mode === 'comment' ? t('parent.task.comment') : t('parent.task.note');
 
   return (
@@ -196,71 +206,102 @@ export default function Today() {
         subtitle={t('parent.today.subtitle', { date: longDate(active.date) })}
         onRefresh={load}
         right={<IconBtn icon="stats-chart-outline" label={t('parent.today.report')} onPress={() => router.push('/parent/report')} />}
+        footer={
+          mode === 'day' && left > 0 ? (
+            <View pointerEvents="box-none" style={[styles.fabWrap, { paddingHorizontal: pad }]}>
+              <PressableScale accessibilityRole="button" accessibilityLabel={t('parent.today.nudge')} onPress={() => (haptic.tap(), nudge())} style={[styles.fab, elevation(p, 2), { backgroundColor: p.brandFill }]}>
+                <Icon name="notifications" size={18} color="#fff" />
+                <Txt v="label" color="#fff">
+                  {t('parent.today.nudge')}
+                </Txt>
+              </PressableScale>
+            </View>
+          ) : null
+        }
       >
         <ChildSwitcher list={kids} value={childId} onChange={switchChild} />
         <ErrorBanner error={error} onRetry={load} />
-        <View style={styles.seg}>
-          <Chip label={t('parent.today.segDay')} selected={mode === 'day'} onPress={() => setMode('day')} />
-          <Chip label={t('parent.today.segHistory')} selected={mode === 'history'} onPress={() => setMode('history')} />
-        </View>
+        <Segmented
+          value={mode}
+          onChange={setMode}
+          options={[
+            { value: 'day', label: t('parent.today.segDay') },
+            { value: 'history', label: t('parent.today.segHistory') },
+          ]}
+          style={{ marginBottom: space.s }}
+        />
 
         {mode === 'day' ? (
           <>
-            <LinearGradient colors={!active.total ? gradients.night : left ? gradients.brand : gradients.ok} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.hero}>
-              <View style={{ flexDirection: 'row', alignItems: 'flex-end' }}>
-                <Txt v="largeTitle" color="#fff" style={{ fontSize: 44, lineHeight: 48 }}>
-                  {active.done}
-                </Txt>
-                <Txt v="title" color="rgba(255,255,255,0.7)" style={{ marginBottom: 4 }}>
-                  {' '}
-                  / {active.total}
-                </Txt>
-                <View style={{ flex: 1 }} />
-                <Txt v="callout" color="rgba(255,255,255,0.85)">
-                  🔥 {data.streak} · ⭐ {data.perfect_week}
-                </Txt>
-              </View>
-              <Txt v="headline" color="#fff" style={{ marginTop: 6 }}>
-                {!active.total ? t('parent.today.none') : left ? t('parent.today.left', { n: left }) : t('parent.today.ready')}
-                {active.last_done_hm ? t('parent.today.lastAt', { hm: active.last_done_hm }) : ''}
-              </Txt>
-              <View style={[styles.track, { backgroundColor: 'rgba(255,255,255,0.25)' }]}>
-                <View style={[styles.fill, { width: `${active.total ? (active.done / active.total) * 100 : 0}%` }]} />
-              </View>
-            </LinearGradient>
-
-            {overdue ? (
-              <View style={[styles.overdue, { backgroundColor: p.badSoft, borderColor: p.bad }]} accessibilityRole="alert">
-                <View style={{ flexDirection: 'row', gap: 10, alignItems: 'center' }}>
-                  <Icon name="phone-portrait-outline" size={22} color={p.bad} />
-                  <Txt v="headline" color={p.bad} style={{ flex: 1 }}>
-                    {t('parent.today.overdueTitle')}
+            {/* Status at a glance: count, a bar split by state, and what needs the parent now. */}
+            <Card tone={active.total && !left ? 'ok' : undefined} style={styles.hero}>
+              <View style={styles.heroTop}>
+                <View style={{ flexDirection: 'row', alignItems: 'baseline' }} accessible accessibilityLabel={t('child.ring.a11y', { done: active.done, total: active.total })}>
+                  <Txt v="display" style={{ fontVariant: ['tabular-nums'] }}>
+                    {active.done}
+                  </Txt>
+                  <Txt v="title" color={p.muted} style={{ fontVariant: ['tabular-nums'] }}>
+                    /{active.total}
                   </Txt>
                 </View>
-                <Txt v="callout" style={{ marginTop: 4 }}>
-                  {tn('parent.today.overdueText', unfinished, { hm: hard ?? '' })}
-                </Txt>
-                <Btn title={t('parent.today.overdueBtn')} kind="bad" small icon="lock-closed-outline" onPress={() => setGuide(true)} style={{ marginTop: 10, alignSelf: 'flex-start' }} />
+                <View style={{ flex: 1 }} />
+                <View style={styles.streaks}>
+                  <View style={styles.streak} accessible accessibilityLabel={tn('child.streak', data.streak)}>
+                    <Icon name="flame" size={16} color={p.tile.orange} />
+                    <Txt v="callout" style={{ fontWeight: '600', fontVariant: ['tabular-nums'] }}>
+                      {data.streak}
+                    </Txt>
+                  </View>
+                  <View style={styles.streak} accessible accessibilityLabel={`${data.perfect_week} ${t('child.perfectWeek')}`}>
+                    <Icon name="star" size={15} color={p.brand} />
+                    <Txt v="callout" style={{ fontWeight: '600', fontVariant: ['tabular-nums'] }}>
+                      {data.perfect_week}
+                    </Txt>
+                  </View>
+                </View>
               </View>
-            ) : null}
+              <Txt v="headline" color={active.total && !left ? p.ok : p.ink}>
+                {!active.total ? t('parent.today.none') : left ? t('parent.today.left', { n: left }) : t('parent.today.ready')}
+                <Txt v="callout" color={p.muted}>
+                  {active.last_done_hm ? t('parent.today.lastAt', { hm: active.last_done_hm }) : ''}
+                </Txt>
+              </Txt>
+              <SegmentBar
+                height={10}
+                track={active.total && !left ? p.card : p.fill}
+                parts={[
+                  { value: counts.ok, color: p.okFill },
+                  { value: counts.wait, color: p.warn },
+                  { value: counts.bad, color: p.bad },
+                  { value: Math.max(0, active.total - counts.ok - counts.wait - counts.bad), color: 'transparent' },
+                ]}
+              />
+              {pending.length || toReview.length ? (
+                <View style={styles.attn}>
+                  {pending.length ? <Badge tone="warn" icon="hourglass-outline" label={t('parent.today.pending', { n: pending.length })} /> : null}
+                  {toReview.length ? <Badge tone="brand" icon="images-outline" label={t('parent.today.newPhotos', { n: toReview.length })} /> : null}
+                </View>
+              ) : null}
+            </Card>
 
-            {pending.length || toReview.length ? (
-              <View style={[styles.attn, { backgroundColor: p.warnSoft }]}>
-                <Txt v="callout" style={{ flex: 1 }}>
-                  {pending.length ? t('parent.today.pending', { n: pending.length }) : ''}
-                  {pending.length && toReview.length ? '   ' : ''}
-                  {toReview.length ? t('parent.today.newPhotos', { n: toReview.length }) : ''}
-                </Txt>
-              </View>
+            {overdue ? (
+              <Banner
+                tone="bad"
+                icon="phone-portrait-outline"
+                title={t('parent.today.overdueTitle')}
+                text={tn('parent.today.overdueText', unfinished, { hm: hard ?? '' })}
+                action={{ label: t('parent.today.overdueBtn'), icon: 'lock-closed-outline', onPress: () => setGuide(true) }}
+              />
             ) : null}
 
             {!active.total ? (
-              <Empty icon="🗓️" title={t('parent.today.emptyTitle')} text={t('parent.today.emptyText')}>
-                <Btn title={t('parent.today.openSchedule')} kind="secondary" onPress={() => router.push('/parent/schedule')} style={{ marginTop: 16 }} />
-              </Empty>
+              <Card style={{ marginTop: space.xs }}>
+                <Empty icon="calendar-outline" title={t('parent.today.emptyTitle')} text={t('parent.today.emptyText')}>
+                  <Btn title={t('parent.today.openSchedule')} kind="secondary" onPress={() => router.push('/parent/schedule')} style={{ marginTop: space.m }} />
+                </Empty>
+              </Card>
             ) : (
               <>
-                {left ? <Btn title={t('parent.today.nudge')} icon="🔔" kind="secondary" onPress={nudge} style={{ marginTop: 12 }} /> : null}
                 {[...pending, ...active.tasks.filter((x) => x.status !== 'skip_pending')]
                   .reduce<{ k: string; items: Task[] }[]>((acc, task) => {
                     const k = task.kind === 'lesson' ? t('parent.today.groupLessons') : t('parent.today.groupPrep');
@@ -280,7 +321,7 @@ export default function Today() {
                   ))}
               </>
             )}
-            <Btn title={t('parent.today.report')} icon="📊" kind="secondary" onPress={() => router.push('/parent/report')} style={{ marginTop: 16 }} />
+            <Btn title={t('parent.today.report')} icon="stats-chart-outline" kind="ghost" onPress={() => router.push('/parent/report')} style={{ marginTop: space.s }} />
           </>
         ) : (
           <History days={history} openDay={openDay} setOpenDay={setOpenDay} busy={busy} act={act} open={open} tool={openTool} />
@@ -357,8 +398,8 @@ function TaskBlock({
       accessibilityLabel={value ? `${label}: ${value}` : label}
       style={({ pressed }) => [styles.link, { backgroundColor: pressed ? p.fill : 'transparent' }]}
     >
-      <Icon name={icon} size={15} color={value ? p.brand : p.muted} />
-      <Txt v="sub" color={value ? p.ink : p.muted} numberOfLines={1} style={{ flexShrink: 1 }}>
+      <Icon name={icon} size={15} color={value ? p.brand : p.ink2} />
+      <Txt v="sub" color={value ? p.ink : p.ink2} numberOfLines={1} style={{ flexShrink: 1, fontWeight: '500' }}>
         {value ? `«${value}»` : label}
       </Txt>
     </Pressable>
@@ -396,11 +437,11 @@ function History({
 }) {
   const p = usePalette();
   const t = useT();
-  if (!days.length) return <Empty icon="📅" title={t('parent.history.emptyTitle')} text={t('parent.history.emptyText')} />;
+  if (!days.length) return <Empty icon="time-outline" title={t('parent.history.emptyTitle')} text={t('parent.history.emptyText')} />;
   return (
-    <View style={{ marginTop: 12 }}>
+    <View style={{ marginTop: space.xs }}>
       {days.map((d) => {
-        const color = !d.total ? p.muted : d.done === d.total ? (d.on_time ? p.ok : p.warn) : p.bad;
+        const color = !d.total ? p.muted : d.done === d.total ? (d.on_time ? p.okFill : p.warn) : p.bad;
         return (
           <View key={d.date} style={{ marginBottom: 10 }}>
             <Group>
@@ -408,7 +449,11 @@ function History({
                 <Row
                   title={longDate(d.date)}
                   subtitle={`${d.done}/${d.total}${d.last_done_hm ? t('parent.history.until', { hm: d.last_done_hm }) : ''}${d.on_time ? t('parent.history.onTime') : ''}`}
-                  right={<View style={[styles.dot, { backgroundColor: color }]} />}
+                  right={
+                    <View style={[styles.dayMark, { borderColor: color, backgroundColor: d.total && d.done === d.total ? color : 'transparent' }]}>
+                      {d.total && d.done === d.total ? <Icon name={d.on_time ? 'checkmark' : 'time'} size={12} color="#fff" /> : null}
+                    </View>
+                  }
                   chevron
                 />
               </Pressable>
@@ -428,13 +473,15 @@ function History({
 }
 
 const styles = StyleSheet.create({
-  seg: { flexDirection: 'row', gap: 8, marginBottom: 14 },
-  hero: { borderRadius: radius.xl, padding: 18 },
-  track: { height: 8, borderRadius: 4, marginTop: 14, overflow: 'hidden' },
-  fill: { height: 8, borderRadius: 4, backgroundColor: '#fff' },
-  attn: { borderRadius: radius.l, padding: 14, marginTop: 10, flexDirection: 'row' },
-  dot: { width: 12, height: 12, borderRadius: 6 },
-  overdue: { borderRadius: radius.l, padding: 14, marginTop: 10, borderWidth: 1 },
-  tools: { flexDirection: 'row', gap: 6, marginTop: -6, marginBottom: 10, paddingHorizontal: 4 },
-  link: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 8, paddingVertical: 5, borderRadius: 8, flexShrink: 1, maxWidth: '55%' },
+  hero: { gap: space.s },
+  heroTop: { flexDirection: 'row', alignItems: 'center' },
+  streaks: { flexDirection: 'row', gap: space.s },
+  streak: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  attn: { flexDirection: 'row', flexWrap: 'wrap', gap: space.xs },
+  dayMark: { width: 20, height: 20, borderRadius: 10, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
+  tools: { flexDirection: 'row', gap: space.xxs, marginTop: -2, marginBottom: space.s, paddingHorizontal: space.xxs },
+  link: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: space.xs, minHeight: 32, borderRadius: radius.s, flexShrink: 1, maxWidth: '55%' },
+  // the "remind" action floats above the tab bar, on the thumb side
+  fabWrap: { position: 'absolute', left: 0, right: 0, bottom: space.m, alignItems: 'flex-end' },
+  fab: { flexDirection: 'row', alignItems: 'center', gap: space.xs, minHeight: 50, paddingHorizontal: 18, borderRadius: 25 },
 });

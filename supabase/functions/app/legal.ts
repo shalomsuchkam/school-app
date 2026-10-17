@@ -2,7 +2,7 @@
 // Bump LEGAL_VERSION whenever the text changes: families accept a specific version at sign-up.
 import { secret } from "./lib.ts";
 
-export const LEGAL_VERSION = "2026-10-16.2";
+export const LEGAL_VERSION = "2026-10-19.1";
 
 // Operator details come from app_secrets (app_operator_ru / app_operator_kk / app_operator_en, app_support_email),
 // so the owner can fill in the legal entity, БИН and address without a new deploy.
@@ -47,6 +47,8 @@ const ru = {
 <ul>
 <li><b>Данные семьи:</b> имена учеников и родителей/устройств (как их укажет родитель), страна, язык, часовой пояс, расписание, списки дел, заметки и комментарии, сроки и настройки.</li>
 <li><b>Фото выполненных заданий</b>, сделанные камерой в приложении, время их отправки и, если родитель включил учёт времени, длительность занятий.</li>
+<li><b>Голосовые заметки</b>, которые ученик сам записывает к заданию, и <b>сообщения</b> в чате задания между учеником и родителями.</li>
+<li>Если родитель разрешит, приглашённый им репетитор или учитель может только просматривать расписание, задания, фото, отчёты и сообщения семьи; родитель может отключить его в любой момент.</li>
 <li><b>Технические данные:</b> случайный токен устройства (хранится у нас только в виде хэша), токен push-уведомлений, время последнего входа, IP-адрес для защиты от злоупотреблений.</li>
 <li><b>Подписка:</b> идентификатор покупателя (это идентификатор семьи), статус и срок подписки от App Store / Google Play через RevenueCat. Платёжные данные карты мы не получаем.</li>
 <li>Если родитель подключит Telegram — идентификатор чата для отправки уведомлений.</li>
@@ -57,7 +59,7 @@ const ru = {
 <h2>Где и сколько хранится</h2>
 <ul>
 <li>Данные хранятся на серверах Supabase (Европейский союз) в защищённом виде; доступ к ним имеет только серверная часть приложения. Регистрируясь, родитель соглашается на такую трансграничную передачу.</li>
-<li>Фото автоматически удаляются через срок, выбранный родителем (от 7 до 40 дней), заменённые пересъёмкой — через сутки.</li>
+<li>Фото и голосовые заметки автоматически удаляются через срок, выбранный родителем (от 7 до 40 дней), заменённые пересъёмкой фото — через сутки.</li>
 <li>Остальные данные хранятся, пока существует семья. Устройства, не входившие 180 дней, отключаются.</li>
 <li>При удалении семьи все её данные и фото удаляются безвозвратно.</li>
 </ul>
@@ -105,6 +107,8 @@ const kk = {
 <ul>
 <li><b>Отбасы деректері:</b> оқушылар мен ата-аналардың/құрылғылардың аттары (ата-ана көрсеткендей), ел, тіл, уақыт белдеуі, сабақ кестесі, істер тізімі, жазбалар мен пікірлер, мерзімдер мен баптаулар.</li>
 <li><b>Орындалған тапсырмалардың фотосы</b> (қосымшадағы камерамен түсірілген), жіберілген уақыты және, ата-ана қосса, сабаққа жұмсалған уақыт.</li>
+<li>Оқушы тапсырмаға өзі жазатын <b>дауыстық жазбалар</b> және оқушы мен ата-ана арасындағы тапсырма чатындағы <b>хабарламалар</b>.</li>
+<li>Ата-ана рұқсат етсе, ол шақырған репетитор немесе мұғалім отбасының кестесін, тапсырмаларын, фотоларын, есептері мен хабарламаларын тек көре алады; ата-ана оны кез келген уақытта ажырата алады.</li>
 <li><b>Техникалық деректер:</b> құрылғының кездейсоқ токені (бізде тек хэш түрінде сақталады), push-хабарландыру токені, соңғы кіру уақыты, теріс пайдаланудан қорғау үшін IP-мекенжай.</li>
 <li><b>Жазылым:</b> сатып алушы идентификаторы (отбасы идентификаторы), App Store / Google Play-дан RevenueCat арқылы алынған жазылым мәртебесі мен мерзімі. Карта деректерін алмаймыз.</li>
 <li>Ата-ана Telegram қосса — хабарландыру жіберу үшін чат идентификаторы.</li>
@@ -115,7 +119,7 @@ const kk = {
 <h2>Қайда және қанша уақыт сақталады</h2>
 <ul>
 <li>Деректер Supabase серверлерінде (Еуропалық одақ) қорғалған түрде сақталады; оларға тек қосымшаның серверлік бөлігі қол жеткізеді. Тіркелу арқылы ата-ана осындай трансшекаралық беруге келісім береді.</li>
-<li>Фотолар ата-ана таңдаған мерзімнен кейін (7-ден 40 күнге дейін) автоматты түрде жойылады, қайта түсірілгендері — бір тәуліктен кейін.</li>
+<li>Фотолар мен дауыстық жазбалар ата-ана таңдаған мерзімнен кейін (7-ден 40 күнге дейін) автоматты түрде жойылады, қайта түсірілген фотолар — бір тәуліктен кейін.</li>
 <li>Басқа деректер отбасы бар болғанша сақталады. 180 күн кірмеген құрылғылар ажыратылады.</li>
 <li>Отбасы жойылғанда оның барлық деректері мен фотолары қайтарымсыз жойылады.</li>
 </ul>
@@ -163,6 +167,8 @@ const en = {
 <ul>
 <li><b>Family data:</b> student and parent/device names (as entered by the parent), country, language, time zone, timetable, checklists, notes and comments, deadlines and settings.</li>
 <li><b>Photos of finished work</b> taken with the in-app camera, when they were sent and, if the parent turns on time tracking, how long the student worked.</li>
+<li><b>Voice notes</b> the student records on a task, and <b>messages</b> in a task's chat between the student and the parents.</li>
+<li>If the parent allows it, a tutor or teacher the parent invites can only view the family's timetable, tasks, photos, reports and messages; the parent can disconnect them at any time.</li>
 <li><b>Technical data:</b> a random device token (we store only its hash), the push notification token, last sign-in time, IP address for abuse protection.</li>
 <li><b>Subscription:</b> the customer id (the family id), subscription status and expiry from the App Store / Google Play via RevenueCat. We never receive card details.</li>
 <li>If a parent connects Telegram — the chat id used to send notifications.</li>
@@ -173,7 +179,7 @@ const en = {
 <h2>Storage and retention</h2>
 <ul>
 <li>Data is stored on Supabase servers in the European Union; only the app's server side can access it. By signing up the parent agrees to this cross-border transfer.</li>
-<li>Photos are deleted automatically after the period chosen by the parent (7–40 days); photos replaced by a re-shoot after one day.</li>
+<li>Photos and voice notes are deleted automatically after the period chosen by the parent (7–40 days); photos replaced by a re-shoot after one day.</li>
 <li>Other data is kept while the family exists. Devices unused for 180 days are signed out.</li>
 <li>Deleting the family permanently deletes all its data and photos.</li>
 </ul>

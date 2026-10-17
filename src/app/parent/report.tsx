@@ -3,13 +3,13 @@ import { useCallback, useState } from 'react';
 import { Platform, StyleSheet, View } from 'react-native';
 
 import { Paywall } from '@/components/Paywall';
-import { Btn, Empty, ErrorBanner, Group, IconBtn, Loading, Row, Screen, SectionLabel, Txt, useLayout, useToast } from '@/components/ui';
+import { Btn, Empty, ErrorBanner, Group, IconBtn, IconTile, Loading, Row, Screen, SectionLabel, Txt, useLayout, useToast } from '@/components/ui';
 import { api, isPaywall, type Child, type Report } from '@/lib/api';
 import { ChildSwitcher, currentChildReady, getCurrentChild, setCurrentChild, useCurrentChild } from '@/lib/currentChild';
 import { duration, isoWeekday, shortDate, wdShort } from '@/lib/format';
 import { tn, useT } from '@/lib/i18n';
 import { PDF_DAYS, shareReportPdf } from '@/lib/reportPdf';
-import { radius, usePalette } from '@/lib/theme';
+import { hairline, radius, space, usePalette } from '@/lib/theme';
 
 type Kind = 'on_time' | 'late' | 'skipped' | 'missed';
 const KINDS: Kind[] = ['on_time', 'late', 'skipped', 'missed'];
@@ -86,12 +86,15 @@ export default function WeeklyReport() {
   const tiles = (
     <View style={styles.tiles}>
       {KINDS.map((k) => (
-        <View key={k} style={[styles.tile, { backgroundColor: p.card, shadowColor: p.shadow, flexBasis: wide ? '22%' : '45%' }]}>
-          <Txt v="largeTitle" color={color[k]} style={{ fontVariant: ['tabular-nums'] }}>
+        <View key={k} accessible accessibilityLabel={`${t(LABEL[k])}: ${totals[k]}`} style={[styles.tile, { backgroundColor: p.card, borderColor: p.line, flexBasis: wide ? '22%' : '45%' }]}>
+          <View style={styles.tileHead}>
+            <View style={[styles.swatch, { backgroundColor: color[k] }]} />
+            <Txt v="sub" color={p.muted} numberOfLines={1} style={{ flexShrink: 1, fontWeight: '600' }}>
+              {t(LABEL[k])}
+            </Txt>
+          </View>
+          <Txt v="largeTitle" style={{ fontVariant: ['tabular-nums'] }}>
             {totals[k]}
-          </Txt>
-          <Txt v="sub" color={p.muted}>
-            {t(LABEL[k])}
           </Txt>
         </View>
       ))}
@@ -101,7 +104,7 @@ export default function WeeklyReport() {
   const byDay = (
     <>
       <SectionLabel>{t('parent.report.byDay')}</SectionLabel>
-      <View style={[styles.chart, { backgroundColor: p.card, shadowColor: p.shadow }]}>
+      <View style={[styles.chart, { backgroundColor: p.card, borderColor: p.line }]}>
         <View style={styles.bars}>
           {report.days.map((d) => (
             <View key={d.date} style={styles.col} accessible accessibilityLabel={`${shortDate(d.date)}: ${KINDS.map((k) => `${t(LABEL[k])} ${d[k]}`).join(', ')}`}>
@@ -110,11 +113,11 @@ export default function WeeklyReport() {
               </Txt>
               <View style={[styles.barBox, { backgroundColor: p.fill }]}>
                 {/* stacked from the bottom: on time, late, skipped, not done */}
-                <View style={{ height: (d.total / maxTotal) * BAR_H, justifyContent: 'flex-end', overflow: 'hidden', borderRadius: 6 }}>
+                <View style={{ height: (d.total / maxTotal) * BAR_H, justifyContent: 'flex-end', overflow: 'hidden', borderRadius: 6, gap: 2 }}>
                   {[...KINDS].reverse().map((k) => (d[k] ? <View key={k} style={{ flex: d[k], backgroundColor: color[k] }} /> : null))}
                 </View>
               </View>
-              <Txt v="sub" color={p.ink}>
+              <Txt v="sub" color={p.ink2} style={{ fontWeight: '600' }}>
                 {wdShort(isoWeekday(d.date))}
               </Txt>
             </View>
@@ -137,7 +140,7 @@ export default function WeeklyReport() {
   const minutes = trackTime ? (
     <>
       <SectionLabel>{t('parent.report.minutes')}</SectionLabel>
-      <View style={[styles.chart, { backgroundColor: p.card, shadowColor: p.shadow }]}>
+      <View style={[styles.chart, { backgroundColor: p.card, borderColor: p.line }]}>
         {mins.length ? (
           <>
             <Txt v="callout" color={p.muted} style={{ marginBottom: 10 }}>
@@ -210,16 +213,20 @@ export default function WeeklyReport() {
       <ChildSwitcher list={kids} value={childId} onChange={switchChild} />
       <ErrorBanner error={error} onRetry={load} />
       {!totals.total ? (
-        <Empty icon="📊" title={t('parent.report.emptyTitle')} text={t('parent.report.emptyText')} />
+        <Empty icon="bar-chart-outline" title={t('parent.report.emptyTitle')} text={t('parent.report.emptyText')} />
       ) : (
         <>
-          <View style={[styles.streak, { backgroundColor: p.brandSoft }]}>
-            <Txt v="headline" color={p.brand}>
-              {tn('parent.report.streak', report.streak)}
-            </Txt>
-            <Txt v="callout" color={p.ink}>
-              {t('parent.report.perfect', { n: report.perfect_week })}
-            </Txt>
+          <View style={[styles.streak, { backgroundColor: p.card, borderColor: p.line }]}>
+            <View style={styles.streakItem}>
+              <IconTile icon="flame" color="orange" size={28} />
+              <Txt v="headline">{tn('parent.report.streak', report.streak)}</Txt>
+            </View>
+            <View style={styles.streakItem}>
+              <IconTile icon="star" color="blue" size={28} />
+              <Txt v="callout" color={p.ink2}>
+                {t('parent.report.perfect', { n: report.perfect_week })}
+              </Txt>
+            </View>
             <Txt v="sub" color={p.muted} style={{ width: '100%' }}>
               {tn('parent.report.tasks', totals.total)}
             </Txt>
@@ -256,19 +263,21 @@ export default function WeeklyReport() {
 }
 
 const styles = StyleSheet.create({
-  streak: { borderRadius: radius.l, padding: 14, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: 14, rowGap: 4 },
-  tiles: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 12 },
-  tile: { flexGrow: 1, borderRadius: radius.l, padding: 14, shadowOpacity: 0.06, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 1 },
-  chart: { borderRadius: radius.l, padding: 14, shadowOpacity: 0.06, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 1 },
-  bars: { flexDirection: 'row', gap: 8, alignItems: 'flex-end' },
+  streak: { borderRadius: radius.l, borderWidth: hairline, padding: space.m, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: space.m, rowGap: space.xs },
+  streakItem: { flexDirection: 'row', alignItems: 'center', gap: space.xs },
+  tiles: { flexDirection: 'row', flexWrap: 'wrap', gap: space.xs, marginTop: space.xs },
+  tile: { flexGrow: 1, borderRadius: radius.l, borderWidth: hairline, paddingVertical: space.s, paddingHorizontal: space.m, gap: 2 },
+  tileHead: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  chart: { borderRadius: radius.l, borderWidth: hairline, padding: space.m },
+  bars: { flexDirection: 'row', gap: space.xs, alignItems: 'flex-end' },
   col: { flex: 1, alignItems: 'center', gap: 6 },
-  barBox: { width: '100%', maxWidth: 36, height: BAR_H, borderRadius: 6, justifyContent: 'flex-end', overflow: 'hidden' },
-  legend: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginTop: 14 },
+  barBox: { width: '100%', maxWidth: 32, height: BAR_H, borderRadius: 6, justifyContent: 'flex-end', overflow: 'hidden' },
+  legend: { flexDirection: 'row', flexWrap: 'wrap', gap: space.s, marginTop: space.m },
   legendItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   swatch: { width: 10, height: 10, borderRadius: 3 },
   minRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 4 },
   minTrack: { flex: 1, height: 10, borderRadius: 5, overflow: 'hidden' },
-  mini: { width: 56, height: 8, borderRadius: 4, overflow: 'hidden', flexDirection: 'row' },
-  cols: { flexDirection: 'row', gap: 16, alignItems: 'flex-start' },
-  pdf: { marginTop: 24, gap: 8 },
+  mini: { width: 56, height: 8, borderRadius: 4, overflow: 'hidden', flexDirection: 'row', gap: 1 },
+  cols: { flexDirection: 'row', gap: space.m, alignItems: 'flex-start' },
+  pdf: { marginTop: space.l, gap: space.xs },
 });

@@ -1,13 +1,12 @@
-import { LinearGradient } from 'expo-linear-gradient';
 import { useEffect, useState } from 'react';
 import { Linking, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { Btn, IconBtn, Txt } from '@/components/ui';
+import { BrandMark, Btn, IconBtn, NotebookRule, Txt } from '@/components/ui';
 import { api, ApiError, legalUrl, type Role } from '@/lib/api';
 import { billingAvailable, buy, loadPlan, openManage, restore, type Plan } from '@/lib/billing';
 import { getLang, tn, useT } from '@/lib/i18n';
-import { gradients, radius, usePalette } from '@/lib/theme';
+import { hairline, radius, space, usePalette } from '@/lib/theme';
 
 // Shown when the server answers 402 (no active subscription), and from Settings to subscribe (with onClose).
 // The child can only ask a parent; purchases happen on a parent's phone through App Store / Google Play.
@@ -107,14 +106,16 @@ export function Paywall({ role, onActive, onClose }: { role: Role; onActive: () 
           <IconBtn icon="close" label={t('common.close')} onPress={onClose} />
         </View>
       ) : null}
-      <LinearGradient colors={gradients.brand} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.card}>
-        <Txt v="title" color="#fff" accessibilityRole="header">
+      <View style={[styles.card, { backgroundColor: p.card, borderColor: p.line }]}>
+        <NotebookRule height={84} step={21} marginX={22} />
+        <BrandMark size={56} />
+        <Txt v="title" accessibilityRole="header" style={{ marginTop: space.m }}>
           {title}
         </Txt>
-        <Txt v="body" color="rgba(255,255,255,0.9)" style={{ marginTop: 10 }}>
+        <Txt v="body" color={p.ink2} style={{ marginTop: space.xs }}>
           {text}
         </Txt>
-      </LinearGradient>
+      </View>
 
       <View style={{ gap: 10, marginTop: 24 }}>
         {billed ? (
@@ -187,7 +188,7 @@ export function Paywall({ role, onActive, onClose }: { role: Role; onActive: () 
 
 const styles = StyleSheet.create({
   wrap: { flexGrow: 1, paddingHorizontal: 20, width: '100%', maxWidth: 640, alignSelf: 'center' },
-  card: { borderRadius: radius.xl, padding: 22 },
+  card: { borderRadius: radius.xl, borderWidth: hairline, padding: 22, paddingTop: 28, overflow: 'hidden' },
   close: { alignItems: 'flex-end', marginTop: -16, marginBottom: 12 },
   links: { flexDirection: 'row', justifyContent: 'center', gap: 24, marginTop: 6 },
   // ≥ 44pt touch target around the short link text

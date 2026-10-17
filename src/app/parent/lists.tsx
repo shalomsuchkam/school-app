@@ -114,7 +114,7 @@ export default function Lists() {
 
   return (
     <>
-      <Screen title={t('parent.tab.lists')} subtitle={t('parent.lists.subtitle')} onRefresh={load} right={<Btn small title={t('common.add')} icon="＋" onPress={() => openNew()} />}>
+      <Screen title={t('parent.tab.lists')} subtitle={t('parent.lists.subtitle')} onRefresh={load} right={<Btn small title={t('common.add')} icon="add" onPress={() => openNew()} />}>
         <ChildSwitcher list={kids} value={filter} onChange={switchChild} all />
         {shown.length ? (
           <Group>
@@ -129,7 +129,7 @@ export default function Lists() {
                   right={
                     who ? (
                       <View style={[styles.tag, { backgroundColor: p.brandSoft }]}>
-                        <Txt v="sub" color={p.brand} numberOfLines={1}>
+                        <Txt v="sub" color={p.brand} numberOfLines={1} style={{ fontWeight: '600' }}>
                           {who}
                         </Txt>
                       </View>
@@ -143,7 +143,7 @@ export default function Lists() {
           </Group>
         ) : (
           <Group>
-            <Empty icon="🎒" title={t('parent.lists.emptyTitle')} text={t('parent.lists.emptyText')} />
+            <Empty icon="bag-handle-outline" title={t('parent.lists.emptyTitle')} text={t('parent.lists.emptyText')} />
           </Group>
         )}
         {unused.length ? (
@@ -151,12 +151,12 @@ export default function Lists() {
             <SectionLabel>{t('parent.lists.quickAdd')}</SectionLabel>
             <View style={styles.wrap}>
               {unused.map((x) => (
-                <Chip key={x.title} label={`＋ ${x.emoji} ${x.title}`} tone="muted" onPress={() => openNew(x)} />
+                <Chip key={x.title} label={`${x.emoji} ${x.title}`} icon="add" tone="muted" onPress={() => openNew(x)} />
               ))}
             </View>
           </>
         ) : null}
-        <Txt v="sub" color={p.muted} style={{ marginTop: 18, marginHorizontal: 6 }}>
+        <Txt v="sub" color={p.muted} style={{ marginTop: 16, marginHorizontal: 4 }}>
           {t('parent.lists.footer')}
         </Txt>
       </Screen>
@@ -181,9 +181,9 @@ export default function Lists() {
           </View>
         ) : null}
         <Group style={{ marginTop: 14 }}>
-          <ToggleRow icon="📸" title={t('parent.lists.needsPhoto')} subtitle={t('parent.lists.needsPhotoSub')} value={!!draft?.needs_photo} onChange={(needs_photo) => setDraft({ ...draft, needs_photo })} />
-          <ToggleRow icon="❗" title={t('parent.lists.required')} subtitle={t('parent.lists.requiredSub')} value={draft?.required !== false} onChange={(required) => setDraft({ ...draft, required })} />
-          <ToggleRow icon="🗓️" title={t('common.everySchoolDay')} value={!!draft?.everyDay} onChange={(everyDay) => setDraft({ ...draft, everyDay, weekdays: everyDay ? null : draft?.weekdays ?? [] })} />
+          <ToggleRow icon="camera" tint="blue" title={t('parent.lists.needsPhoto')} subtitle={t('parent.lists.needsPhotoSub')} value={!!draft?.needs_photo} onChange={(needs_photo) => setDraft({ ...draft, needs_photo })} />
+          <ToggleRow icon="alert" tint="red" title={t('parent.lists.required')} subtitle={t('parent.lists.requiredSub')} value={draft?.required !== false} onChange={(required) => setDraft({ ...draft, required })} />
+          <ToggleRow icon="calendar" tint="teal" title={t('common.everySchoolDay')} value={!!draft?.everyDay} onChange={(everyDay) => setDraft({ ...draft, everyDay, weekdays: everyDay ? null : draft?.weekdays ?? [] })} />
         </Group>
         {!draft?.everyDay ? (
           <View style={{ marginTop: 12 }}>
@@ -194,7 +194,7 @@ export default function Lists() {
           </View>
         ) : null}
         <Btn title={t('common.save')} onPress={save} disabled={!draft?.title?.trim() || (!draft?.everyDay && !draft?.weekdays?.length)} style={{ marginTop: 16 }} />
-        {draft?.id ? <Btn title={t('common.delete')} kind="plain" onPress={() => remove(draft.id!)} style={{ marginTop: 10 }} /> : null}
+        {draft?.id ? <Btn title={t('common.delete')} kind="ghost" icon="trash-outline" onPress={() => remove(draft.id!)} style={{ marginTop: 10 }} /> : null}
       </Sheet>
       {draft ? null : toast.node}
     </>
@@ -203,5 +203,5 @@ export default function Lists() {
 
 const styles = StyleSheet.create({
   wrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  tag: { borderRadius: radius.s, paddingHorizontal: 8, paddingVertical: 2, maxWidth: 110 },
+  tag: { borderRadius: radius.xs, paddingHorizontal: 7, paddingVertical: 2, maxWidth: 110 },
 });

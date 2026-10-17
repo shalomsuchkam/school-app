@@ -1,8 +1,7 @@
-import { LinearGradient } from 'expo-linear-gradient';
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useEffectEvent, useRef, useState } from 'react';
 import { Alert, AppState, Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
-import Animated, { FadeInDown, FadeOutDown, ZoomIn, useReducedMotion } from 'react-native-reanimated';
+import Animated, { FadeIn, FadeInDown, FadeOut, FadeOutDown, useReducedMotion } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Paywall } from '@/components/Paywall';
@@ -11,7 +10,7 @@ import { PhotoViewer } from '@/components/PhotoViewer';
 import { ProgressRing } from '@/components/ProgressRing';
 import { NoteSheet, SkipSheet } from '@/components/SkipSheet';
 import { ChildTaskCard } from '@/components/TaskCards';
-import { Btn, CONTENT_MAX, Empty, haptic, Icon, Loading, Screen, SectionLabel, Txt, useLayout, useToast } from '@/components/ui';
+import { Banner, Btn, Card, CONTENT_MAX, Empty, ErrorBanner, haptic, Icon, type IconName, IconTile, Loading, PressableScale, ProgressBar, Screen, SectionLabel, Stat, Txt, useLayout, useToast } from '@/components/ui';
 import { api, ApiError, isPaywall, isDone, type ChildState, type Task } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { duration, longDate, shortDate } from '@/lib/format';
@@ -19,10 +18,11 @@ import { t as tr, tn, useT } from '@/lib/i18n';
 import { exactAlarmsAllowed, openExactAlarmSettings } from '@/lib/exactAlarm';
 import { flushQueue, pendingPhotos, usePhotoQueue, type FlushResult } from '@/lib/offline';
 import { cancelReminders, notificationsAllowed, scheduleReminders } from '@/lib/notify';
-import { gradients, radius, usePalette } from '@/lib/theme';
+import { elevation, radius, space, usePalette } from '@/lib/theme';
 import { syncWidget } from '@/lib/widget';
 
 type Mood = 'zero' | 'progress' | 'almost' | 'done' | 'overdue';
+const moodIcon: Record<Mood, IconName> = { zero: 'flag-outline', progress: 'trending-up', almost: 'flash-outline', done: 'trophy', overdue: 'hourglass-outline' };
 
 function hero(s: ChildState, fetchedAt: number, now: number) {
   const req = s.tasks.filter((x) => x.required);
@@ -37,11 +37,12 @@ function hero(s: ChildState, fetchedAt: number, now: number) {
   // A short, kid-friendly line that follows progress (none when the day has no required tasks).
   const mood: Mood | null = !total ? null : !left ? 'done' : overdue ? 'overdue' : !done ? 'zero' : left === 1 || done / total >= 0.75 ? 'almost' : 'progress';
   const base = { done, total, left, overdue, mood };
-  if (total && done === total) return { ...base, g: gradients.ok, t1: tr('child.hero.allDone'), t2: tr('child.hero.allDoneSub') };
-  if (!s.due_today) return { ...base, g: gradients.brand, t1: tr('child.hero.dueBy', { date: shortDate(s.due_date) }), t2: tr('child.hero.deadlines', { soft: s.soft, hard: s.hard }) };
-  if (soft > 0) return { ...base, g: soft < 45 ? gradients.warn : gradients.brand, t1: tr('child.hero.timeTo', { dur: duration(soft), soft: s.soft }), t2: tr('child.hero.leftOf', { left, total }) };
-  if (hard > 0) return { ...base, g: gradients.bad, t1: tr('child.hero.softPassed', { soft: s.soft }), t2: tr('child.hero.lastIn', { dur: duration(hard) }) };
-  return { ...base, g: gradients.bad, t1: tr('child.hero.timeUp'), t2: tn('child.hero.leftNow', left) };
+  // tone: the colour of the time line and the ring (brand = on track, warn = under 45 min, bad = past the deadline)
+  if (total && done === total) return { ...base, tone: 'ok' as const, t1: tr('child.hero.allDone'), t2: tr('child.hero.allDoneSub') };
+  if (!s.due_today) return { ...base, tone: 'brand' as const, t1: tr('child.hero.dueBy', { date: shortDate(s.due_date) }), t2: tr('child.hero.deadlines', { soft: s.soft, hard: s.hard }) };
+  if (soft > 0) return { ...base, tone: soft < 45 ? ('warn' as const) : ('brand' as const), t1: tr('child.hero.timeTo', { dur: duration(soft), soft: s.soft }), t2: tr('child.hero.leftOf', { left, total }) };
+  if (hard > 0) return { ...base, tone: 'bad' as const, t1: tr('child.hero.softPassed', { soft: s.soft }), t2: tr('child.hero.lastIn', { dur: duration(hard) }) };
+  return { ...base, tone: 'bad' as const, t1: tr('child.hero.timeUp'), t2: tn('child.hero.leftNow', left) };
 }
 
 // The one thing to do next: a retake the parent asked for, then any photo task, then a simple tick.
@@ -75,7 +76,9 @@ function sessionMinutes(s: ChildState, now: number, allDone: boolean) {
   return Math.max(0, Math.floor((to - from) / 60000));
 }
 
+// The one next step, pinned in thumb reach above the home indicator. Springs in; fades out.
 function NextAction({ task, onPress }: { task: Task; onPress: () => void }) {
+  const p = usePalette();
   const t = useT();
   const insets = useSafeAreaInsets();
   const { pad } = useLayout();
@@ -83,35 +86,33 @@ function NextAction({ task, onPress }: { task: Task; onPress: () => void }) {
   const title = task.needs_photo ? t(task.status === 'redo' ? 'child.next.redo' : 'child.next.photo', { label: task.label }) : t('child.next.check', { label: task.label });
   return (
     <Animated.View
-      entering={reduce ? undefined : FadeInDown.springify().damping(18)}
-      exiting={reduce ? undefined : FadeOutDown.duration(180)}
+      entering={reduce ? FadeIn.duration(160) : FadeInDown.springify().damping(20)}
+      exiting={reduce ? FadeOut.duration(120) : FadeOutDown.duration(160)}
       pointerEvents="box-none"
       style={[styles.nextWrap, { paddingHorizontal: pad, paddingBottom: insets.bottom + 12 }]}
     >
-      <Pressable
+      <PressableScale
         onPress={() => {
           haptic.tap();
           onPress();
         }}
         accessibilityRole="button"
         accessibilityLabel={`${t('child.next.caption')}: ${title}`}
-        style={({ pressed }) => [styles.nextBtn, { transform: [{ scale: pressed ? 0.97 : 1 }], opacity: pressed ? 0.92 : 1 }]}
+        style={[styles.nextBtn, elevation(p, 2), { backgroundColor: p.brandFill }]}
       >
-        <LinearGradient colors={gradients.brand} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.nextInner}>
-          <View style={styles.nextIcon}>
-            <Icon name={task.needs_photo ? 'camera' : 'checkmark-done'} size={24} color="#fff" />
-          </View>
-          <View style={{ flex: 1, minWidth: 0 }}>
-            <Txt v="caps" color="rgba(255,255,255,0.8)" style={{ textTransform: 'uppercase' }} numberOfLines={1}>
-              {t('child.next.caption')}
-            </Txt>
-            <Txt v="headline" color="#fff" numberOfLines={2}>
-              {task.emoji} {title}
-            </Txt>
-          </View>
-          <Icon name="chevron-forward" size={22} color="#fff" />
-        </LinearGradient>
-      </Pressable>
+        <View style={styles.nextIcon}>
+          <Icon name={task.needs_photo ? 'camera' : 'checkmark'} size={22} color={p.brandFill} />
+        </View>
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Txt v="sub" color="rgba(255,255,255,0.78)" numberOfLines={1} style={{ fontWeight: '600' }}>
+            {t('child.next.caption')}
+          </Txt>
+          <Txt v="headline" color="#fff" numberOfLines={2}>
+            {task.emoji} {title}
+          </Txt>
+        </View>
+        <Icon name="arrow-forward" size={20} color="#fff" />
+      </PressableScale>
     </Animated.View>
   );
 }
@@ -144,7 +145,8 @@ export default function ChildHome() {
   const toast = useToast();
   const reduce = useReducedMotion();
   const { width } = useWindowDimensions();
-  const ringSize = width < 360 ? 76 : width >= 700 ? 112 : 96;
+  const ringSize = width < 360 ? 84 : width >= 700 ? 120 : 104;
+  const toneFg = { ok: p.ok, brand: p.brand, warn: p.warn, bad: p.bad };
 
   const load = useCallback(async () => {
     const my = ++seq.current.sent;
@@ -347,138 +349,61 @@ export default function ChildHome() {
           <Txt v="callout" color={p.muted}>
             {t('child.greeting', { name: s.name })}
           </Txt>
-          <Txt v="largeTitle" style={{ marginTop: 2 }}>
+          <Txt v="largeTitle" accessibilityRole="header" style={{ marginTop: 2 }}>
             {schoolLabel.charAt(0).toUpperCase() + schoolLabel.slice(1)}
           </Txt>
         </Pressable>
 
-        <LinearGradient colors={h.g} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.hero}>
+        {/* Hero: how far along, and how much time is left. Colour only where it carries meaning. */}
+        <Card tone={allDone ? 'ok' : undefined} style={styles.hero}>
           <View style={styles.heroRow}>
-            <ProgressRing done={h.done} total={h.total} size={ringSize} />
-            <View style={{ flex: 1, minWidth: 0 }}>
-              <Txt v="title" color="#fff">
+            <ProgressRing done={h.done} total={h.total} size={ringSize} color={allDone ? p.okFill : h.tone === 'bad' ? p.bad : h.tone === 'warn' ? p.warn : p.brand} track={allDone ? p.card : p.fill} />
+            <View style={{ flex: 1, minWidth: 0, gap: 4 }}>
+              <View style={styles.timeRow}>
+                <Icon name={allDone ? 'checkmark-circle' : h.tone === 'bad' ? 'alert-circle' : 'time-outline'} size={17} color={toneFg[h.tone]} />
+                <Txt v="sub" color={toneFg[h.tone]} style={{ fontWeight: '600', flexShrink: 1 }} numberOfLines={2}>
+                  {h.t2}
+                </Txt>
+              </View>
+              <Txt v="title" color={p.ink}>
                 {h.t1}
-              </Txt>
-              <Txt v="callout" color="rgba(255,255,255,0.88)" style={{ marginTop: 4 }}>
-                {h.t2}
               </Txt>
             </View>
           </View>
           {h.mood ? (
-            // Re-keyed per mood so the pill pops again each time progress reaches a new stage.
-            <Animated.View key={h.mood} entering={reduce ? undefined : ZoomIn.springify().damping(14)} style={[styles.mood, h.mood === 'done' && styles.moodDone]}>
-              <Txt v={h.mood === 'done' ? 'headline' : 'callout'} color="#fff" style={{ textAlign: 'center' }}>
+            // Re-keyed per mood so the line eases in again each time progress reaches a new stage.
+            <Animated.View key={h.mood} entering={reduce ? FadeIn.duration(200) : FadeInDown.duration(260)} style={[styles.mood, { borderTopColor: allDone ? 'rgba(29,115,70,0.18)' : p.line }]}>
+              <Icon name={moodIcon[h.mood]} size={18} color={allDone ? p.ok : p.brand} />
+              <Txt v={h.mood === 'done' ? 'headline' : 'callout'} color={allDone ? p.ok : p.ink2} style={{ flex: 1 }}>
                 {h.mood === 'done' ? t('child.mood.done') : tn(`child.mood.${h.mood}`, h.left)}
               </Txt>
             </Animated.View>
           ) : null}
-        </LinearGradient>
+        </Card>
 
-        <View style={styles.stats}>
-          <View style={[styles.stat, { backgroundColor: p.card }]}>
-            <Txt v="title">🔥 {s.streak}</Txt>
-            <Txt v="sub" color={p.muted}>
-              {tn('child.streak', s.streak)}
+        {showStart ? (
+          <Card style={{ marginTop: space.xs, gap: space.xs }}>
+            <Btn title={t('child.time.start')} icon="play" onPress={startSession} loading={starting} />
+            <Txt v="sub" color={p.muted} style={{ textAlign: 'center' }}>
+              {t('child.time.hint')}
             </Txt>
-          </View>
-          <View style={[styles.stat, { backgroundColor: p.card }]}>
-            <Txt v="title">⭐ {s.perfect_week}</Txt>
-            <Txt v="sub" color={p.muted}>
-              {t('child.perfectWeek')}
-            </Txt>
-          </View>
-        </View>
-
-        {s.track_time || reward ? (
-          <View style={styles.cards}>
-            {s.track_time && (showStart || startedHm) ? (
-              <View style={[styles.card, { backgroundColor: p.card }]}>
-                {showStart ? (
-                  <>
-                    <Btn title={t('child.time.start')} onPress={startSession} loading={starting} />
-                    <Txt v="sub" color={p.muted} style={{ textAlign: 'center' }}>
-                      {t('child.time.hint')}
-                    </Txt>
-                  </>
-                ) : (
-                  <View style={styles.cardRow}>
-                    <View style={[styles.cardIcon, { backgroundColor: p.brandSoft }]}>
-                      <Icon name="timer-outline" size={22} color={p.brand} />
-                    </View>
-                    <View style={{ flex: 1, minWidth: 0 }}>
-                      <Txt v="headline">{t('child.time.started', { hm: startedHm ?? '' })}</Txt>
-                      {mins !== null ? (
-                        <Txt v="sub" color={p.muted} style={{ marginTop: 2 }}>
-                          {t('child.time.elapsed', { dur: duration(mins) })}
-                        </Txt>
-                      ) : null}
-                    </View>
-                  </View>
-                )}
-              </View>
-            ) : null}
-            {reward ? (
-              <View style={[styles.card, { backgroundColor: rewardLeft ? p.card : p.okSoft }]}>
-                <Txt v="caps" color={p.muted} style={{ textTransform: 'uppercase' }}>
-                  {t('child.reward.title')}
-                </Txt>
-                <Txt v="headline">🎁 {reward.text}</Txt>
-                <View
-                  accessible
-                  accessibilityRole="progressbar"
-                  accessibilityLabel={t('child.reward.a11y', { streak: Math.min(s.streak, reward.goal), goal: reward.goal })}
-                  accessibilityValue={{ min: 0, max: reward.goal, now: Math.min(s.streak, reward.goal) }}
-                  style={styles.barRow}
-                >
-                  <View style={[styles.barTrack, { backgroundColor: rewardLeft ? p.fill : p.card }]}>
-                    <View style={[styles.barFill, { width: `${Math.round(rewardPct * 100)}%`, backgroundColor: rewardLeft ? p.brand : p.ok }]} />
-                  </View>
-                  <Txt v="sub" color={p.ink2} style={{ fontVariant: ['tabular-nums'] }}>
-                    🔥 {Math.min(s.streak, reward.goal)}/{reward.goal}
-                  </Txt>
-                </View>
-                <Txt v={rewardLeft ? 'sub' : 'callout'} color={rewardLeft ? p.muted : p.ok}>
-                  {rewardLeft ? tn('child.reward.left', rewardLeft) : t('child.reward.earned')}
-                </Txt>
-              </View>
-            ) : null}
-          </View>
+          </Card>
         ) : null}
 
-        {queue.length ? (
-          <View style={[styles.banner, { backgroundColor: p.warnSoft }]} accessible accessibilityLiveRegion="polite">
-            <Icon name="cloud-upload-outline" size={22} color={p.ink2} />
-            <View style={{ flex: 1, minWidth: 0 }}>
-              <Txt v="headline">{t('child.queue.badge', { n: queue.length })}</Txt>
-              <Txt v="sub" color={p.ink2}>
-                {t('child.queue.badgeHint')}
-              </Txt>
-            </View>
-          </View>
-        ) : null}
+        {queue.length ? <Banner tone="warn" icon="cloud-upload-outline" title={t('child.queue.badge', { n: queue.length })} text={t('child.queue.badgeHint')} live /> : null}
 
         {!notifOk ? (
-          <View style={[styles.banner, { backgroundColor: p.warnSoft }]}>
-            <Txt v="callout" style={{ flex: 1 }}>
-              {t('child.notif.banner')}
-            </Txt>
-            <Btn small title={t('child.notif.enable')} onPress={enableNotif} />
-          </View>
+          <Banner tone="brand" icon="notifications-outline" text={t('child.notif.banner')} action={{ label: t('child.notif.enable'), onPress: enableNotif }} />
         ) : !exactOk ? (
-          <View style={[styles.banner, { backgroundColor: p.warnSoft }]}>
-            <Txt v="callout" style={{ flex: 1 }}>
-              {t('child.exact.banner')}
-            </Txt>
-            <Btn small title={t('child.exact.allow')} onPress={() => openExactAlarmSettings() || toast.show(t('child.exact.manual'))} />
-          </View>
+          <Banner tone="brand" icon="alarm-outline" text={t('child.exact.banner')} action={{ label: t('child.exact.allow'), onPress: () => openExactAlarmSettings() || toast.show(t('child.exact.manual')) }} />
         ) : null}
         {error ? (
-          <Txt v="sub" color={p.bad} style={{ marginTop: 8 }}>
-            ⚠️ {error}
-          </Txt>
+          <View style={{ marginTop: space.xs }}>
+            <ErrorBanner error={error} onRetry={load} />
+          </View>
         ) : null}
 
-        {!s.tasks.length ? <Empty icon="🌤️" title={t('child.empty.title')} text={t('child.empty.text')} /> : null}
+        {!s.tasks.length ? <Empty icon="sunny-outline" title={t('child.empty.title')} text={t('child.empty.text')} /> : null}
         {lessons.length ? <SectionLabel>{t('child.section.lessons', { done: lessons.filter(isDone).length, total: lessons.length })}</SectionLabel> : null}
         {lessons.map((tk) => (
           <ChildTaskCard key={tk.id} t={tk} onPhoto={openCamera} onSkip={setSkip} onCheck={check} onOpen={openPhoto} onNote={setNoteFor} overdue={h.overdue} queued={queuedBy.get(tk.id) ?? 0} />
@@ -487,6 +412,62 @@ export default function ChildHome() {
         {items.map((tk) => (
           <ChildTaskCard key={tk.id} t={tk} onPhoto={openCamera} onSkip={setSkip} onCheck={check} onOpen={openPhoto} overdue={h.overdue} queued={queuedBy.get(tk.id) ?? 0} />
         ))}
+
+        {/* Progress beyond today: the streak, the reward it leads to, and today's time at homework. */}
+        <View style={styles.stats}>
+          <Stat icon="flame" iconColor={p.tile.orange} value={s.streak} label={tn('child.streak', s.streak)} />
+          <Stat icon="star" iconColor={p.brand} value={s.perfect_week} label={t('child.perfectWeek')} />
+        </View>
+        {(s.track_time && startedHm) || reward ? (
+          <View style={styles.cards}>
+            {s.track_time && startedHm ? (
+              <Card style={styles.card}>
+                <View style={styles.cardRow}>
+                  <IconTile icon="timer-outline" size={40} />
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <Txt v="headline">{t('child.time.started', { hm: startedHm })}</Txt>
+                    {mins !== null ? (
+                      <Txt v="sub" color={p.muted} style={{ marginTop: 2 }}>
+                        {t('child.time.elapsed', { dur: duration(mins) })}
+                      </Txt>
+                    ) : null}
+                  </View>
+                </View>
+              </Card>
+            ) : null}
+            {reward ? (
+              <Card tone={rewardLeft ? undefined : 'ok'} style={styles.card}>
+                <View style={styles.cardRow}>
+                  <IconTile icon="gift" size={40} tone={rewardLeft ? 'brand' : 'ok'} />
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <Txt v="sub" color={p.muted} style={{ fontWeight: '600' }}>
+                      {t('child.reward.title')}
+                    </Txt>
+                    <Txt v="headline">{reward.text}</Txt>
+                  </View>
+                </View>
+                <View
+                  accessible
+                  accessibilityRole="progressbar"
+                  accessibilityLabel={t('child.reward.a11y', { streak: Math.min(s.streak, reward.goal), goal: reward.goal })}
+                  accessibilityValue={{ min: 0, max: reward.goal, now: Math.min(s.streak, reward.goal) }}
+                  style={styles.barRow}
+                >
+                  <ProgressBar value={rewardPct} color={rewardLeft ? p.brand : p.okFill} track={rewardLeft ? p.fill : p.card} style={{ flex: 1 }} />
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+                    <Icon name="flame" size={14} color={p.tile.orange} />
+                    <Txt v="sub" color={p.ink2} style={{ fontVariant: ['tabular-nums'], fontWeight: '600' }}>
+                      {Math.min(s.streak, reward.goal)}/{reward.goal}
+                    </Txt>
+                  </View>
+                </View>
+                <Txt v={rewardLeft ? 'sub' : 'callout'} color={rewardLeft ? p.muted : p.ok} style={rewardLeft ? undefined : { fontWeight: '600' }}>
+                  {rewardLeft ? tn('child.reward.left', rewardLeft) : t('child.reward.earned')}
+                </Txt>
+              </Card>
+            ) : null}
+          </View>
+        ) : null}
       </Screen>
       {/* While the sheet is open the toast goes inside its modal, otherwise errors would hide under it. */}
       <SkipSheet task={skip} onClose={() => setSkip(null)} onSend={sendSkip} overlay={skip ? toast.node : null} />
@@ -499,23 +480,17 @@ export default function ChildHome() {
 }
 
 const styles = StyleSheet.create({
-  hero: { marginTop: 16, borderRadius: radius.xl, padding: 18, gap: 14 },
-  heroRow: { flexDirection: 'row', alignItems: 'center', gap: 16 },
-  mood: { alignSelf: 'stretch', borderRadius: radius.m, paddingHorizontal: 14, paddingVertical: 10, backgroundColor: 'rgba(255,255,255,0.18)' },
-  moodDone: { paddingVertical: 14, backgroundColor: 'rgba(255,255,255,0.24)' },
+  hero: { marginTop: space.m, padding: space.m, gap: space.s },
+  heroRow: { flexDirection: 'row', alignItems: 'center', gap: space.m },
+  timeRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  mood: { flexDirection: 'row', alignItems: 'center', gap: space.xs, borderTopWidth: StyleSheet.hairlineWidth, paddingTop: space.s },
   nextWrap: { position: 'absolute', left: 0, right: 0, bottom: 0, alignItems: 'center' },
-  nextBtn: { width: '100%', maxWidth: CONTENT_MAX, borderRadius: radius.l, shadowColor: '#4B3FC4', shadowOpacity: 0.3, shadowRadius: 16, shadowOffset: { width: 0, height: 6 }, elevation: 6 },
-  nextInner: { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: radius.l, paddingVertical: 12, paddingHorizontal: 14, minHeight: 64 },
-  nextIcon: { width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center' },
-  stats: { flexDirection: 'row', gap: 10, marginTop: 10 },
-  stat: { flex: 1, borderRadius: radius.l, padding: 14 },
-  cards: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 10 },
+  nextBtn: { width: '100%', maxWidth: CONTENT_MAX, flexDirection: 'row', alignItems: 'center', gap: space.s, borderRadius: radius.l, paddingVertical: space.s, paddingLeft: space.s, paddingRight: space.m, minHeight: 64 },
+  nextIcon: { width: 42, height: 42, borderRadius: 21, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center' },
+  stats: { flexDirection: 'row', gap: space.xs, marginTop: space.l },
+  cards: { flexDirection: 'row', flexWrap: 'wrap', gap: space.xs, marginTop: space.xs },
   // Side by side on tablets / landscape, stacked on phones.
-  card: { flexGrow: 1, flexBasis: 280, borderRadius: radius.l, padding: 14, gap: 8 },
-  cardRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  cardIcon: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
+  card: { flexGrow: 1, flexBasis: 280, gap: space.s },
+  cardRow: { flexDirection: 'row', alignItems: 'center', gap: space.s },
   barRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  barTrack: { flex: 1, height: 10, borderRadius: 5, overflow: 'hidden' },
-  barFill: { height: '100%', borderRadius: 5 },
-  banner: { flexDirection: 'row', alignItems: 'center', gap: 10, borderRadius: radius.l, padding: 14, marginTop: 10 },
 });

@@ -1,5 +1,5 @@
 // deno-lint-ignore-file no-explicit-any
-import { addDays, db, dow, esc, fmtLong, fmtShort, HttpError, imageType, localParts, toMin } from "./lib.ts";
+import { addDays, audioType, db, dow, esc, fmtLong, fmtShort, HttpError, imageType, localParts, toMin } from "./lib.ts";
 import { isHoliday } from "./holidays.ts";
 import { notifyChild, notifyParents } from "./notify.ts";
 
@@ -61,35 +61,54 @@ export async function activeDay(fam: any) {
   return { now, S, due: addDays(S, -1), isSchool };
 }
 
-// Deletes tasks nobody has worked on (not done/skip_ok, no active photo) on dates that are no longer school days.
+// A task the child has worked on: finished, or with an active photo or a voice note. Such tasks are never dropped.
+const worked = (t: any) => isDone(t) || !!t.voice_path || (t.app_photos ?? []).some((p: any) => p.active);
+
+// Deletes tasks nobody has worked on on dates that are no longer school days.
 export async function dropOpenTasks(familyId: string, from: string, to: string | null, drop: (d: string) => boolean) {
-  let q = db.from("app_tasks").select("id, school_date, status, app_photos(active)").eq("family_id", familyId).gte("school_date", from);
+  let q = db.from("app_tasks").select("id, school_date, status, voice_path, app_photos(active)").eq("family_id", familyId).gte("school_date", from);
   if (to) q = q.lte("school_date", to);
   const { data } = await q;
-  const ids = (data ?? []).filter((t: any) => drop(t.school_date) && !isDone(t) && !(t.app_photos ?? []).some((p: any) => p.active)).map((t: any) => t.id);
+  const ids = (data ?? []).filter((t: any) => drop(t.school_date) && !worked(t)).map((t: any) => t.id);
   if (ids.length) await db.from("app_tasks").delete().in("id", ids);
 }
 
-// Creates the day's tasks from the lesson schedule + checklist and keeps them in sync when the setup changes.
-export async function ensureTasks(fam: any, S: string) {
+// Which lessons a day has: a one-day override (subjects in the parent's order) wins over the timetable. With an
+// alternating timetable the weekday's odd/even-week set for S's week is used, plain lessons otherwise.
+export function pickLessons(rows: { pos: number; week_parity: number | null; subject_id: number }[], parity: number, override: number[] | null) {
+  if (override) return override.map((subject_id, i) => ({ subject_id, pos: i + 1 }));
+  const alternating = rows.some((l) => l.week_parity);
+  return rows.filter((l) => (alternating ? l.week_parity === parity : !l.week_parity)).map((l) => ({ subject_id: l.subject_id, pos: l.pos }));
+}
+
+// Creates the day's tasks from the lesson schedule (or the day's override) + checklist and keeps them in sync when
+// the setup changes. Returns the day's override (or null) so callers can show its note.
+export async function ensureTasks(fam: any, S: string): Promise<{ subject_ids: number[]; note: string | null } | null> {
   const wd = dow(S);
-  const [{ data: lessons }, { data: items }, { data: existing }] = await Promise.all([
+  const [{ data: lessons }, { data: items }, { data: existing }, { data: ov }] = await Promise.all([
     db.from("app_lessons").select("pos, week_parity, subject_id, app_subjects(name, emoji, light)").eq("child_id", fam.child_id).eq("weekday", wd).order("pos"),
     // checklist items for everyone (child_id null) or for this child
     db.from("app_items").select("*").eq("family_id", fam.id).or(`child_id.is.null,child_id.eq.${fam.child_id}`).order("pos").order("id"),
-    db.from("app_tasks").select("id, kind, ref_id, status, title, emoji, required, needs_photo, light, pos, app_photos(id, active)").eq("child_id", fam.child_id).eq("school_date", S),
+    db.from("app_tasks").select("id, kind, ref_id, status, title, emoji, required, needs_photo, light, pos, category, duration_min, voice_path, app_photos(id, active)")
+      .eq("child_id", fam.child_id).eq("school_date", S),
+    db.from("app_day_overrides").select("subject_ids, note").eq("child_id", fam.child_id).eq("date", S).maybeSingle(),
   ]);
+  const override: number[] | null = ov ? (ov.subject_ids ?? []).map(Number) : null;
+  // subject names: from the timetable rows, plus the override's subjects that are not in today's timetable
+  const subj = new Map<number, any>((lessons ?? []).filter((l: any) => l.app_subjects).map((l: any) => [l.subject_id, l.app_subjects]));
+  const missing = (override ?? []).filter((id) => !subj.has(id));
+  if (missing.length) {
+    const { data } = await db.from("app_subjects").select("id, name, emoji, light").eq("family_id", fam.id).in("id", missing);
+    for (const s of data ?? []) subj.set(s.id, s);
+  }
   const desired = new Map<string, any>();
-  // alternating timetable: when this weekday has odd/even-week lessons, use the set for S's week; plain lessons otherwise
-  const parity = weekParity(S);
-  const all: any[] = lessons ?? [];
-  const alternating = all.some((l) => l.week_parity);
-  for (const l of alternating ? all.filter((l) => l.week_parity === parity) : all.filter((l) => !l.week_parity)) {
+  for (const l of pickLessons(lessons ?? [], weekParity(S), override)) {
     const k = `lesson:${l.subject_id}`;
-    if (desired.has(k) || !l.app_subjects) continue;
+    const s = subj.get(l.subject_id);
+    if (desired.has(k) || !s) continue; // a deleted subject is simply left out
     desired.set(k, {
-      family_id: fam.id, child_id: fam.child_id, school_date: S, kind: "lesson", ref_id: l.subject_id, title: l.app_subjects.name,
-      emoji: l.app_subjects.emoji, light: l.app_subjects.light, needs_photo: true, required: true, pos: l.pos,
+      family_id: fam.id, child_id: fam.child_id, school_date: S, kind: "lesson", ref_id: l.subject_id, title: s.name,
+      emoji: s.emoji, light: s.light, needs_photo: true, required: true, pos: l.pos, category: "school", duration_min: null,
     });
   }
   for (const it of items ?? []) {
@@ -97,40 +116,48 @@ export async function ensureTasks(fam: any, S: string) {
     desired.set(`item:${it.id}`, {
       family_id: fam.id, child_id: fam.child_id, school_date: S, kind: "item", ref_id: it.id, title: it.title, emoji: it.emoji,
       light: false, needs_photo: it.needs_photo, required: it.required, pos: 1000 + (it.pos ?? 0),
+      category: it.category ?? "school", duration_min: it.duration_min ?? null,
     });
   }
   const have = new Map<string, any>((existing ?? []).map((t: any) => [`${t.kind}:${t.ref_id}`, t]));
   const insert = [...desired.entries()].filter(([k]) => !have.has(k)).map(([, v]) => v);
   if (insert.length) await db.from("app_tasks").upsert(insert, { onConflict: "child_id,school_date,kind,ref_id", ignoreDuplicates: true });
-  // untouched tasks follow edits; finished tasks and tasks with photos are never removed
-  const stale = [...have.entries()].filter(([k, t]) => !desired.has(k) && !isDone(t) && !(t.app_photos ?? []).some((p: any) => p.active)).map(([, t]) => t.id);
+  // untouched tasks follow edits; finished tasks and tasks with photos or a voice note are never removed
+  const stale = [...have.entries()].filter(([k, t]) => !desired.has(k) && !worked(t)).map(([, t]) => t.id);
   if (stale.length) await db.from("app_tasks").delete().in("id", stale);
+  const SYNC = ["title", "emoji", "required", "needs_photo", "light", "pos", "category", "duration_min"];
   for (const [k, t] of have) {
     const d = desired.get(k);
     if (!d || t.status !== "todo") continue;
-    if (t.title !== d.title || t.emoji !== d.emoji || t.required !== d.required || t.needs_photo !== d.needs_photo || t.light !== d.light || t.pos !== d.pos) {
-      await db.from("app_tasks").update({ title: d.title, emoji: d.emoji, required: d.required, needs_photo: d.needs_photo, light: d.light, pos: d.pos }).eq("id", t.id);
+    if (SYNC.some((f) => t[f] !== d[f])) {
+      await db.from("app_tasks").update(Object.fromEntries(SYNC.map((f) => [f, d[f]]))).eq("id", t.id);
     }
   }
+  return ov ? { subject_ids: override!, note: ov.note ?? null } : null;
 }
 
 export async function loadTasks(kid: { id: string; child_id: number }, from: string, to = from): Promise<any[]> {
-  const { data } = await db.from("app_tasks").select("*, app_photos(id, path, page_no, taken_at, active)")
+  const { data } = await db.from("app_tasks").select("*, app_photos(id, path, page_no, taken_at, active), app_messages(count)")
     .eq("family_id", kid.id).eq("child_id", kid.child_id).gte("school_date", from).lte("school_date", to)
     .order("school_date", { ascending: false }).order("pos").order("id");
   return (data ?? []).map((t: any) => ({
     ...t,
     photos: (t.app_photos ?? []).filter((p: any) => p.active).sort((a: any, b: any) => a.page_no - b.page_no),
+    messages: t.app_messages?.[0]?.count ?? 0,
   }));
 }
 
+// Signs photo and voice-note links in one storage call.
 export async function signPhotos(tasks: any[]) {
-  const paths = tasks.flatMap((t) => t.photos.map((p: any) => p.path));
+  const paths = [...tasks.flatMap((t) => t.photos.map((p: any) => p.path)), ...tasks.filter((t) => t.voice_path).map((t) => t.voice_path)];
   if (!paths.length) return;
   // short-lived: a link forwarded out of the app stops working soon
   const { data } = await db.storage.from("app-photos").createSignedUrls(paths, 900);
   const m = new Map((data ?? []).map((r: any) => [r.path, r.signedUrl]));
-  for (const t of tasks) for (const p of t.photos) p.url = m.get(p.path) ?? null;
+  for (const t of tasks) {
+    for (const p of t.photos) p.url = m.get(p.path) ?? null;
+    if (t.voice_path) t.voice_url = m.get(t.voice_path) ?? null;
+  }
 }
 
 export function shape(t: any, tz: string) {
@@ -139,6 +166,7 @@ export function shape(t: any, tz: string) {
     id: t.id, kind: t.kind, label: t.title, emoji: t.emoji, light: t.light, needs_photo: t.needs_photo,
     required: t.required, status: t.status, skip_reason: t.skip_reason, accepted: t.accepted,
     done_at: t.done_at, done_hm: hm(t.done_at), note: t.note ?? null, parent_comment: t.parent_comment ?? null,
+    category: t.category ?? "school", duration_min: t.duration_min ?? null, messages: t.messages ?? 0, voice_url: t.voice_url ?? null,
     photos: t.photos.map((p: any) => ({ id: p.id, url: p.url ?? null, at: p.taken_at, page: p.page_no, hm: hm(p.taken_at) })),
   };
 }
@@ -180,7 +208,7 @@ export async function streakStats(fam: any, today: string, S: string, isSchool: 
 
 export async function childState(fam: any) {
   const { now, S, due, isSchool } = await activeDay(fam);
-  await ensureTasks(fam, S);
+  const ov = await ensureTasks(fam, S);
   const tasks = await loadTasks(fam, S);
   await signPhotos(tasks);
   const dueToday = due === now.date;
@@ -193,6 +221,7 @@ export async function childState(fam: any) {
   }
   return {
     name: fam.child_name, child_id: fam.child_id, tz: fam.tz, school_date: S, school_label: fmtLong(S), due_date: due, due_label: fmtShort(due),
+    override_note: ov?.note ?? null,
     due_today: dueToday, soft: fam.soft_deadline, hard: fam.hard_deadline, remind_times: fam.remind_times, now_hm: now.hm,
     mins_to_soft: dueToday ? toMin(fam.soft_deadline) - toMin(now.hm) : null,
     mins_to_hard: dueToday ? toMin(fam.hard_deadline) - toMin(now.hm) : null,
@@ -269,7 +298,15 @@ export async function weeklyReport(fam: any, days = 7) {
 export async function overview(fam: any) {
   const { now, S, isSchool } = await activeDay(fam);
   await ensureTasks(fam, S);
-  const tasks = await loadTasks(fam, addDays(now.date, -14), S);
+  const from = addDays(now.date, -14);
+  const [tasks, { data: ovs }, { data: seen }] = await Promise.all([
+    loadTasks(fam, from, S),
+    db.from("app_day_overrides").select("date, note").eq("child_id", fam.child_id).gte("date", from).lte("date", S),
+    // when one of this child's phones last used the app
+    db.from("app_devices").select("last_seen").eq("family_id", fam.id).eq("role", "child").eq("child_id", fam.child_id)
+      .order("last_seen", { ascending: false }).limit(1),
+  ]);
+  const noteOf = new Map<string, string>((ovs ?? []).filter((o: any) => o.note).map((o: any) => [o.date, o.note]));
   await signPhotos(tasks);
   const byDay = new Map<string, any[]>();
   for (const t of tasks) {
@@ -286,6 +323,7 @@ export async function overview(fam: any) {
       date, label: fmtLong(date), total: req.length, done: req.filter(isDone).length,
       last_done_hm: last ? localParts(fam.tz, new Date(last)).hm : null,
       on_time: req.length > 0 && req.every(isDone) && doneBy(last, fam.tz, addDays(date, -1), fam.soft_deadline),
+      override_note: noteOf.get(date) ?? null,
       tasks: ts.map((t) => shape(t, fam.tz)),
     };
   });
@@ -293,7 +331,72 @@ export async function overview(fam: any) {
   return {
     child_id: fam.child_id, child_name: fam.child_name, now_hm: now.hm, active: S, days, ...(await streakStats(fam, now.date, S, isSchool)),
     days_off: (off ?? []).map((o: any) => o.date),
+    child_seen: seen?.[0]?.last_seen ? new Date(seen[0].last_seen).toISOString() : null,
   };
+}
+
+// ---------- one-day lesson overrides ----------
+// The parent replaces one day's lessons for a child (a changed timetable, a trip, a test day). Checklist items are
+// unaffected. If the day is already the active one, its tasks follow right away (ensureTasks drops untouched ones).
+export async function setOverride(kid: any, date: string, ids: number[], note: string | null) {
+  const { now, S } = await activeDay(kid);
+  if (date < now.date) throw new HttpError(400, "Неверная дата");
+  if (ids.length > 14) throw new HttpError(400, "Не больше 14 уроков в день");
+  if (ids.length) {
+    const { data: own } = await db.from("app_subjects").select("id").eq("family_id", kid.id).in("id", ids);
+    if ((own ?? []).length !== ids.length) throw new HttpError(404, "Предмет не найден");
+  }
+  const { error } = await db.from("app_day_overrides")
+    .upsert({ family_id: kid.id, child_id: kid.child_id, date, subject_ids: ids, note }, { onConflict: "child_id,date" });
+  if (error) throw new HttpError(500, error.message);
+  if (date === S) await ensureTasks(kid, S);
+  return { date, child_id: kid.child_id, subject_ids: ids, note };
+}
+export async function clearOverride(kid: any, date: string) {
+  await db.from("app_day_overrides").delete().eq("family_id", kid.id).eq("child_id", kid.child_id).eq("date", date);
+  const { S } = await activeDay(kid);
+  if (date === S) await ensureTasks(kid, S);
+}
+
+// ---------- month calendar ----------
+export type DayStatus = "done_on_time" | "done_late" | "partial" | "missed" | "off" | "future" | "empty";
+// One calendar cell from the day's required tasks. Same rules as the weekly report: a day is on time when every
+// required task is done (or its skip approved) by the soft deadline on the evening before; a day counts as missed
+// or partial once its date has come (the deadline was the evening before).
+export function calendarStatus(o: { date: string; today: string; school: boolean; tasks: { status: string; done_at: string | null }[]; tz: string; soft: string }) {
+  const total = o.tasks.length;
+  const done = o.tasks.filter(isDone).length;
+  let status: DayStatus;
+  if (total > 0 && done === total) {
+    const last = o.tasks.map((t) => t.done_at).filter(Boolean).sort().pop() ?? null;
+    status = doneBy(last, o.tz, addDays(o.date, -1), o.soft) ? "done_on_time" : "done_late";
+  } else if (!o.school) status = "off";
+  else if (o.date > o.today) status = "future";
+  else if (!total) status = "empty";
+  else status = done ? "partial" : "missed";
+  return { date: o.date, status, total, done };
+}
+
+// GET /parent/calendar: every day of `month` (YYYY-MM) for one child, from a single query over the month's tasks.
+export async function monthCalendar(fam: any, month: string) {
+  const from = `${month}-01`;
+  const to = addDays(addDays(from, 32).slice(0, 8) + "01", -1); // last day of the month
+  const today = localParts(fam.tz).date;
+  const isSchool = schoolDays(fam.school_weekdays, await offSet(fam.id), holidaysOf(fam));
+  // ~30 tasks a day stays below PostgREST's 1000-row cap for a whole month
+  const { data } = await db.from("app_tasks").select("school_date, status, done_at")
+    .eq("family_id", fam.id).eq("child_id", fam.child_id).eq("required", true).gte("school_date", from).lte("school_date", to)
+    .order("school_date").order("id").limit(1000);
+  const byDay = new Map<string, any[]>();
+  for (const t of data ?? []) {
+    if (!byDay.has(t.school_date)) byDay.set(t.school_date, []);
+    byDay.get(t.school_date)!.push(t);
+  }
+  const days = [];
+  for (let d = from; d <= to; d = addDays(d, 1)) {
+    days.push(calendarStatus({ date: d, today, school: isSchool(d), tasks: byDay.get(d) ?? [], tz: fam.tz, soft: fam.soft_deadline }));
+  }
+  return { month, child_id: fam.child_id, days };
 }
 
 async function taskOf(fam: any, id: number) {
@@ -408,17 +511,27 @@ async function removeObjects(paths: string[]) {
   for (let i = 0; i < paths.length; i += 100) await db.storage.from("app-photos").remove(paths.slice(i, i + 100));
 }
 
-// Photos older than the family's retention window, and photos replaced by a re-shoot, are deleted for good.
+// Photos older than the family's retention window, and photos replaced by a re-shoot, are deleted for good;
+// so are voice notes older than the same window.
 export async function purgePhotos(fam: any) {
   const cutoff = new Date(Date.now() - (fam.photo_retention_days ?? 30) * 86400_000).toISOString();
   const stale = new Date(Date.now() - 86400_000).toISOString();
-  const { data } = await db.from("app_photos").select("id, path, taken_at, active, app_tasks!inner(family_id)")
-    .eq("app_tasks.family_id", fam.id).or(`taken_at.lt."${cutoff}",and(active.eq.false,taken_at.lt."${stale}")`).limit(500);
+  const [{ data }, { data: voices }] = await Promise.all([
+    db.from("app_photos").select("id, path, taken_at, active, app_tasks!inner(family_id)")
+      .eq("app_tasks.family_id", fam.id).or(`taken_at.lt."${cutoff}",and(active.eq.false,taken_at.lt."${stale}")`).limit(500),
+    db.from("app_tasks").select("id, voice_path").eq("family_id", fam.id).not("voice_path", "is", null).lt("voice_at", cutoff).limit(500),
+  ]);
   const rows: any[] = data ?? [];
-  if (!rows.length) return 0;
-  await removeObjects(rows.map((r) => r.path));
-  await db.from("app_photos").delete().in("id", rows.map((r) => r.id));
-  return rows.length;
+  const vs: any[] = voices ?? [];
+  if (rows.length) {
+    await removeObjects(rows.map((r) => r.path));
+    await db.from("app_photos").delete().in("id", rows.map((r) => r.id));
+  }
+  if (vs.length) {
+    await removeObjects(vs.map((t) => t.voice_path));
+    await db.from("app_tasks").update({ voice_path: null, voice_at: null }).in("id", vs.map((t) => t.id));
+  }
+  return rows.length + vs.length;
 }
 
 // Account deletion (Apple 5.1.1(v), Google Play): every photo file and every row of the family.
@@ -480,6 +593,62 @@ export async function uploadPhoto(fam: any, taskId: number, bytes: Uint8Array<Ar
     },
   );
   await checkAllDone(fam, S);
+}
+
+// A short voice note from the child about a task ("what was assigned", "I didn't understand…"). One per task:
+// a new recording replaces the old file. Kept as long as photos (photo_retention_days).
+export const MAX_VOICE = 2_000_000;
+export async function uploadVoice(fam: any, taskId: number, bytes: Uint8Array<ArrayBuffer>) {
+  if (!bytes.length) throw new HttpError(400, "Нет записи");
+  if (bytes.length > MAX_VOICE) throw new HttpError(413, "Запись слишком большая");
+  const type = audioType(bytes);
+  if (!type) throw new HttpError(415, "Это не аудиозапись");
+  const { t, S } = await childTask(fam, taskId);
+  const path = `${fam.id}/${S}/voice-${taskId}-${Date.now()}.m4a`;
+  const up = await db.storage.from("app-photos").upload(path, bytes, { contentType: type });
+  if (up.error) throw new HttpError(500, up.error.message);
+  const { error } = await db.from("app_tasks").update({ voice_path: path, voice_at: new Date().toISOString() }).eq("id", taskId).eq("family_id", fam.id);
+  if (error) {
+    await removeObjects([path]);
+    throw new HttpError(500, error.message);
+  }
+  if (t.voice_path && t.voice_path !== path) await removeObjects([t.voice_path]);
+}
+
+// ---------- per-task chat ----------
+// The task a chat is about: a child device sees only its own child's tasks, parents and viewers any family task.
+export async function chatTask(fam: any, id: number, childId: number | null) {
+  const t = await taskOf(fam, id);
+  if (childId && t.child_id !== childId) throw new HttpError(404, "Задание не найдено");
+  return t;
+}
+
+export async function listMessages(fam: any, taskId: number, me: { id: string; child_id: number | null; role: string }) {
+  await chatTask(fam, taskId, me.role === "child" ? me.child_id ?? -1 : null);
+  const { data } = await db.from("app_messages").select("id, role, body, created_at, device_id, app_devices(name)")
+    .eq("family_id", fam.id).eq("task_id", taskId).order("id", { ascending: false }).limit(100);
+  return (data ?? []).reverse().map((m: any) => ({
+    id: m.id, role: m.role, name: m.app_devices?.name ?? null, body: m.body, created_at: m.created_at, mine: m.device_id === me.id,
+  }));
+}
+
+export async function postMessage(fam: any, taskId: number, me: { id: string; child_id: number | null; role: "parent" | "child"; name: string | null }, text: string) {
+  if (!text) throw new HttpError(400, "Сообщение пустое");
+  if (text.length > 500) throw new HttpError(400, "Сообщение длиннее 500 символов");
+  const t = await chatTask(fam, taskId, me.role === "child" ? me.child_id ?? -1 : null);
+  const { data, error } = await db.from("app_messages").insert({ family_id: fam.id, task_id: taskId, device_id: me.id, role: me.role, body: text })
+    .select("id, role, body, created_at").single();
+  if (error) throw new HttpError(500, error.message);
+  const title = `💬 ${t.title}`;
+  if (me.role === "child") {
+    const kid = await kidOf(fam, t.child_id);
+    await notifyParents(fam.id, { title, body: `${kid.child_name}: ${text}` }, {
+      html: `💬 <b>${esc(kid.child_name)} · ${esc(t.emoji)} ${esc(t.title)}</b>\n${esc(text)}`,
+    });
+  } else {
+    await notifyChild(fam.id, t.child_id, title, me.name ? `${me.name}: ${text}` : text);
+  }
+  return { id: data.id, role: data.role, name: me.name, body: data.body, created_at: data.created_at, mine: true };
 }
 
 export async function requestSkip(fam: any, taskId: number, reason: string) {

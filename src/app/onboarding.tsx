@@ -2,17 +2,17 @@ import { router } from 'expo-router';
 import { useRef, useState } from 'react';
 import { Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
-import Animated, { FadeIn, FadeInRight, LinearTransition } from 'react-native-reanimated';
+import Animated, { FadeIn, FadeInRight } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { InviteSheet } from '@/components/InviteSheet';
-import { Btn, Chip, Field, Group, haptic, IconBtn, Row, TimeStepper, ToggleRow, Txt, WeekdayPicker } from '@/components/ui';
+import { Btn, Chip, Field, Group, haptic, Icon, IconBtn, NotebookRule, Row, Segmented, TimeStepper, ToggleRow, Txt, WeekdayPicker } from '@/components/ui';
 import { api, legalUrl } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { toMin, wdLong, wdShort } from '@/lib/format';
 import { getLang, LANGS, setLang, tn, useLang, useT } from '@/lib/i18n';
 import { GRADES, gradeTemplate, itemPresets, subjectPresets, type Grade } from '@/lib/presets';
-import { usePalette } from '@/lib/theme';
+import { radius, usePalette } from '@/lib/theme';
 
 type Subj = { name: string; emoji: string; light: boolean };
 // preset: index into itemPresets(), so a preset's title follows a language switch made on step 0
@@ -173,19 +173,22 @@ export default function Onboarding() {
 
   if (done) {
     return (
-      <View style={[styles.doneWrap, { backgroundColor: p.bg, paddingTop: insets.top + 60, paddingBottom: insets.bottom + 20 }]}>
-        <Animated.View entering={FadeIn.duration(400)} style={[styles.column, { alignItems: 'center' }]}>
-          <Text style={{ fontSize: 64 }}>🎉</Text>
-          <Txt v="largeTitle" style={{ textAlign: 'center', marginTop: 12 }}>
+      <View style={[styles.doneWrap, { backgroundColor: p.bg, paddingTop: insets.top + 72, paddingBottom: insets.bottom + 20 }]}>
+        <NotebookRule height={insets.top + 220} step={30} marginX={20} />
+        <Animated.View entering={FadeIn.duration(400)} style={styles.column}>
+          <View style={[styles.doneSeal, { backgroundColor: p.okFill }]}>
+            <Icon name="checkmark" size={40} color="#fff" />
+          </View>
+          <Txt v="largeTitle" accessibilityRole="header" style={{ marginTop: 20 }}>
             {t('onboarding.done.title')}
           </Txt>
-          <Txt v="body" color={p.muted} style={{ textAlign: 'center', marginTop: 8 }}>
+          <Txt v="body" color={p.ink2} style={{ marginTop: 8, fontSize: 18, lineHeight: 25 }}>
             {t('onboarding.done.text', { name: child.trim() })}
           </Txt>
         </Animated.View>
         <View style={[styles.column, { gap: 10 }]}>
-          <Btn title={t('onboarding.done.showCode')} onPress={() => setInviteOpen(true)} />
-          <Btn title={t('onboarding.done.enter')} kind="plain" onPress={enterApp} />
+          <Btn title={t('onboarding.done.showCode')} icon="key-outline" onPress={() => setInviteOpen(true)} />
+          <Btn title={t('onboarding.done.enter')} kind="ghost" onPress={enterApp} />
         </View>
         <InviteSheet role={inviteOpen ? 'child' : null} onClose={() => setInviteOpen(false)} />
       </View>
@@ -197,15 +200,18 @@ export default function Onboarding() {
       <View style={[styles.column, { paddingHorizontal: 20, paddingTop: insets.top + 10 }]}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
           <IconBtn icon="←" label={t('common.back')} onPress={back} />
-          <View style={[styles.progress, { backgroundColor: p.line }]}>
-            <Animated.View layout={LinearTransition.springify().damping(20)} style={[styles.bar, { backgroundColor: p.brand, width: `${((step + 1) / STEPS.length) * 100}%` }]} />
+          {/* one segment per step: where you are and how much is left, at a glance */}
+          <View style={styles.progress} accessible accessibilityRole="progressbar" accessibilityValue={{ min: 1, max: STEPS.length, now: step + 1 }}>
+            {STEPS.map((k, i) => (
+              <View key={k} style={[styles.bar, { backgroundColor: i <= step ? p.brand : p.line }]} />
+            ))}
           </View>
-          <Txt v="sub" color={p.muted}>
+          <Txt v="sub" color={p.muted} style={{ fontVariant: ['tabular-nums'], fontWeight: '600' }}>
             {step + 1}/{STEPS.length}
           </Txt>
         </View>
-        <Txt v="caps" color={p.brand} style={{ marginTop: 18 }}>
-          {t(`onboarding.step.${STEPS[step]}`).toLocaleUpperCase()}
+        <Txt v="sub" color={p.brand} style={{ marginTop: 20, fontWeight: '600' }}>
+          {t(`onboarding.step.${STEPS[step]}`)}
         </Txt>
       </View>
 
@@ -217,17 +223,13 @@ export default function Onboarding() {
               <Txt v="callout" color={p.muted} style={{ marginVertical: 10 }}>
                 {t('onboarding.intro.text')}
               </Txt>
-              <Txt v="sub" color={p.muted} style={{ marginBottom: 8 }}>
+              <Txt v="sub" color={p.ink2} style={{ marginBottom: 6, marginLeft: 2, fontWeight: '600' }}>
                 {t('common.language')}
               </Txt>
-              <View style={[styles.wrap, { marginBottom: 16 }]}>
-                {LANGS.map((l) => (
-                  <Chip key={l.code} label={l.label} selected={lang === l.code} onPress={() => setLang(l.code)} />
-                ))}
-              </View>
+              <Segmented value={lang} onChange={setLang} options={LANGS.map((l) => ({ value: l.code, label: l.label }))} style={{ marginBottom: 16 }} />
               <Field label={t('onboarding.intro.child')} value={child} onChangeText={setChild} placeholder={t('onboarding.intro.childPh')} maxLength={30} autoFocus />
               <Field label={t('onboarding.intro.parent')} value={parent} onChangeText={setParent} placeholder={t('onboarding.intro.parentPh')} maxLength={30} />
-              <Txt v="sub" color={p.muted} style={{ marginTop: 6, marginBottom: 8 }}>
+              <Txt v="sub" color={p.ink2} style={{ marginTop: 6, marginBottom: 6, marginLeft: 2, fontWeight: '600' }}>
                 {t('common.country')}
               </Txt>
               <View style={styles.wrap}>
@@ -275,7 +277,7 @@ export default function Onboarding() {
                       accessibilityState={{ selected: on }}
                       style={({ pressed }) => [
                         styles.tpl,
-                        { backgroundColor: on ? p.brandSoft : p.card, borderColor: on ? p.brand : p.line, transform: [{ scale: pressed ? 0.97 : 1 }] },
+                        { backgroundColor: on ? p.brandSoft : p.card, borderColor: on ? p.brand : p.line, borderWidth: on ? 1.5 : StyleSheet.hairlineWidth, transform: [{ scale: pressed ? 0.97 : 1 }] },
                       ]}
                     >
                       <Text style={{ fontSize: 26 }}>{emoji}</Text>
@@ -286,7 +288,6 @@ export default function Onboarding() {
                         {t(`onboarding.tpl.${grade}Grades`)}
                       </Txt>
                       <Txt v="sub" color={on ? p.brand : p.muted} style={{ marginTop: 4 }}>
-                        {on ? '✓ ' : ''}
                         {tn('onboarding.tpl.count', n)}
                       </Txt>
                     </Pressable>
@@ -295,6 +296,7 @@ export default function Onboarding() {
               </View>
               {tpl ? (
                 <Animated.View entering={FadeIn.duration(220)} style={[styles.applied, { backgroundColor: p.okSoft }]}>
+                  <Icon name="checkmark-circle" size={16} color={p.ok} />
                   <Txt v="sub" color={p.ink2} style={{ flex: 1 }}>
                     {t('onboarding.tpl.applied')}
                   </Txt>
@@ -358,9 +360,7 @@ export default function Onboarding() {
                             accessibilityLabel={t('onboarding.schedule.removeA11y', { name: n })}
                             onPress={() => setPlan({ ...plan, [planDay]: dayPlan.filter((_, j) => j !== i) })}
                           >
-                            <Txt v="headline" color={p.muted}>
-                              ✕
-                            </Txt>
+                            <Icon name="close-circle" size={22} color={p.muted} />
                           </Pressable>
                         }
                       />
@@ -372,7 +372,7 @@ export default function Onboarding() {
               </Group>
               <View style={[styles.wrap, { marginTop: 14 }]}>
                 {subjects.map((s) => (
-                  <Chip key={s.name} label={`＋ ${s.emoji} ${s.name}`} tone="muted" onPress={() => setPlan({ ...plan, [planDay]: [...dayPlan, s.name] })} />
+                  <Chip key={s.name} label={`${s.emoji} ${s.name}`} icon="add" tone="muted" onPress={() => setPlan({ ...plan, [planDay]: [...dayPlan, s.name] })} />
                 ))}
               </View>
             </>
@@ -420,8 +420,8 @@ export default function Onboarding() {
                 {t('onboarding.deadlines.text')}
               </Txt>
               <Group>
-                <Row icon="⏰" title={t('onboarding.deadlines.soft')} subtitle={t('onboarding.deadlines.softSub')} right={<TimeStepper value={soft} onChange={setSoft} clamp />} />
-                <Row icon="🌙" title={t('onboarding.deadlines.hard')} subtitle={t('onboarding.deadlines.hardSub')} right={<TimeStepper value={hard} onChange={setHard} clamp />} />
+                <Row icon="alarm" tint="orange" title={t('onboarding.deadlines.soft')} subtitle={t('onboarding.deadlines.softSub')} right={<TimeStepper value={soft} onChange={setSoft} clamp />} />
+                <Row icon="moon" tint="violet" title={t('onboarding.deadlines.hard')} subtitle={t('onboarding.deadlines.hardSub')} right={<TimeStepper value={hard} onChange={setHard} clamp />} />
               </Group>
               {!deadlinesOk ? (
                 <Txt v="callout" color={p.warn} style={{ marginTop: 14 }}>
@@ -432,10 +432,10 @@ export default function Onboarding() {
                 onPress={() => setConsent(!consent)}
                 accessibilityRole="checkbox"
                 accessibilityState={{ checked: consent }}
-                style={[styles.consent, { borderColor: consent ? p.brand : p.line, backgroundColor: p.card }]}
+                style={[styles.consent, { borderColor: consent ? p.brand : p.line, backgroundColor: consent ? p.brandSoft : p.card }]}
               >
-                <View style={[styles.box, { borderColor: consent ? p.brand : p.muted, backgroundColor: consent ? p.brand : 'transparent' }]}>
-                  {consent ? <Txt v="sub" color="#fff">✓</Txt> : null}
+                <View style={[styles.box, { borderColor: consent ? p.brandFill : p.border, backgroundColor: consent ? p.brandFill : 'transparent' }]}>
+                  {consent ? <Icon name="checkmark" size={16} color="#fff" /> : null}
                 </View>
                 <Txt v="callout" style={{ flex: 1 }}>
                   {t('onboarding.consent.a')}{' '}
@@ -475,15 +475,16 @@ export default function Onboarding() {
 }
 
 const styles = StyleSheet.create({
-  progress: { flex: 1, height: 6, borderRadius: 3, overflow: 'hidden' },
-  bar: { height: 6, borderRadius: 3 },
+  progress: { flex: 1, flexDirection: 'row', gap: 4 },
+  bar: { flex: 1, height: 4, borderRadius: 2 },
   wrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   column: { width: '100%', maxWidth: 640, alignSelf: 'center' },
   tplTitle: { marginTop: 6, fontSize: 15, lineHeight: 19 },
   tplRow: { flexDirection: 'row', gap: 8 },
-  tpl: { flex: 1, minWidth: 0, borderWidth: 1.5, borderRadius: 18, paddingVertical: 12, paddingHorizontal: 10 },
-  applied: { flexDirection: 'row', borderRadius: 14, paddingVertical: 10, paddingHorizontal: 12, marginTop: 10 },
+  tpl: { flex: 1, minWidth: 0, borderRadius: radius.l, paddingVertical: 12, paddingHorizontal: 10 },
+  applied: { flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: radius.s, paddingVertical: 10, paddingHorizontal: 12, marginTop: 10 },
+  doneSeal: { width: 72, height: 72, borderRadius: 24, alignItems: 'center', justifyContent: 'center' },
   doneWrap: { flex: 1, paddingHorizontal: 24, justifyContent: 'space-between' },
-  consent: { flexDirection: 'row', gap: 12, alignItems: 'flex-start', borderWidth: 1.5, borderRadius: 16, padding: 14, marginTop: 18 },
+  consent: { flexDirection: 'row', gap: 12, alignItems: 'flex-start', borderWidth: 1, borderRadius: radius.l, padding: 14, marginTop: 18 },
   box: { width: 24, height: 24, borderRadius: 7, borderWidth: 2, alignItems: 'center', justifyContent: 'center', marginTop: 1 },
 });

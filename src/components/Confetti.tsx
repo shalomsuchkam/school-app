@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import { StyleSheet, useWindowDimensions, View } from 'react-native';
 import Animated, { Easing, useAnimatedStyle, useReducedMotion, useSharedValue, withDelay, withTiming } from 'react-native-reanimated';
 
-const COLORS = ['#6355F5', '#9B5CF6', '#10A37F', '#FDB241', '#FF7A7E', '#4DABF7'];
+// The exercise-book set: ink blue, red pen, green tick, highlighter yellow, pencil grey.
+const COLORS = ['#2A4BB0', '#BC3226', '#1D7346', '#F2C14E', '#7FA0E8', '#E7A39B'];
 
 function Piece({ i, w, h }: { i: number; w: number; h: number }) {
   const t = useSharedValue(0);
@@ -16,11 +17,11 @@ function Piece({ i, w, h }: { i: number; w: number; h: number }) {
     duration: 1800 + Math.random() * 800,
   }));
   useEffect(() => {
-    t.value = withDelay(delay, withTiming(1, { duration, easing: Easing.out(Easing.quad) }));
+    t.set(withDelay(delay, withTiming(1, { duration, easing: Easing.out(Easing.quad) })));
   }, [t, delay, duration]);
   const style = useAnimatedStyle(() => ({
-    opacity: 1 - t.value * 0.85,
-    transform: [{ translateX: fx * w + drift * t.value }, { translateY: -40 + (h + 80) * t.value }, { rotate: `${spin * t.value}deg` }],
+    opacity: 1 - t.get() * 0.85,
+    transform: [{ translateX: fx * w + drift * t.get() }, { translateY: -40 + (h + 80) * t.get() }, { rotate: `${spin * t.get()}deg` }],
   }));
   return <Animated.View style={[styles.piece, { width: size, height: size * 1.6, backgroundColor: COLORS[i % COLORS.length], borderRadius: i % 3 ? 2 : size }, style]} />;
 }

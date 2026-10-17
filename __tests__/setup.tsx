@@ -1,4 +1,6 @@
 // Native-backed libraries replaced with their official jest mocks; the window size comes from helpers.applyEnv.
+// gesture-handler's own jest setup (the Sheet's drag-to-dismiss uses GestureDetector inside its Modal)
+require('react-native-gesture-handler/jestSetup');
 jest.mock('react-native-worklets', () => jest.requireActual('react-native-worklets/src/mock'));
 jest.mock('react-native-reanimated', () => {
   const mock = jest.requireActual('react-native-reanimated/mock');

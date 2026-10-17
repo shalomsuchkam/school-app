@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Linking, Platform, StyleSheet, View } from 'react-native';
 
-import { Btn, Chip, Txt, Sheet, useToast } from '@/components/ui';
+import { Btn, Icon, Segmented, Txt, Sheet, useToast } from '@/components/ui';
 import { useT } from '@/lib/i18n';
 import { radius, usePalette } from '@/lib/theme';
 
@@ -38,15 +38,20 @@ export function PhoneLimitGuide({ visible, onClose }: { visible: boolean; onClos
       <Txt v="callout" color={p.muted} style={{ marginBottom: 14 }}>
         {t('parent.phone.intro')}
       </Txt>
-      <View style={styles.seg}>
-        <Chip label={t('parent.phone.android')} selected={os === 'android'} onPress={() => setOs('android')} />
-        <Chip label={t('parent.phone.ios')} selected={os === 'ios'} onPress={() => setOs('ios')} />
-      </View>
-      <View style={[styles.card, { backgroundColor: p.card }]}>
+      <Segmented
+        value={os}
+        onChange={setOs}
+        options={[
+          { value: 'android', label: t('parent.phone.android') },
+          { value: 'ios', label: t('parent.phone.ios') },
+        ]}
+        style={{ marginBottom: 12 }}
+      />
+      <View style={[styles.card, { backgroundColor: p.card, borderColor: p.line }]}>
         {steps.map((k, i) => (
           <View key={k} style={styles.step}>
             <View style={[styles.num, { backgroundColor: p.brandSoft }]}>
-              <Txt v="sub" color={p.brand} style={{ fontVariant: ['tabular-nums'] }}>
+              <Txt v="sub" color={p.brand} style={{ fontVariant: ['tabular-nums'], fontWeight: '700' }}>
                 {i + 1}
               </Txt>
             </View>
@@ -62,7 +67,10 @@ export function PhoneLimitGuide({ visible, onClose }: { visible: boolean; onClos
         </Txt>
       ) : null}
       <View style={[styles.tip, { backgroundColor: p.okSoft }]}>
-        <Txt v="sub">💡 {t('parent.phone.tip')}</Txt>
+        <Icon name="bulb-outline" size={18} color={p.ok} />
+        <Txt v="sub" style={{ flex: 1 }}>
+          {t('parent.phone.tip')}
+        </Txt>
       </View>
       {os === 'android' ? (
         <Btn title={t('parent.phone.openFL')} icon="open-outline" onPress={openFamilyLink} style={{ marginTop: 14 }} />
@@ -74,10 +82,9 @@ export function PhoneLimitGuide({ visible, onClose }: { visible: boolean; onClos
 }
 
 const styles = StyleSheet.create({
-  seg: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 },
-  card: { borderRadius: radius.l, padding: 14, gap: 12 },
+  card: { borderRadius: radius.l, borderWidth: StyleSheet.hairlineWidth, padding: 14, gap: 12 },
   step: { flexDirection: 'row', gap: 12, alignItems: 'flex-start' },
   num: { width: 26, height: 26, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
   note: { marginTop: 10, marginHorizontal: 4 },
-  tip: { borderRadius: radius.m, padding: 12, marginTop: 12 },
+  tip: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, borderRadius: radius.m, padding: 12, marginTop: 12 },
 });

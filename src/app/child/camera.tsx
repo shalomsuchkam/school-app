@@ -4,10 +4,10 @@ import { Image } from 'expo-image';
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
-import { Alert, AppState, Linking, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { Alert, AppState, Linking, Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { Btn, haptic, Icon, Txt } from '@/components/ui';
+import { Btn, haptic, Icon, PressableScale, Txt } from '@/components/ui';
 import { api } from '@/lib/api';
 import { useT } from '@/lib/i18n';
 import { enqueuePhoto, isNetworkError } from '@/lib/offline';
@@ -65,7 +65,9 @@ export default function CameraScreen() {
   if (!perm.granted) {
     return (
       <View style={[styles.bg, styles.center, { paddingTop: insets.top }]}>
-        <Text style={{ fontSize: 48 }}>📷</Text>
+        <View style={styles.permIcon}>
+          <Icon name="camera-outline" size={34} color="#fff" />
+        </View>
         <Txt v="title" color="#fff" style={{ marginTop: 12, textAlign: 'center' }}>
           {t('child.cam.permTitle')}
         </Txt>
@@ -167,7 +169,7 @@ export default function CameraScreen() {
             accessibilityRole="switch"
             accessibilityState={{ checked: torch }}
             accessibilityLabel={t('child.cam.torch')}
-            style={[styles.round, torch && { backgroundColor: '#FDB241' }]}
+            style={[styles.round, torch && { backgroundColor: '#F2C14E' }]}
           >
             <Icon name={torch ? 'flashlight' : 'flashlight-outline'} size={21} color={torch ? '#1A1300' : '#fff'} />
           </Pressable>
@@ -187,7 +189,7 @@ export default function CameraScreen() {
           </View>
           <View style={styles.hint}>
             <Txt v="callout" color="#fff" style={{ textAlign: 'center' }}>
-              📒 {t('child.cam.frameHint')}
+              {t('child.cam.frameHint')}
             </Txt>
           </View>
         </View>
@@ -195,9 +197,14 @@ export default function CameraScreen() {
       <View style={[styles.bottom, { paddingBottom: insets.bottom + 18 }]}>
         {sent ? (
           <View style={{ gap: 10, alignSelf: 'stretch', width: '100%', maxWidth: 560 }}>
-            <Txt v="headline" color="#fff" style={{ textAlign: 'center' }} accessibilityLiveRegion="polite">
-              {sent === 'queued' ? `📶 ${t('child.queue.saved')}` : t('child.cam.sent')}
-            </Txt>
+            <View style={{ alignItems: 'center', gap: 10 }} accessibilityLiveRegion="polite">
+              <View style={[styles.sentSeal, { backgroundColor: sent === 'queued' ? '#975400' : '#1D7346' }]}>
+                <Icon name={sent === 'queued' ? 'cloud-upload-outline' : 'checkmark'} size={28} color="#fff" />
+              </View>
+              <Txt v="headline" color="#fff" style={{ textAlign: 'center' }}>
+                {sent === 'queued' ? t('child.queue.saved') : t('child.cam.sent')}
+              </Txt>
+            </View>
             {page < 2 ? (
               <Btn
                 title={t('child.cam.page2')}
@@ -214,9 +221,12 @@ export default function CameraScreen() {
           <View style={{ gap: 12, alignSelf: 'stretch', width: '100%', maxWidth: 560 }}>
             {low ? (
               <View style={styles.warn} accessibilityLiveRegion="polite">
-                <Txt v="headline" color="#fff">
-                  🤔 {t('child.cam.lowTitle')}
-                </Txt>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <Icon name="eye-off-outline" size={20} color="#fff" />
+                  <Txt v="headline" color="#fff" style={{ flex: 1 }}>
+                    {t('child.cam.lowTitle')}
+                  </Txt>
+                </View>
                 <Txt v="callout" color="rgba(255,255,255,0.85)" style={{ marginTop: 4 }}>
                   {t('child.cam.lowText')}
                 </Txt>
@@ -239,9 +249,9 @@ export default function CameraScreen() {
             )}
           </View>
         ) : (
-          <Pressable onPress={take} accessibilityLabel={t('child.cam.shutter')} style={({ pressed }) => [styles.shutter, pressed && { transform: [{ scale: 0.92 }] }]}>
+          <PressableScale onPress={take} accessibilityRole="button" accessibilityLabel={t('child.cam.shutter')} scaleTo={0.9} style={styles.shutter}>
             <View style={styles.shutterInner} />
-          </Pressable>
+          </PressableScale>
         )}
       </View>
     </View>
@@ -249,7 +259,9 @@ export default function CameraScreen() {
 }
 
 const styles = StyleSheet.create({
-  bg: { flex: 1, backgroundColor: '#000' },
+  bg: { flex: 1, backgroundColor: '#0E0D0B' },
+  permIcon: { width: 72, height: 72, borderRadius: 24, backgroundColor: 'rgba(255,255,255,0.14)', alignItems: 'center', justifyContent: 'center' },
+  sentSeal: { width: 56, height: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center' },
   center: { alignItems: 'center', justifyContent: 'center', padding: 28 },
   top: { position: 'absolute', top: 0, left: 0, right: 0, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingBottom: 12, backgroundColor: 'rgba(0,0,0,0.35)' },
   round: { width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(255,255,255,0.18)', alignItems: 'center', justifyContent: 'center' },
@@ -262,7 +274,7 @@ const styles = StyleSheet.create({
   bl: { bottom: -2, left: -2, borderBottomWidth: 4, borderLeftWidth: 4, borderBottomLeftRadius: 18 },
   br: { bottom: -2, right: -2, borderBottomWidth: 4, borderRightWidth: 4, borderBottomRightRadius: 18 },
   hint: { marginTop: 10, maxWidth: 480, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 8, backgroundColor: 'rgba(0,0,0,0.55)' },
-  warn: { borderRadius: 16, padding: 14, backgroundColor: 'rgba(230,138,0,0.92)' },
+  warn: { borderRadius: 16, padding: 14, backgroundColor: 'rgba(151,84,0,0.94)' },
   bottom: { position: 'absolute', left: 0, right: 0, bottom: 0, alignItems: 'center', paddingHorizontal: 18, paddingTop: 18, backgroundColor: 'rgba(0,0,0,0.35)' },
   shutter: { width: 80, height: 80, borderRadius: 40, borderWidth: 5, borderColor: '#fff', alignItems: 'center', justifyContent: 'center' },
   shutterInner: { width: 62, height: 62, borderRadius: 31, backgroundColor: '#fff' },

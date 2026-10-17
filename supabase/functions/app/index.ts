@@ -1,17 +1,22 @@
 // deno-lint-ignore-file no-explicit-any
 import {
-  accessOf, activeDay, applyAction, checkItem, childState, deleteFamily, dropOpenTasks, ensureTasks, getFamily, isDone, loadTasks, MAX_PHOTO, overview,
-  children, kidOf, purgePhotos, requestSkip, setNote, startSession, uploadPhoto, weeklyReport,
+  accessOf, activeDay, applyAction, checkItem, childState, clearOverride, deleteFamily, dropOpenTasks, ensureTasks, getFamily, isDone, listMessages, loadTasks,
+  MAX_PHOTO, MAX_VOICE, monthCalendar, overview, children, kidOf, postMessage, purgePhotos, requestSkip, setNote, setOverride, startSession, uploadPhoto,
+  uploadVoice, weeklyReport,
 } from "./core.ts";
 import { holidaysBetween } from "./holidays.ts";
 import { langOf, tr } from "./i18n.ts";
+import { inviteLang, invitePage } from "./invite.ts";
 import { LEGAL_VERSION, legalPage } from "./legal.ts";
 import {
-  clientIp, CORS, db, dow, esc, fmtLong, fmtShort, HM, HttpError, json, limit, localParts, randomCode, randomToken, safeEq, secret, sha256, toMin, validTz,
+  addDays, clientIp, CORS, db, dow, esc, fmtLong, fmtShort, HM, HttpError, inQuiet, json, limit, localParts, randomCode, randomToken, safeEq, secret, sha256, toMin,
+  validTz,
 } from "./lib.ts";
 import { notifyChild, notifyParents, tg, tgEnabled } from "./notify.ts";
 
-type Device = { id: string; family_id: string; role: "parent" | "child"; name: string | null; tg_chat_id: number | null; child_id: number | null };
+// viewer = a tutor or teacher the family let in (allow_viewers): reads the parent's dashboards, changes nothing
+type Role = "parent" | "child" | "viewer";
+type Device = { id: string; family_id: string; role: Role; name: string | null; tg_chat_id: number | null; child_id: number | null };
 
 async function auth(req: Request): Promise<Device> {
   const h = req.headers.get("authorization") ?? "";
@@ -30,6 +35,17 @@ async function auth(req: Request): Promise<Device> {
 const parentOnly = (d: Device) => {
   if (d.role !== "parent") throw new HttpError(403, "Только для родителя");
 };
+// parents and viewers: the read-only dashboards
+const readerOnly = (d: Device) => {
+  if (d.role === "child") throw new HttpError(403, "Только для родителя");
+};
+// Everything a viewer device may call; the rest answers 403 before any handler runs.
+const VIEWER_GET = new Set(["/me", "/setup", "/parent/overview", "/parent/report", "/parent/calendar"]);
+const viewerAllowed = (M: string, path: string, seg: string[]) =>
+  (M === "GET" && (VIEWER_GET.has(path) || (seg[0] === "tasks" && seg[2] === "messages" && seg.length === 3))) ||
+  (M === "DELETE" && path === "/members/me"); // leaving the family is always possible
+const DATE = /^\d{4}-\d{2}-\d{2}$/;
+const validDate = (s: string) => DATE.test(s) && !isNaN(Date.parse(s + "T00:00:00Z")) && new Date(s + "T00:00:00Z").toISOString().slice(0, 10) === s;
 async function body(req: Request) {
   return await req.json().catch(() => ({}));
 }
@@ -37,7 +53,7 @@ const clean = (s: unknown, max = 40) => String(s ?? "").trim().slice(0, max);
 const weekdays = (v: unknown) =>
   Array.isArray(v) ? [...new Set(v.map(Number).filter((n) => Number.isInteger(n) && n >= 1 && n <= 7))].sort() : null;
 
-async function newDevice(familyId: string, role: "parent" | "child", name: string, childId: number | null = null) {
+async function newDevice(familyId: string, role: Role, name: string, childId: number | null = null) {
   const token = randomToken();
   const { data, error } = await db.from("app_devices")
     .insert({ family_id: familyId, role, name: name || null, token_hash: await sha256(token), child_id: role === "child" ? childId : null }).select("id").single();
@@ -59,18 +75,22 @@ const publicFamily = (f: any) => ({
   id: f.id, code: f.code, child_name: f.child_name, tz: f.tz, school_weekdays: f.school_weekdays, soft_deadline: f.soft_deadline,
   hard_deadline: f.hard_deadline, remind_times: f.remind_times, photo_retention_days: f.photo_retention_days, country: f.country, lang: f.lang,
   reward_goal: f.reward_goal ?? null, reward_text: f.reward_text ?? null, track_time: !!f.track_time, auto_holidays: f.auto_holidays !== false,
+  quiet_from: f.quiet_from ?? null, quiet_to: f.quiet_to ?? null, allow_viewers: !!f.allow_viewers,
 });
 
 async function me(d: Device) {
   const fam = await getFamily(d.family_id);
-  const { data: members } = await db.from("app_devices").select("id, role, name, tg_chat_id, created_at, child_id").eq("family_id", d.family_id).order("created_at");
+  const { data: members } = await db.from("app_devices").select("id, role, name, tg_chat_id, created_at, child_id, last_seen").eq("family_id", d.family_id).order("created_at");
   const kids = await children(d.family_id);
   return {
     device: { id: d.id, role: d.role, name: d.name, child_id: d.child_id },
     family: { ...publicFamily(fam), child_name: kids[0]?.name ?? fam.child_name },
     children: kids,
     access: accessOf(fam, await billingOn()),
-    members: (members ?? []).map((m: any) => ({ id: m.id, role: m.role, name: m.name, telegram: !!m.tg_chat_id, me: m.id === d.id, child_id: m.child_id })),
+    members: (members ?? []).map((m: any) => ({
+      id: m.id, role: m.role, name: m.name, telegram: !!m.tg_chat_id, me: m.id === d.id, child_id: m.child_id,
+      last_seen: m.last_seen ? new Date(m.last_seen).toISOString() : null,
+    })),
     telegram: { enabled: await tgEnabled(), bot: (await secret("app_bot_username")) || null, linked: !!d.tg_chat_id },
   };
 }
@@ -78,11 +98,14 @@ async function me(d: Device) {
 async function setup(fam: any) {
   const familyId = fam.id;
   const childId = fam.child_id;
-  const [{ data: subjects }, { data: lessons }, { data: items }, { data: off }] = await Promise.all([
+  const today = localParts(fam.tz).date;
+  const [{ data: subjects }, { data: lessons }, { data: items }, { data: off }, { data: ovs }] = await Promise.all([
     db.from("app_subjects").select("id, name, emoji, light").eq("family_id", familyId).order("name"),
     db.from("app_lessons").select("weekday, week_parity, pos, subject_id").eq("child_id", childId).order("weekday").order("pos"),
-    db.from("app_items").select("id, title, emoji, required, needs_photo, weekdays, pos, child_id").eq("family_id", familyId).order("pos").order("id"),
+    db.from("app_items").select("id, title, emoji, required, needs_photo, weekdays, pos, child_id, category, duration_min").eq("family_id", familyId).order("pos").order("id"),
     db.from("app_days_off").select("date").eq("family_id", familyId).order("date"),
+    // one-day lesson overrides of this child for the next 30 days
+    db.from("app_day_overrides").select("date, subject_ids, note").eq("child_id", childId).gte("date", today).lte("date", addDays(today, 30)).order("date"),
   ]);
   // lessons: every week; lessons_alt["1"|"2"]: odd/even ISO weeks (optional alternating timetable)
   const byDay: Record<string, number[]> = {};
@@ -91,11 +114,11 @@ async function setup(fam: any) {
     const target = l.week_parity ? alt[String(l.week_parity)] : byDay;
     (target[l.weekday] ??= []).push(l.subject_id);
   }
-  const today = localParts(fam.tz).date;
   const end = new Date(Date.now() + 120 * 86400_000).toISOString().slice(0, 10);
   return {
     child_id: childId, subjects: subjects ?? [], lessons: byDay, lessons_alt: alt, items: items ?? [], days_off: (off ?? []).map((o: any) => o.date),
     holidays: fam.auto_holidays === false ? [] : holidaysBetween(fam.country ?? "KZ", today, end),
+    overrides: (ovs ?? []).map((o: any) => ({ date: o.date, subject_ids: (o.subject_ids ?? []).map(Number), note: o.note ?? null })),
   };
 }
 
@@ -262,15 +285,18 @@ async function tickChild(fam: any): Promise<number> {
       }
       if (!slot) return 0;
       const names = left.map((t) => t.title).join(", ");
+      // quiet hours: the child's phone stays silent; deadline alerts still reach the parents
+      const quiet = inQuiet(now.hm, fam.quiet_from, fam.quiet_to);
+      const kidPush = (title: string, text: string) => (quiet ? Promise.resolve(0) : notifyChild(fam.id, fam.child_id, title, text));
       const list = tasks.filter((t) => t.required).map((t) => `${isDone(t) ? "✅" : "⬜"} ${esc(t.emoji)} ${esc(t.title)}`).join("\n");
       if (slot.kind === "soft") {
-        await notifyChild(fam.id, fam.child_id, "📚 Пора за уроки", `Осталось: ${names}`);
+        await kidPush("📚 Пора за уроки", `Осталось: ${names}`);
       } else if (slot.kind === "deadline") {
-        await notifyChild(fam.id, fam.child_id, `⏰ ${fam.soft_deadline} — срок вышел`, `Не сделано: ${names}`);
+        await kidPush(`⏰ ${fam.soft_deadline} — срок вышел`, `Не сделано: ${names}`);
         await notifyParents(fam.id, { title: `⏰ ${fam.soft_deadline}: не всё готово`, body: `Осталось: ${names}` },
           { html: `🚨 <b>${fam.soft_deadline} — ${esc(fam.child_name)}: не всё готово на ${esc(fmtShort(S))}</b>\n\n${list}\n\nПоследний срок — ${fam.hard_deadline}.` });
       } else {
-        await notifyChild(fam.id, fam.child_id, `🔴 ${fam.hard_deadline} — последний срок`, `Не сделано: ${names}`);
+        await kidPush(`🔴 ${fam.hard_deadline} — последний срок`, `Не сделано: ${names}`);
         await notifyParents(fam.id, { title: `🔴 ${fam.hard_deadline}: последний срок`, body: `Не сделано: ${names}` },
           { html: `🔴 <b>${fam.hard_deadline} — ${esc(fam.child_name)}: последний срок, не готово:</b>\n\n${list}` });
       }
@@ -303,6 +329,11 @@ async function route(req: Request, path: string): Promise<Response> {
 
   if (seg[0] === "legal" && M === "GET" && (seg[1] === "terms" || seg[1] === "privacy" || seg[1] === "delete")) {
     return legalPage(seg[1], new URL(req.url).searchParams.get("lang") ?? langOf(req));
+  }
+  // invite link / QR code: a static page, the code is not looked up
+  if (seg[0] === "i" && seg.length === 2 && M === "GET") {
+    const u = new URL(req.url);
+    return invitePage(seg[1], inviteLang(u.searchParams.get("lang"), req.headers.get("accept-language")), req.headers.get("user-agent"));
   }
   if (path === "/tg" && M === "POST") {
     if (!safeEq(req.headers.get("x-telegram-bot-api-secret-token"), await secret("app_tg_secret"))) return new Response("forbidden", { status: 403 });
@@ -371,12 +402,15 @@ async function route(req: Request, path: string): Promise<Response> {
       await limit("join-fail", 300, 900, true);
       throw new HttpError(404, "Код не найден или устарел");
     }
+    // a viewer invite stops working once the family turns viewers off
+    if (inv.role === "viewer" && !(await getFamily(inv.family_id)).allow_viewers) throw new HttpError(404, "Код не найден или устарел");
     const childId = inv.role === "child" ? inv.child_id ?? (await children(inv.family_id))[0]?.id ?? null : null;
     return json({ ...(await newDevice(inv.family_id, inv.role, clean(b.name, 30), childId)), role: inv.role });
   }
 
   const d = await auth(req);
   const famId = d.family_id;
+  if (d.role === "viewer" && !viewerAllowed(M, path, seg)) throw new HttpError(403, "Только для родителя");
 
   // always available, even without a subscription: who am I, paywall refresh, leaving, deleting everything
   if (path === "/me" && M === "GET") return json(await me(d));
@@ -400,9 +434,9 @@ async function route(req: Request, path: string): Promise<Response> {
   // or the owner's free access. Setting the family up (schedule, lists, invites, settings) is always possible,
   // so a new family can finish onboarding and then start the store trial.
   const fam0 = await getFamily(famId);
-  const daily = seg[0] === "child" || seg[0] === "parent";
+  const daily = seg[0] === "child" || seg[0] === "parent" || seg[0] === "tasks";
   if (daily && !accessOf(fam0, await billingOn()).active) {
-    throw new HttpError(402, d.role === "parent" ? "Подписка закончилась" : "Попроси родителя продлить подписку");
+    throw new HttpError(402, d.role !== "child" ? "Подписка закончилась" : "Попроси родителя продлить подписку");
   }
 
   // which child a request is about: the child's own device, or ?child=<id> from a parent (default: first child)
@@ -410,6 +444,19 @@ async function route(req: Request, path: string): Promise<Response> {
   const kid = await kidOf(fam0, d.role === "child" ? d.child_id : qChild, M !== "GET");
 
   if (path === "/setup" && M === "GET") return json(await setup(kid));
+
+  // per-task chat between the child and the parents (viewers read only)
+  if (seg[0] === "tasks" && seg[2] === "messages" && seg.length === 3) {
+    const taskId = Number(seg[1]);
+    if (M === "GET") return json(await listMessages(fam0, taskId, d));
+    if (M === "POST") {
+      if (d.role === "viewer") throw new HttpError(403, "Только для родителя");
+      await limit(`msg:${d.id}`, 60, 3600);
+      const b = await body(req);
+      const text = typeof b.body === "string" ? b.body.trim() : "";
+      return json(await postMessage(fam0, taskId, { id: d.id, child_id: d.child_id, role: d.role, name: d.name }, text));
+    }
+  }
 
   // --- child ---
   if (seg[0] === "child") {
@@ -434,6 +481,15 @@ async function route(req: Request, path: string): Promise<Response> {
       }
       return json({ ok: true });
     }
+    // raw audio body, task id in the query: POST /child/voice?task_id=…
+    if (path === "/child/voice" && M === "POST") {
+      const ct = (req.headers.get("content-type") ?? "").split(";")[0].trim().toLowerCase();
+      if (!["audio/mp4", "audio/m4a", "audio/x-m4a", "audio/aac", "audio/mpeg"].includes(ct)) throw new HttpError(415, "Это не аудиозапись");
+      if (Number(req.headers.get("content-length") ?? 0) > MAX_VOICE) throw new HttpError(413, "Запись слишком большая");
+      await limit(`voice:${famId}`, 60, 86400);
+      await uploadVoice(fam, Number(new URL(req.url).searchParams.get("task_id")), new Uint8Array(await req.arrayBuffer()));
+      return json({ ok: true });
+    }
     const b = await body(req);
     if (path === "/child/skip" && M === "POST") {
       await requestSkip(fam, Number(b.task_id), clean(b.reason, 120) || "Не задали");
@@ -456,6 +512,18 @@ async function route(req: Request, path: string): Promise<Response> {
     await db.from("app_devices").update({ push_token: clean(b.token, 200) || null }).eq("id", d.id);
     return json({ ok: true });
   }
+  // read-only dashboards: parents and viewers
+  if (seg[0] === "parent" && M === "GET") {
+    readerOnly(d);
+    if (path === "/parent/overview") return json(await overview(kid));
+    if (path === "/parent/report") return json(await weeklyReport(kid, Number(new URL(req.url).searchParams.get("days")) || 7));
+    if (path === "/parent/calendar") {
+      const month = new URL(req.url).searchParams.get("month") ?? localParts(kid.tz).date.slice(0, 7);
+      if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) throw new HttpError(400, "Неверный месяц");
+      return json(await monthCalendar(kid, month));
+    }
+  }
+
   parentOnly(d);
   const fam = fam0;
 
@@ -484,15 +552,15 @@ async function route(req: Request, path: string): Promise<Response> {
     if (list.length <= 1) throw new HttpError(409, "В семье должен остаться хотя бы один ученик");
     const id = Number(seg[1]);
     if (!list.some((c) => c.id === id)) throw new HttpError(404, "Ученик не найден");
-    // photos of this child's tasks go too
+    // photos and voice notes of this child's tasks go too
     const { data: ph } = await db.from("app_photos").select("path, app_tasks!inner(child_id)").eq("app_tasks.child_id", id);
-    const paths = (ph ?? []).map((r: any) => r.path);
+    const { data: vs } = await db.from("app_tasks").select("voice_path").eq("family_id", famId).eq("child_id", id).not("voice_path", "is", null);
+    const paths = [...(ph ?? []).map((r: any) => r.path), ...(vs ?? []).map((r: any) => r.voice_path)];
     for (let i = 0; i < paths.length; i += 100) await db.storage.from("app-photos").remove(paths.slice(i, i + 100));
     await db.from("app_children").delete().eq("id", id).eq("family_id", famId);
     return json({ ok: true });
   }
 
-  if (path === "/parent/overview" && M === "GET") return json(await overview(kid));
   if (path === "/parent/task" && M === "POST") {
     const b = await body(req);
     const comment = typeof b.comment === "string" ? clean(b.comment, 300) : undefined;
@@ -503,7 +571,6 @@ async function route(req: Request, path: string): Promise<Response> {
     await setNote(fam, Number(b.task_id), clean(b.note, 300), false);
     return json({ ok: true });
   }
-  if (path === "/parent/report" && M === "GET") return json(await weeklyReport(kid, Number(new URL(req.url).searchParams.get("days")) || 7));
   if (path === "/parent/nudge" && M === "POST") {
     const { S } = await activeDay(kid);
     const left = (await loadTasks(kid, S)).filter((t) => t.required && !isDone(t));
@@ -531,7 +598,19 @@ async function route(req: Request, path: string): Promise<Response> {
     if (typeof b.reward_text === "string") patch.reward_text = clean(b.reward_text, 80) || null;
     if (typeof b.track_time === "boolean") patch.track_time = b.track_time;
     if (typeof b.auto_holidays === "boolean") patch.auto_holidays = b.auto_holidays;
+    // quiet hours: both times or neither (null clears); the window may cross midnight
+    if (b.quiet_from !== undefined || b.quiet_to !== undefined) {
+      if (b.quiet_from === null && b.quiet_to === null) Object.assign(patch, { quiet_from: null, quiet_to: null });
+      else if (HM.test(b.quiet_from) && HM.test(b.quiet_to) && b.quiet_from !== b.quiet_to) Object.assign(patch, { quiet_from: b.quiet_from, quiet_to: b.quiet_to });
+      else throw new HttpError(400, "Тихие часы: укажите начало и конец в формате ЧЧ:ММ");
+    }
+    if (typeof b.allow_viewers === "boolean") patch.allow_viewers = b.allow_viewers;
     if (Object.keys(patch).length) await db.from("app_families").update(patch).eq("id", famId);
+    // turning viewers off disconnects every viewer phone and voids unused viewer codes
+    if (patch.allow_viewers === false) {
+      await db.from("app_devices").delete().eq("family_id", famId).eq("role", "viewer");
+      await db.from("app_invites").delete().eq("family_id", famId).eq("role", "viewer");
+    }
     if (patch.child_name) {
       const first = (await children(famId))[0];
       if (first) await db.from("app_children").update({ name: patch.child_name }).eq("id", first.id);
@@ -593,6 +672,17 @@ async function route(req: Request, path: string): Promise<Response> {
       if (x.weekdays !== undefined) { const w = weekdays(x.weekdays); o.weekdays = w && w.length ? w : null; }
       if (x.pos !== undefined) o.pos = Number(x.pos) || 0;
       if (x.child_id !== undefined) o.child_id = x.child_id ? Number(x.child_id) : null;
+      // 'school' (homework, packing the bag) or 'home' (chores); optional expected minutes
+      if (x.category !== undefined) {
+        if (x.category !== "school" && x.category !== "home") throw new HttpError(400, "Неизвестная категория");
+        o.category = x.category;
+      }
+      if (x.duration_min !== undefined) {
+        const n = Number(x.duration_min);
+        if (x.duration_min === null) o.duration_min = null;
+        else if (Number.isInteger(n) && n >= 1 && n <= 240) o.duration_min = n;
+        else throw new HttpError(400, "Длительность: от 1 до 240 минут");
+      }
       return o;
     };
     if (M === "POST" && seg.length === 1) {
@@ -611,7 +701,8 @@ async function route(req: Request, path: string): Promise<Response> {
     }
     if (M === "DELETE") {
       await db.from("app_items").delete().eq("id", id).eq("family_id", famId);
-      await db.from("app_tasks").delete().eq("family_id", famId).eq("kind", "item").eq("ref_id", id).eq("status", "todo");
+      // open tasks of the item go too, unless the child recorded a voice note for them
+      await db.from("app_tasks").delete().eq("family_id", famId).eq("kind", "item").eq("ref_id", id).eq("status", "todo").is("voice_path", null);
       return json({ ok: true });
     }
   }
@@ -624,17 +715,34 @@ async function route(req: Request, path: string): Promise<Response> {
     } else await db.from("app_days_off").delete().eq("family_id", famId).eq("date", b.date);
     return json({ ok: true });
   }
+  // one-day lesson override: PUT /overrides/2026-10-21 {child_id?, subject_ids:[…], note?}; DELETE /overrides/2026-10-21?child=…
+  if (seg[0] === "overrides" && seg.length === 2 && (M === "PUT" || M === "DELETE")) {
+    if (!validDate(seg[1])) throw new HttpError(400, "Неверная дата");
+    if (M === "DELETE") {
+      await clearOverride(kid, seg[1]);
+      return json({ ok: true });
+    }
+    const b = await body(req);
+    if (!Array.isArray(b.subject_ids)) throw new HttpError(400, "Нужен список предметов");
+    const ids: number[] = [...new Set<number>(b.subject_ids.map(Number))];
+    if (ids.some((i) => !Number.isInteger(i) || i <= 0)) throw new HttpError(404, "Предмет не найден");
+    const target = await kidOf(fam0, Number(b.child_id) || qChild);
+    return json(await setOverride(target, seg[1], ids, typeof b.note === "string" ? clean(b.note, 120) || null : null));
+  }
   if (path === "/invite" && M === "POST") {
     await limit(`inv:${famId}`, 30, 3600);
     const b = await body(req);
-    const role = b.role === "parent" ? "parent" : "child";
+    const role = b.role === "parent" ? "parent" : b.role === "viewer" ? "viewer" : "child";
+    if (role === "viewer" && !fam.allow_viewers) throw new HttpError(403, "Сначала разрешите репетиторов в настройках семьи");
     const code = randomCode(6);
     const expires_at = new Date(Date.now() + 48 * 3600 * 1000).toISOString();
     await db.from("app_invites").delete().lt("expires_at", new Date().toISOString());
     const childId = role === "child" ? (await kidOf(fam0, Number(b.child_id) || null)).child_id : null;
     const { error } = await db.from("app_invites").insert({ code, family_id: famId, role, expires_at, child_id: childId });
     if (error) throw new HttpError(500, error.message);
-    return json({ code, role, expires_at });
+    // the link opens the public /i/<code> page (also encoded in the QR code)
+    const base = await secret("app_fn_url");
+    return json({ code, role, expires_at, url: base ? `${base}/i/${code}` : null });
   }
   if (seg[0] === "members" && M === "DELETE" && seg[1]) {
     await keepLastParent(famId, seg[1]);

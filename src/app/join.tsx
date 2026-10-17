@@ -3,16 +3,17 @@ import { Redirect, router } from 'expo-router';
 import { useRef, useState } from 'react';
 import { Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
-import Animated, { useAnimatedStyle, useSharedValue, withSequence, withTiming } from 'react-native-reanimated';
+import Animated, { useAnimatedStyle, useReducedMotion, useSharedValue, withSequence, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Btn, Field, haptic, IconBtn, Txt } from '@/components/ui';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { tn, useT } from '@/lib/i18n';
-import { font, radius, usePalette } from '@/lib/theme';
+import { radius, space, usePalette } from '@/lib/theme';
 
 const LEN = 6;
+const MONO = Platform.select({ ios: 'Menlo', default: 'monospace' });
 const MAX_W = 560;
 const SLOTS = Array.from({ length: LEN }, (_, i) => i);
 const normalize = (v: string) =>
@@ -34,6 +35,7 @@ export default function Join() {
   const [focused, setFocused] = useState(false);
   const input = useRef<TextInput>(null);
   const shake = useSharedValue(0);
+  const reduce = useReducedMotion();
   const shakeStyle = useAnimatedStyle(() => ({ transform: [{ translateX: shake.get() }] }));
   // Already signed in (e.g. reached via back navigation): go home instead of joining again.
   if (session && !joined) return <Redirect href={session.role === 'child' ? '/child' : '/parent'} />;
@@ -54,15 +56,17 @@ export default function Join() {
     } catch (e) {
       setError((e as Error).message);
       haptic.warn();
-      shake.set(
-        withSequence(
-        withTiming(-10, { duration: 50 }),
-        withTiming(10, { duration: 70 }),
-        withTiming(-6, { duration: 60 }),
-        withTiming(6, { duration: 60 }),
-        withTiming(0, { duration: 50 }),
-        ),
-      );
+      // a head-shake says "wrong" without words; Reduce Motion keeps the red boxes and the message only
+      if (!reduce)
+        shake.set(
+          withSequence(
+            withTiming(-10, { duration: 50 }),
+            withTiming(10, { duration: 70 }),
+            withTiming(-6, { duration: 60 }),
+            withTiming(6, { duration: 60 }),
+            withTiming(0, { duration: 50 }),
+          ),
+        );
     } finally {
       setBusy(false);
     }
@@ -72,7 +76,7 @@ export default function Join() {
     if (error) return p.bad;
     if (focused && (i === clean.length || (complete && i === LEN - 1))) return p.brand;
     if (complete) return p.ok;
-    return i < clean.length ? p.ink2 : p.line;
+    return i < clean.length ? p.ink2 : p.border;
   };
 
   return (
@@ -87,8 +91,8 @@ export default function Join() {
             {t('onboarding.join.hint')}
           </Txt>
 
-          <Txt v="caps" color={p.muted} style={{ marginTop: 28, marginBottom: 10 }}>
-            {t('onboarding.join.codeLabel').toLocaleUpperCase()}
+          <Txt v="sub" color={p.ink2} style={{ marginTop: space.l, marginBottom: space.xs, fontWeight: '600' }}>
+            {t('onboarding.join.codeLabel')}
           </Txt>
           <Animated.View style={shakeStyle}>
             <Pressable onPress={() => input.current?.focus()} accessible={false} style={styles.boxes}>
@@ -102,11 +106,12 @@ export default function Join() {
                       {
                         borderColor: borderFor(i),
                         backgroundColor: error ? p.badSoft : complete ? p.okSoft : p.card,
+                        borderWidth: focused && (i === clean.length || (complete && i === LEN - 1)) ? 2 : 1.5,
                         marginRight: i === 2 ? 10 : 0, // visual split 3 + 3
                       },
                     ]}
                   >
-                    <Txt v="largeTitle" color={error ? p.bad : p.ink} style={styles.char}>
+                    <Txt v="largeTitle" color={error ? p.bad : p.ink} style={[styles.char, { fontFamily: MONO }]}>
                       {ch ?? ''}
                     </Txt>
                   </View>
@@ -175,8 +180,8 @@ export default function Join() {
 const styles = StyleSheet.create({
   column: { width: '100%', maxWidth: MAX_W, alignSelf: 'center' },
   boxes: { flexDirection: 'row', gap: 8, justifyContent: 'center' },
-  box: { flex: 1, maxWidth: 64, aspectRatio: 0.82, borderRadius: radius.m, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
-  char: { fontFamily: font.black, fontSize: 30, lineHeight: 36, fontVariant: ['tabular-nums'], textAlign: 'center' },
+  box: { flex: 1, maxWidth: 60, aspectRatio: 0.8, borderRadius: radius.s + 2, alignItems: 'center', justifyContent: 'center' },
+  char: { fontSize: 28, lineHeight: 34, fontWeight: '700', letterSpacing: 0, textAlign: 'center' },
   hidden: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, opacity: 0.015, color: 'transparent', fontSize: 1 },
   status: { flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 24, marginTop: 12, marginBottom: 14 },
 });

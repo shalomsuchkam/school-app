@@ -4,9 +4,9 @@ import Animated, { FadeInDown, LinearTransition, useReducedMotion } from 'react-
 
 import type { ParentAction, Task } from '@/lib/api';
 import { t as tr, tn, useT } from '@/lib/i18n';
-import { radius, usePalette } from '@/lib/theme';
+import { radius, space, usePalette } from '@/lib/theme';
 
-import { Btn, Icon, type IconName, Txt } from './ui';
+import { Badge, Btn, Icon, type IconName, PressableScale, Txt } from './ui';
 
 // Status at a glance: the colour of the left bar and the chip tells the story before any reading.
 // todo = neutral, wait = waiting for the parent (amber), ok = done/accepted (green), bad = redo/declined/overdue (red).
@@ -34,24 +34,23 @@ function statusFor(t: Task, viewer: 'child' | 'parent', overdue: boolean): [Tone
 function useTone(tone: Tone) {
   const p = usePalette();
   return {
-    todo: { fg: p.muted, bg: p.fill, bar: p.line, mark: 'ellipse-outline' as IconName, word: tr('child.tone.todo') },
-    wait: { fg: p.warn, bg: p.warnSoft, bar: p.warn, mark: 'hourglass-outline' as IconName, word: tr('child.tone.wait') },
-    ok: { fg: p.ok, bg: p.okSoft, bar: p.ok, mark: 'checkmark-circle' as IconName, word: tr('child.tone.ok') },
-    bad: { fg: p.bad, bg: p.badSoft, bar: p.bad, mark: 'alert-circle' as IconName, word: tr('child.tone.bad') },
+    todo: { fg: p.muted, bg: p.fill, badge: 'neutral' as const, mark: null, word: tr('child.tone.todo') },
+    wait: { fg: p.warn, bg: p.warnSoft, badge: 'warn' as const, mark: 'hourglass' as IconName, word: tr('child.tone.wait') },
+    ok: { fg: p.okFill, bg: p.okSoft, badge: 'ok' as const, mark: 'checkmark' as IconName, word: tr('child.tone.ok') },
+    bad: { fg: p.badFill, bg: p.badSoft, badge: 'bad' as const, mark: 'alert' as IconName, word: tr('child.tone.bad') },
   }[tone];
 }
 
+// A page on the paper. Problems get a red-pen edge; finished work quietly steps back.
 function Shell({ tone, children }: { tone: Tone; children: React.ReactNode }) {
   const p = usePalette();
   const reduce = useReducedMotion();
-  const c = useTone(tone);
   return (
     <Animated.View
       entering={reduce ? undefined : FadeInDown.duration(220)}
       layout={reduce ? undefined : LinearTransition.springify().damping(20)}
-      style={[styles.card, { backgroundColor: p.card, shadowColor: p.shadow }, tone !== 'todo' && { borderColor: c.bg, borderWidth: 1 }]}
+      style={[styles.card, { backgroundColor: p.card, borderColor: tone === 'bad' ? p.bad : p.line, borderWidth: tone === 'bad' ? 1 : StyleSheet.hairlineWidth }]}
     >
-      <View style={[styles.accent, { backgroundColor: c.bar }]} />
       {children}
     </Animated.View>
   );
@@ -66,17 +65,18 @@ function Head({ t, tone, text, right }: { t: Task; tone: Tone; text: string; rig
       <View accessible accessibilityLabel={`${t.emoji} ${t.label}. ${c.word}: ${text}`} style={styles.headText}>
         <View style={[styles.emo, { backgroundColor: tone === 'todo' ? p.fill : c.bg }]}>
           <Text style={{ fontSize: 22 }}>{t.emoji}</Text>
+          {/* state at a glance, even before reading: a small seal on the subject tile */}
+          {c.mark ? (
+            <View style={[styles.seal, { backgroundColor: c.fg, borderColor: p.card }]}>
+              <Icon name={c.mark} size={11} color="#fff" />
+            </View>
+          ) : null}
         </View>
-        <View style={{ flex: 1, minWidth: 0 }}>
-          <Txt v="headline" numberOfLines={2} style={tone === 'ok' ? { color: p.ink2 } : undefined}>
+        <View style={{ flex: 1, minWidth: 0, gap: 4 }}>
+          <Txt v="headline" numberOfLines={2} color={tone === 'ok' ? p.ink2 : p.ink}>
             {t.label}
           </Txt>
-          <View style={[styles.chip, { backgroundColor: c.bg }]}>
-            <Icon name={c.mark} size={14} color={c.fg} style={{ marginTop: 2 }} />
-            <Txt v="sub" color={c.fg} numberOfLines={2} style={{ flexShrink: 1 }}>
-              {text}
-            </Txt>
-          </View>
+          <Badge label={text} tone={c.badge} />
         </View>
       </View>
       {right}
@@ -126,9 +126,12 @@ function Notes({ t, onNote }: { t: Task; onNote?: (t: Task) => void }) {
     <View style={styles.notes}>
       {comment ? (
         <View accessible accessibilityLabel={`${tr('child.comment.label')}: ${comment}`} style={[styles.comment, { backgroundColor: p.warnSoft, borderColor: p.warn }]}>
-          <Txt v="caps" color={p.ink2} style={{ textTransform: 'uppercase' }} numberOfLines={1}>
-            💬 {tt('child.comment.label')}
-          </Txt>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <Icon name="chatbubble-ellipses" size={14} color={p.warn} />
+            <Txt v="sub" color={p.warn} style={{ fontWeight: '600' }} numberOfLines={1}>
+              {tt('child.comment.label')}
+            </Txt>
+          </View>
           <Txt v="callout" style={{ marginTop: 2 }}>
             {comment}
           </Txt>
@@ -155,12 +158,21 @@ function Notes({ t, onNote }: { t: Task; onNote?: (t: Task) => void }) {
   );
 }
 
+// Big round tick: an obvious, thumb-sized target with a clear filled / empty state.
 function Check({ on, label, onPress }: { on: boolean; label: string; onPress: () => void }) {
   const p = usePalette();
   return (
-    <Pressable onPress={onPress} hitSlop={10} accessibilityRole="checkbox" accessibilityState={{ checked: on }} accessibilityLabel={label} style={({ pressed }) => [styles.check, { borderColor: on ? p.ok : p.line, backgroundColor: on ? p.ok : 'transparent', transform: [{ scale: pressed ? 0.9 : 1 }] }]}>
-      {on ? <Icon name="checkmark" size={20} color="#fff" /> : null}
-    </Pressable>
+    <PressableScale
+      onPress={onPress}
+      hitSlop={10}
+      scaleTo={0.88}
+      accessibilityRole="checkbox"
+      accessibilityState={{ checked: on }}
+      accessibilityLabel={label}
+      style={[styles.check, { borderColor: on ? p.okFill : p.border, backgroundColor: on ? p.okFill : 'transparent' }]}
+    >
+      {on ? <Icon name="checkmark" size={22} color="#fff" /> : null}
+    </PressableScale>
   );
 }
 
@@ -282,18 +294,17 @@ export function ParentTaskCard({
 }
 
 const styles = StyleSheet.create({
-  card: { borderRadius: radius.l, padding: 14, paddingLeft: 20, marginBottom: 10, overflow: 'hidden', shadowOpacity: 0.06, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 1 },
-  accent: { position: 'absolute', left: 0, top: 0, bottom: 0, width: 6 },
-  head: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  headText: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12, minWidth: 0 },
-  chip: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'flex-start', gap: 5, maxWidth: '100%', borderRadius: 999, paddingHorizontal: 9, paddingVertical: 3, marginTop: 5 },
-  emo: { width: 46, height: 46, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
-  thumbs: { flexDirection: 'row', gap: 8, marginTop: 12, flexWrap: 'wrap' },
-  thumb: { width: 96, height: 96, borderRadius: 14, borderWidth: 1 },
-  time: { position: 'absolute', left: 6, bottom: 6, backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 8, paddingHorizontal: 6, paddingVertical: 1 },
-  btns: { flexDirection: 'row', gap: 8, marginTop: 12, flexWrap: 'wrap' },
-  notes: { gap: 8, marginTop: 10 },
-  comment: { borderRadius: radius.m, borderLeftWidth: 3, paddingHorizontal: 12, paddingVertical: 8 },
-  note: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, borderRadius: radius.m, borderWidth: 1, borderStyle: 'dashed', paddingHorizontal: 12, paddingVertical: 8, minHeight: 40 },
-  check: { width: 34, height: 34, borderRadius: 17, borderWidth: 2.5, alignItems: 'center', justifyContent: 'center' },
+  card: { borderRadius: radius.l, padding: 14, marginBottom: space.xs, overflow: 'hidden' },
+  head: { flexDirection: 'row', alignItems: 'center', gap: space.s },
+  headText: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: space.s, minWidth: 0 },
+  emo: { width: 46, height: 46, borderRadius: radius.m, alignItems: 'center', justifyContent: 'center' },
+  seal: { position: 'absolute', right: -4, bottom: -4, width: 20, height: 20, borderRadius: 10, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
+  thumbs: { flexDirection: 'row', gap: space.xs, marginTop: space.s, flexWrap: 'wrap' },
+  thumb: { width: 96, height: 96, borderRadius: radius.m, borderWidth: StyleSheet.hairlineWidth },
+  time: { position: 'absolute', left: 6, bottom: 6, backgroundColor: 'rgba(20,18,14,0.62)', borderRadius: radius.xs, paddingHorizontal: 6, paddingVertical: 1 },
+  btns: { flexDirection: 'row', gap: space.xs, marginTop: space.s, flexWrap: 'wrap' },
+  notes: { gap: space.xs, marginTop: space.s },
+  comment: { borderRadius: radius.s, borderLeftWidth: 3, paddingHorizontal: space.s, paddingVertical: space.xs },
+  note: { flexDirection: 'row', alignItems: 'flex-start', gap: space.xs, borderRadius: radius.s, borderWidth: 1, borderStyle: 'dashed', paddingHorizontal: space.s, paddingVertical: space.xs, minHeight: 40 },
+  check: { width: 40, height: 40, borderRadius: 20, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
 });

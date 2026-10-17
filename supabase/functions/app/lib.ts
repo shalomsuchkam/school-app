@@ -52,6 +52,19 @@ export function imageType(b: Uint8Array): string | null {
   if (b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46 && b[8] === 0x57 && b[9] === 0x45) return "image/webp";
   return null;
 }
+// Same idea for the child's voice notes: MP4/M4A ('ftyp' box at offset 4), raw AAC (ADTS sync 0xFFF, layer 00),
+// MP3 (ID3 tag or an MPEG audio frame sync 0xFFE). Image formats in an ftyp box (HEIC/AVIF) are not audio.
+const IMAGE_BRANDS = new Set(["heic", "heix", "hevc", "heim", "heis", "mif1", "msf1", "avif", "avis"]);
+export function audioType(b: Uint8Array): string | null {
+  if (b.length >= 12 && b[4] === 0x66 && b[5] === 0x74 && b[6] === 0x79 && b[7] === 0x70) {
+    return IMAGE_BRANDS.has(String.fromCharCode(b[8], b[9], b[10], b[11])) ? null : "audio/mp4";
+  }
+  if (b.length < 3) return null;
+  if (b[0] === 0x49 && b[1] === 0x44 && b[2] === 0x33) return "audio/mpeg";
+  if (b[0] === 0xff && (b[1] & 0xf6) === 0xf0) return "audio/aac";
+  if (b[0] === 0xff && (b[1] & 0xe0) === 0xe0 && (b[1] & 0x06) !== 0) return "audio/mpeg";
+  return null;
+}
 
 // ---------- crypto / codes ----------
 export async function sha256(s: string) {
@@ -105,3 +118,9 @@ export const fmtShort = (iso: string) => `${WDS[dow(iso) - 1]}, ${+iso.slice(8)}
 export const fmtLong = (iso: string) => `${WDL[dow(iso) - 1]}, ${+iso.slice(8)} ${MON[+iso.slice(5, 7) - 1]}`;
 export const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 export const HM = /^([01]\d|2[0-3]):[0-5]\d$/;
+// Quiet hours [from, to): the window may cross midnight (22:00–07:00). Unset or empty windows are never quiet.
+export function inQuiet(hm: string, from?: string | null, to?: string | null) {
+  if (!from || !to || !HM.test(from) || !HM.test(to) || from === to) return false;
+  const n = toMin(hm), a = toMin(from), b = toMin(to);
+  return a < b ? n >= a && n < b : n >= a || n < b;
+}

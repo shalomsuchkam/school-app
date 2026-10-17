@@ -5,7 +5,7 @@ import { Alert, Linking, Modal, Pressable, StyleSheet, View } from 'react-native
 import { InviteSheet } from '@/components/InviteSheet';
 import { Paywall } from '@/components/Paywall';
 import { PhoneLimitGuide } from '@/components/PhoneLimitGuide';
-import { Btn, Chip, Field, Group, Icon, Loading, Row, Screen, SectionLabel, Sheet, TimeStepper, ToggleRow, Txt, useToast, WeekdayPicker } from '@/components/ui';
+import { Btn, Chip, Field, Group, Icon, Loading, Row, Screen, SectionLabel, Segmented, Sheet, TimeStepper, ToggleRow, Txt, useToast, WeekdayPicker } from '@/components/ui';
 import { billingAvailable, openManage } from '@/lib/billing';
 import { api, ApiError, legalUrl, type Child, type Me, type Role } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
@@ -247,7 +247,7 @@ export default function Settings() {
           {kids.map((c) => (
             <Row
               key={c.id}
-              icon="🎓"
+              icon="person" tint="blue"
               title={c.name}
               subtitle={kids.length > 1 ? t('parent.settings.renameSub') : t('parent.settings.nameSub')}
               onPress={() => setChildEdit({ id: c.id, name: c.name })}
@@ -267,46 +267,46 @@ export default function Settings() {
               chevron
             />
           ))}
-          <Row icon="add" title={t('parent.settings.addChild')} chevron onPress={() => setNewChild('')} />
+          <Row icon="add" tint="green" title={t('parent.settings.addChild')} chevron onPress={() => setNewChild('')} />
         </Group>
 
         <SectionLabel>{t('parent.settings.schoolDays')}</SectionLabel>
         <WeekdayPicker value={f.school_weekdays} onChange={(w) => (w.length ? patch({ school_weekdays: w }) : toast.show(t('parent.needSchoolDay')))} />
         <Group style={{ marginTop: 12 }}>
-          <ToggleRow icon="🎉" title={t('parent.settings.holidays')} subtitle={t('parent.settings.holidaysSub')} value={f.auto_holidays} onChange={(v) => patch({ auto_holidays: v })} />
+          <ToggleRow icon="flag" tint="red" title={t('parent.settings.holidays')} subtitle={t('parent.settings.holidaysSub')} value={f.auto_holidays} onChange={(v) => patch({ auto_holidays: v })} />
         </Group>
 
         <SectionLabel>{t('parent.settings.deadlines')}</SectionLabel>
         <Group>
-          <Row icon="⏰" title={t('parent.settings.soft')} subtitle={t('parent.settings.softSub')} right={<TimeStepper value={f.soft_deadline} onChange={setSoft} clamp />} />
-          <Row icon="🌙" title={t('parent.settings.hard')} subtitle={t('parent.settings.hardSub')} right={<TimeStepper value={f.hard_deadline} onChange={setHard} clamp />} />
-          <ToggleRow icon="⏱️" title={t('parent.settings.trackTime')} subtitle={t('parent.settings.trackTimeSub')} value={f.track_time} onChange={(v) => patch({ track_time: v })} />
+          <Row icon="alarm" tint="orange" title={t('parent.settings.soft')} subtitle={t('parent.settings.softSub')} right={<TimeStepper value={f.soft_deadline} onChange={setSoft} clamp />} />
+          <Row icon="moon" tint="violet" title={t('parent.settings.hard')} subtitle={t('parent.settings.hardSub')} right={<TimeStepper value={f.hard_deadline} onChange={setHard} clamp />} />
+          <ToggleRow icon="timer" tint="teal" title={t('parent.settings.trackTime')} subtitle={t('parent.settings.trackTimeSub')} value={f.track_time} onChange={(v) => patch({ track_time: v })} />
         </Group>
 
         <SectionLabel>{t('parent.settings.reward')}</SectionLabel>
         <Group>
-          <ToggleRow icon="🏆" title={t('parent.settings.rewardOn')} subtitle={t('parent.settings.rewardOnSub')} value={rewardOn} onChange={toggleReward} />
+          <ToggleRow icon="trophy" tint="orange" title={t('parent.settings.rewardOn')} subtitle={t('parent.settings.rewardOnSub')} value={rewardOn} onChange={toggleReward} />
           {rewardOn ? (
             <Row
-              icon="🎯"
+              icon="locate" tint="red"
               title={t('parent.settings.rewardGoal')}
               subtitle={tn('parent.settings.rewardGoalSub', f.reward_goal ?? 10)}
               right={<DaysStepper value={f.reward_goal ?? 10} min={1} max={60} onChange={(v) => patch({ reward_goal: v })} />}
             />
           ) : null}
-          {rewardOn ? <Row icon="🎁" title={t('parent.settings.rewardText')} subtitle={f.reward_text || t('parent.settings.rewardTextPh')} chevron onPress={() => setRewardEdit(f.reward_text ?? '')} /> : null}
+          {rewardOn ? <Row icon="gift" tint="violet" title={t('parent.settings.rewardText')} subtitle={f.reward_text || t('parent.settings.rewardTextPh')} chevron onPress={() => setRewardEdit(f.reward_text ?? '')} /> : null}
         </Group>
 
         <SectionLabel>{t('parent.settings.phone')}</SectionLabel>
         <Group>
-          <Row icon="📵" title={t('parent.settings.phoneRow')} subtitle={t('parent.settings.phoneSub')} chevron onPress={() => setGuide(true)} />
+          <Row icon="phone-portrait" tint="gray" title={t('parent.settings.phoneRow')} subtitle={t('parent.settings.phoneSub')} chevron onPress={() => setGuide(true)} />
         </Group>
 
-        <SectionLabel right={<Btn small kind="secondary" title={t('parent.settings.time')} icon="＋" onPress={() => setNewTime('16:00')} />}>{t('parent.settings.reminders')}</SectionLabel>
+        <SectionLabel right={<Btn small kind="ghost" title={t('parent.settings.time')} icon="add" onPress={() => setNewTime('16:00')} />}>{t('parent.settings.reminders')}</SectionLabel>
         <View style={styles.wrap}>
           {f.remind_times.length ? (
             f.remind_times.map((hm) => (
-              <Chip key={hm} label={`${hm}  ✕`} onPress={() => patch({ remind_times: f.remind_times.filter((x) => x !== hm) })} />
+              <Chip key={hm} label={hm} icon="alarm-outline" trailingIcon="close" onPress={() => patch({ remind_times: f.remind_times.filter((x) => x !== hm) })} />
             ))
           ) : (
             <Txt v="callout" color={p.muted} style={{ marginLeft: 6 }}>
@@ -320,13 +320,14 @@ export default function Settings() {
           {[...parents, ...children].map((m) => (
             <Row
               key={m.id}
-              icon={m.role === 'parent' ? '🧑' : '🎒'}
+              icon={m.role === 'parent' ? 'person-circle' : 'school'}
+              tint={m.role === 'parent' ? 'gray' : 'blue'}
               title={`${m.name || (m.role === 'parent' ? t('parent.settings.parent') : t('parent.settings.student'))}${m.me ? t('parent.settings.you') : ''}`}
               subtitle={`${m.role === 'parent' ? t('parent.settings.parent') : t('parent.settings.student')}${m.role === 'child' && kids.length > 1 && kidName(m.child_id) ? ` · ${kidName(m.child_id)}` : ''}${m.telegram ? ' · Telegram' : ''}`}
               right={
                 !m.me ? (
-                  <Pressable hitSlop={8} onPress={() => removeMember(m.id, m.name || t('parent.settings.device'))}>
-                    <Txt v="sub" color={p.bad}>
+                  <Pressable hitSlop={12} accessibilityRole="button" onPress={() => removeMember(m.id, m.name || t('parent.settings.device'))}>
+                    <Txt v="sub" color={p.bad} style={{ fontWeight: '600' }}>
                       {t('parent.settings.disconnect')}
                     </Txt>
                   </Pressable>
@@ -334,33 +335,30 @@ export default function Settings() {
               }
             />
           ))}
-          <Row icon="➕" title={t('parent.settings.inviteChild')} chevron onPress={openInviteChild} />
-          <Row icon="👪" title={t('parent.settings.inviteParent')} chevron onPress={() => setInvite('parent')} />
+          <Row icon="person-add" tint="green" title={t('parent.settings.inviteChild')} chevron onPress={openInviteChild} />
+          <Row icon="people" tint="green" title={t('parent.settings.inviteParent')} chevron onPress={() => setInvite('parent')} />
         </Group>
 
         <SectionLabel>{t('common.language')}</SectionLabel>
-        <View style={styles.wrap}>
-          {LANGS.map((l) => (
-            <Chip key={l.code} label={l.label} selected={getLang() === l.code} onPress={() => changeLang(l.code)} />
-          ))}
-        </View>
+        <Segmented value={getLang()} onChange={changeLang} options={LANGS.map((l) => ({ value: l.code, label: l.label }))} />
         <Txt v="sub" color={p.muted} style={{ marginTop: 8, marginLeft: 6 }}>
           {t('parent.settings.langHint')}
         </Txt>
         <Group style={{ marginTop: 10 }}>
-          <Row icon="🌍" title={t('common.country')} right={<Txt v="callout" color={p.muted}>{countryName}</Txt>} />
+          <Row icon="globe" tint="teal" title={t('common.country')} value={countryName} />
         </Group>
 
         <SectionLabel>{t('parent.settings.notifications')}</SectionLabel>
         <Group>
           {me.telegram.linked ? (
             <Row
-              icon="✈️"
+              icon="paper-plane"
+              tint="blue"
               title={t('parent.settings.tgLinked')}
               subtitle={t('parent.settings.tgLinkedSub')}
               right={
-                <Pressable hitSlop={8} onPress={disconnectTelegram}>
-                  <Txt v="sub" color={p.bad}>
+                <Pressable hitSlop={12} accessibilityRole="button" onPress={disconnectTelegram}>
+                  <Txt v="sub" color={p.bad} style={{ fontWeight: '600' }}>
                     {t('parent.settings.disconnect')}
                   </Txt>
                 </Pressable>
@@ -368,7 +366,8 @@ export default function Settings() {
             />
           ) : (
             <Row
-              icon="✈️"
+              icon="paper-plane"
+              tint="blue"
               title={t('parent.settings.tgGet')}
               subtitle={me.telegram.enabled ? t('parent.settings.tgSub') : t('parent.settings.tgOff')}
               disabled={!me.telegram.enabled || tgBusy}
@@ -376,13 +375,14 @@ export default function Settings() {
               onPress={connectTelegram}
             />
           )}
-          <Row icon="🔔" title={t('parent.settings.push')} subtitle={t('parent.settings.pushSub')} disabled />
+          <Row icon="notifications" tint="red" title={t('parent.settings.push')} subtitle={t('parent.settings.pushSub')} disabled />
         </Group>
 
         <SectionLabel>{t('parent.settings.photos')}</SectionLabel>
         <Group>
           <Row
-            icon="🗂️"
+            icon="images"
+            tint="teal"
             title={t('parent.settings.keepPhotos')}
             subtitle={tn('parent.settings.keepSub', f.photo_retention_days)}
             right={<DaysStepper value={f.photo_retention_days} min={7} max={40} week onChange={(v) => patch({ photo_retention_days: v })} />}
@@ -392,26 +392,27 @@ export default function Settings() {
         <SectionLabel>{t('parent.settings.subscription')}</SectionLabel>
         <Group>
           <Row
-            icon="⭐"
+            icon="star"
+            tint="orange"
             title={subTitle}
             subtitle={t('parent.settings.familyCode', { code: f.code })}
             // store subscriptions are changed or cancelled in the store's own settings
             chevron={!!a.store}
             onPress={a.store ? () => openManage() : undefined}
           />
-          {canSubscribe ? <Row icon="💳" title={t('parent.settings.subscribe')} chevron onPress={() => setPaywall(true)} /> : null}
+          {canSubscribe ? <Row icon="card" tint="green" title={t('parent.settings.subscribe')} chevron onPress={() => setPaywall(true)} /> : null}
         </Group>
 
         <SectionLabel>{t('parent.settings.docs')}</SectionLabel>
         <Group>
-          <Row icon="📄" title={t('parent.settings.terms')} chevron onPress={() => Linking.openURL(legalUrl('terms', getLang()))} />
-          <Row icon="🔒" title={t('parent.settings.privacy')} chevron onPress={() => Linking.openURL(legalUrl('privacy', getLang()))} />
+          <Row icon="document-text" tint="gray" title={t('parent.settings.terms')} chevron onPress={() => Linking.openURL(legalUrl('terms', getLang()))} />
+          <Row icon="lock-closed" tint="gray" title={t('parent.settings.privacy')} chevron onPress={() => Linking.openURL(legalUrl('privacy', getLang()))} />
         </Group>
 
         <SectionLabel>{t('parent.settings.account')}</SectionLabel>
         <Group>
-          <Row icon="🚪" title={t('parent.settings.logoutRow')} danger onPress={logout} />
-          <Row icon="🗑️" title={t('parent.settings.deleteRow')} danger onPress={deleteAll} />
+          <Row icon="log-out-outline" title={t('parent.settings.logoutRow')} danger onPress={logout} />
+          <Row icon="trash-outline" title={t('parent.settings.deleteRow')} danger onPress={deleteAll} />
         </Group>
         <Txt v="sub" color={p.muted} style={{ textAlign: 'center', marginTop: 20 }}>
           {t('parent.settings.version', { v: '1.0' })}
@@ -492,7 +493,7 @@ function DaysStepper({ value, onChange, min, max, week }: { value: number; onCha
     const next = Math.min(max, Math.max(min, v));
     if (next !== value) onChange(next);
   };
-  const btn = (d: number, label: string) => (
+  const btn = (d: number, icon: 'remove' | 'add') => (
     <Pressable
       hitSlop={6}
       onPress={() => set(value + d)}
@@ -502,16 +503,16 @@ function DaysStepper({ value, onChange, min, max, week }: { value: number; onCha
       accessibilityLabel={week ? t(d < 0 ? 'parent.settings.fewerDays' : 'parent.settings.moreDays') : t(d < 0 ? 'parent.settings.fewer' : 'parent.settings.more')}
       style={({ pressed }) => [styles.step, { backgroundColor: p.fill, opacity: (d < 0 && value <= min) || (d > 0 && value >= max) ? 0.4 : 1, transform: [{ scale: pressed ? 0.9 : 1 }] }]}
     >
-      <Txt v="headline">{label}</Txt>
+      <Icon name={icon} size={18} color={p.ink2} />
     </Pressable>
   );
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-      {btn(-1, '−')}
-      <Txt v="headline" style={{ minWidth: 28, textAlign: 'center' }}>
+      {btn(-1, 'remove')}
+      <Txt v="headline" style={{ minWidth: 28, textAlign: 'center', fontVariant: ['tabular-nums'] }}>
         {value}
       </Txt>
-      {btn(1, '+')}
+      {btn(1, 'add')}
     </View>
   );
 }
@@ -519,5 +520,5 @@ function DaysStepper({ value, onChange, min, max, week }: { value: number; onCha
 const styles = StyleSheet.create({
   wrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   trash: { width: 34, height: 34, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
-  step: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
+  step: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
 });

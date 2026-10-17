@@ -1,4 +1,3 @@
-import { Nunito_600SemiBold, Nunito_700Bold, Nunito_800ExtraBold, Nunito_900Black, useFonts } from '@expo-google-fonts/nunito';
 import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
@@ -12,7 +11,7 @@ import { setTooOldHandler } from '@/lib/api';
 import { AuthProvider, useAuth } from '@/lib/auth';
 import { initLang, t, useLang } from '@/lib/i18n';
 import { registerPush } from '@/lib/push';
-import { usePalette } from '@/lib/theme';
+import { palettes, usePalette } from '@/lib/theme';
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
@@ -33,14 +32,14 @@ setTooOldHandler(() => {
 function Root() {
   const { session } = useAuth();
   const p = usePalette();
-  const [fontsLoaded] = useFonts({ Nunito_600SemiBold, Nunito_700Bold, Nunito_800ExtraBold, Nunito_900Black });
   const [langReady, setLangReady] = useState(false);
   useEffect(() => {
     initLang().finally(() => setLangReady(true));
   }, []);
   // the whole tree re-renders in the new language when it is switched in Settings
   const lang = useLang();
-  const ready = fontsLoaded && langReady && session !== undefined;
+  // the platform font (SF / Roboto) needs no loading: the splash only waits for the language and the session
+  const ready = langReady && session !== undefined;
   // Register this phone for server push once signed in (parents are asked for permission here;
   // the child is asked on the home screen together with local reminders).
   useEffect(() => {
@@ -63,13 +62,17 @@ function Root() {
   );
 }
 
+// Navigation chrome (headers, back swipes, modals) in the app's paper / ink palette.
+const LightNav = { ...DefaultTheme, colors: { ...DefaultTheme.colors, primary: palettes.light.brand, background: palettes.light.bg, card: palettes.light.bgElevated, text: palettes.light.ink, border: palettes.light.line } };
+const DarkNav = { ...DarkTheme, colors: { ...DarkTheme.colors, primary: palettes.dark.brand, background: palettes.dark.bg, card: palettes.dark.bgElevated, text: palettes.dark.ink, border: palettes.dark.line } };
+
 export default function RootLayout() {
   const scheme = useColorScheme();
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <KeyboardProvider>
         <SafeAreaProvider>
-          <ThemeProvider value={scheme === 'dark' ? DarkTheme : DefaultTheme}>
+          <ThemeProvider value={scheme === 'dark' ? DarkNav : LightNav}>
             <AuthProvider>
               <StatusBar style="auto" />
               <Root />

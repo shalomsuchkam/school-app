@@ -53,7 +53,7 @@ export function InviteSheet({ role, childId, childName, onClose }: { role: Role 
         {role === 'child' ? t('parent.invite.textChild') : t('parent.invite.textParent')}
       </Txt>
       <View style={[styles.box, { backgroundColor: p.brandSoft }]}>
-        <Txt v="caps" color={p.brand} style={{ textTransform: 'uppercase', marginBottom: 10 }}>
+        <Txt v="sub" color={p.brand} style={{ fontWeight: '600', marginBottom: 10 }}>
           {role === 'child' && childName ? t('parent.invite.codeFor', { name: childName }) : t('common.inviteCode')}
         </Txt>
         {code ? (

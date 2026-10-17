@@ -2,13 +2,13 @@ import { useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { Alert, Pressable, StyleSheet, View } from 'react-native';
 
-import { Btn, Chip, EmojiPicker, Empty, ErrorBanner, Field, Group, Loading, Row, Screen, SectionLabel, Sheet, ToggleRow, Txt, useToast } from '@/components/ui';
+import { Btn, Chip, EmojiPicker, Empty, ErrorBanner, Field, Group, Icon, Loading, Row, Screen, SectionLabel, Segmented, Sheet, ToggleRow, Txt, useToast } from '@/components/ui';
 import { api, type Child, type Family, type Setup, type Subject } from '@/lib/api';
 import { ChildSwitcher, currentChildReady, getCurrentChild, setCurrentChild, useCurrentChild } from '@/lib/currentChild';
 import { localIso, shortDate, wdLong, wdShort } from '@/lib/format';
 import { useT } from '@/lib/i18n';
 import { EMOJIS, SUBJECT_PRESETS } from '@/lib/presets';
-import { usePalette } from '@/lib/theme';
+import { hairline, radius, space, usePalette } from '@/lib/theme';
 
 type Parity = 0 | 1 | 2;
 // ISO week number parity of a date: 1 = odd week, 2 = even week (matches the server's lessons_alt keys)
@@ -229,13 +229,13 @@ export default function Schedule() {
                 onPress={() => setDay(d)}
                 accessibilityRole="button"
                 accessibilityState={{ selected: sel }}
-                style={[styles.day, { backgroundColor: sel ? p.brand : p.card, opacity: school || sel ? 1 : 0.55 }]}
+                style={[styles.day, { backgroundColor: sel ? p.brandFill : school ? p.card : 'transparent', borderColor: sel ? p.brandFill : p.line }]}
               >
                 {/* seven cells share the width: shrink the text instead of wrapping or clipping it */}
-                <Txt v="headline" color={sel ? '#fff' : p.ink} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
+                <Txt v="headline" color={sel ? '#fff' : school ? p.ink : p.muted} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
                   {wdShort(d)}
                 </Txt>
-                <Txt v="sub" color={sel ? 'rgba(255,255,255,0.8)' : p.muted} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
+                <Txt v="sub" color={sel ? 'rgba(255,255,255,0.85)' : p.muted} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7} style={{ fontVariant: ['tabular-nums'] }}>
                   {school ? n || '–' : t('parent.schedule.dayOff')}
                 </Txt>
               </Pressable>
@@ -244,25 +244,11 @@ export default function Schedule() {
         </View>
 
         <Group style={{ marginTop: 14 }}>
-          <ToggleRow icon="🔁" title={t('parent.schedule.alt')} subtitle={t('parent.schedule.altSub')} value={altOn} onChange={toggleAlt} />
+          <ToggleRow icon="repeat" tint="violet" title={t('parent.schedule.alt')} subtitle={t('parent.schedule.altSub')} value={altOn} onChange={toggleAlt} />
         </Group>
         {altOn ? (
           <>
-            <View style={[styles.seg, { backgroundColor: p.fill }]} accessibilityRole="tablist">
-              {([0, 1, 2] as Parity[]).map((w) => (
-                <Pressable
-                  key={w}
-                  onPress={() => setParity(w)}
-                  accessibilityRole="tab"
-                  accessibilityState={{ selected: week === w }}
-                  style={[styles.segItem, week === w && [styles.segOn, { backgroundColor: p.card, shadowColor: p.shadow }]]}
-                >
-                  <Txt v="sub" color={week === w ? p.ink : p.muted} numberOfLines={1} style={{ textAlign: 'center' }}>
-                    {weekLabel(w)}
-                  </Txt>
-                </Pressable>
-              ))}
-            </View>
+            <Segmented value={week} onChange={setParity} options={([0, 1, 2] as Parity[]).map((w) => ({ value: w, label: weekLabel(w) }))} style={{ marginTop: space.s }} />
             <Txt v="sub" color={p.muted} style={{ marginTop: 8, marginHorizontal: 6 }}>
               {t('parent.schedule.altHint')}
             </Txt>
@@ -271,7 +257,7 @@ export default function Schedule() {
 
         <SectionLabel>{altOn ? `${wdLong(day)} · ${weekLabel(week)}` : wdLong(day)}</SectionLabel>
         <Group>
-          <ToggleRow icon="🏫" title={t('parent.schedule.schoolDay')} value={isSchool} onChange={toggleSchoolDay} />
+          <ToggleRow icon="school" tint="blue" title={t('parent.schedule.schoolDay')} value={isSchool} onChange={toggleSchoolDay} />
         </Group>
 
         {isSchool ? (
@@ -298,7 +284,7 @@ export default function Schedule() {
                             accessibilityLabel={t('parent.schedule.upA11y', { name })}
                             accessibilityState={{ disabled: i === 0 }}
                             style={[styles.mini, { backgroundColor: p.fill, opacity: i === 0 ? 0.35 : 1 }]}>
-                            <Txt v="callout">↑</Txt>
+                            <Icon name="chevron-up" size={17} color={p.ink2} />
                           </Pressable>
                           <Pressable
                             hitSlop={6}
@@ -308,7 +294,7 @@ export default function Schedule() {
                             accessibilityLabel={t('parent.schedule.downA11y', { name })}
                             accessibilityState={{ disabled: i === lessons.length - 1 }}
                             style={[styles.mini, { backgroundColor: p.fill, opacity: i === lessons.length - 1 ? 0.35 : 1 }]}>
-                            <Txt v="callout">↓</Txt>
+                            <Icon name="chevron-down" size={17} color={p.ink2} />
                           </Pressable>
                           <Pressable
                             hitSlop={6}
@@ -316,9 +302,7 @@ export default function Schedule() {
                             accessibilityRole="button"
                             accessibilityLabel={t('parent.schedule.removeA11y', { name })}
                             style={[styles.mini, { backgroundColor: p.badSoft }]}>
-                            <Txt v="callout" color={p.bad}>
-                              ✕
-                            </Txt>
+                            <Icon name="close" size={17} color={p.bad} />
                           </Pressable>
                         </View>
                       }
@@ -328,7 +312,7 @@ export default function Schedule() {
               </Group>
             ) : (
               <Group>
-                <Empty icon="📭" title={t('parent.schedule.noLessons')} text={t('parent.schedule.noLessonsText', { add: t('common.add') })}>
+                <Empty icon="book-outline" title={t('parent.schedule.noLessons')} text={t('parent.schedule.noLessonsText', { add: t('common.add') })}>
                   {week && setOf(0, day).length ? (
                     <Btn small kind="secondary" icon="copy-outline" title={t('parent.schedule.copyEvery')} onPress={() => saveLessons(setOf(0, day))} style={{ marginTop: 14 }} />
                   ) : null}
@@ -375,20 +359,20 @@ export default function Schedule() {
         </Txt>
         <View style={styles.wrap}>
           {upcoming.map((d) => (
-            <Chip key={d} label={`${setup.days_off.includes(d) ? '🏖 ' : ''}${shortDate(d)}`} selected={setup.days_off.includes(d)} onPress={() => toggleOff(d)} />
+            <Chip key={d} label={shortDate(d)} icon={setup.days_off.includes(d) ? 'bed-outline' : undefined} selected={setup.days_off.includes(d)} onPress={() => toggleOff(d)} />
           ))}
         </View>
         {setup.holidays?.length ? (
           <>
             <Txt v="sub" color={p.muted} style={{ marginTop: 16, marginBottom: 4, marginLeft: 6 }}>
-              🎉 {t('parent.schedule.holidays')}
+              {t('parent.schedule.holidays')}
             </Txt>
             <Txt v="sub" color={p.muted} style={{ marginBottom: 8, marginLeft: 6 }}>
               {t('parent.schedule.holidaysHint')}
             </Txt>
             <View style={styles.wrap}>
               {setup.holidays.map((d) => (
-                <Chip key={d} label={shortDate(d)} tone="muted" />
+                <Chip key={d} label={shortDate(d)} icon="flag-outline" tone="muted" />
               ))}
             </View>
           </>
@@ -424,7 +408,7 @@ export default function Schedule() {
                     key={s.id}
                     icon={s.emoji}
                     title={s.name}
-                    right={<Txt v="headline" color={p.brand}>＋</Txt>}
+                    right={<Icon name="add-circle" size={24} color={p.brand} />}
                     onPress={() => {
                       saveLessons([...lessons, s.id]);
                       toast.show(t('parent.schedule.added', { name: `${s.emoji} ${s.name}` }));
@@ -444,10 +428,7 @@ export default function Schedule() {
 
 const styles = StyleSheet.create({
   days: { flexDirection: 'row', gap: 6 },
-  day: { flex: 1, borderRadius: 14, paddingVertical: 10, alignItems: 'center' },
-  mini: { width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
-  wrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  seg: { flexDirection: 'row', borderRadius: 12, padding: 3, marginTop: 10 },
-  segItem: { flex: 1, borderRadius: 10, paddingVertical: 8, paddingHorizontal: 4 },
-  segOn: { shadowOpacity: 0.08, shadowRadius: 4, shadowOffset: { width: 0, height: 1 }, elevation: 1 },
+  day: { flex: 1, borderRadius: radius.m, borderWidth: hairline, paddingVertical: 10, alignItems: 'center', minHeight: 56 },
+  mini: { width: 32, height: 32, borderRadius: radius.s, alignItems: 'center', justifyContent: 'center' },
+  wrap: { flexDirection: 'row', flexWrap: 'wrap', gap: space.xs },
 });

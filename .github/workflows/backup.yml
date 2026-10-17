@@ -1,0 +1,79 @@
+name: Nightly backup
+
+# Encrypted nightly dump of the mobile app's tables (public.app_* only — the legacy tables in the same database
+# are never read). Kept as a workflow artifact for 14 days.
+#
+# Repository secrets:
+#   SUPABASE_DB_URL     Postgres connection string, e.g. the Session pooler URL from Supabase → Connect
+#                       (postgresql://postgres.<ref>:<password>@aws-0-<region>.pooler.supabase.com:5432/postgres).
+#                       The direct db.<ref>.supabase.co host is IPv6-only and GitHub runners have no IPv6.
+#   BACKUP_PASSPHRASE   long random passphrase; without it nothing is uploaded (dumps contain children's data).
+#
+# Restore (on any machine with openssl and Postgres 17 client tools, or `docker run -it postgres:17 bash`):
+#   1. Actions → Nightly backup → pick a run → download the "app-backup-<date>" artifact and unzip it.
+#   2. openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -in app-backup.tar.gz.enc -out app-backup.tar.gz
+#      (enter BACKUP_PASSPHRASE), then: tar xzf app-backup.tar.gz   -> app-schema.sql, app-data.sql
+#   3. Empty target database: psql "$TARGET_DB_URL" -v ON_ERROR_STOP=1 -f app-schema.sql
+#      (the app_rate_hit function and the app-tick cron job live in supabase/migrations: run
+#      20261016_security_billing.sql's function part and the cron.schedule from 20261014_app_schema.sql if needed).
+#      Existing database: skip the schema and empty the app_* tables first, e.g.
+#      psql "$TARGET_DB_URL" -c "truncate public.app_families, public.app_secrets, public.app_trial_claims, public.app_rate cascade"
+#   4. psql "$TARGET_DB_URL" -v ON_ERROR_STOP=1 --single-transaction -f app-data.sql
+#      (rows are dumped in foreign-key order; sequences are restored by the setval lines at the end)
+#   Photo and voice files live in Storage (bucket app-photos) and are not part of this dump.
+on:
+  schedule:
+    - cron: '30 21 * * *' # 21:30 UTC = 02:30 in Almaty, after the evening deadlines
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+      BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+    steps:
+      - name: Skip without a database URL
+        if: env.SUPABASE_DB_URL == ''
+        run: echo "::notice title=Backup skipped::Add the SUPABASE_DB_URL repository secret to enable nightly backups."
+      - name: Skip without a passphrase
+        if: env.SUPABASE_DB_URL != '' && env.BACKUP_PASSPHRASE == ''
+        run: echo "::notice title=Backup skipped::Add the BACKUP_PASSPHRASE repository secret; unencrypted backups are never uploaded."
+      - name: Dump app_* tables
+        if: env.SUPABASE_DB_URL != '' && env.BACKUP_PASSPHRASE != ''
+        run: |
+          set -euo pipefail
+          umask 077
+          mkdir -p dump out
+          # official Postgres 17 client (matches the Supabase server major version); the URL goes in via env, not argv
+          dump() {
+            docker run --rm --network host -e DB_URL="$SUPABASE_DB_URL" postgres:17 \
+              sh -c 'exec pg_dump "$DB_URL" --no-owner --no-privileges -t "public.app_*" "$@"' pg_dump "$@"
+          }
+          dump --schema-only > dump/app-schema.sql
+          # app_rate is a short-lived rate-limit counter: schema only
+          dump --data-only --exclude-table-data='public.app_rate' > dump/app-data.sql
+          test -s dump/app-schema.sql && test -s dump/app-data.sql
+          grep -q 'CREATE TABLE public.app_families' dump/app-schema.sql
+          echo "Tables: $(grep -c '^CREATE TABLE' dump/app-schema.sql)"
+          tar czf dump/app-backup.tar.gz -C dump app-schema.sql app-data.sql
+          openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -pass env:BACKUP_PASSPHRASE \
+            -in dump/app-backup.tar.gz -out out/app-backup.tar.gz.enc
+          rm -rf dump
+          echo "DATE=$(date -u +%F)" >> "$GITHUB_ENV"
+          ls -l out
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: env.SUPABASE_DB_URL != '' && env.BACKUP_PASSPHRASE != ''
+        with:
+          name: app-backup-${{ env.DATE }}
+          path: out/app-backup.tar.gz.enc
+          retention-days: 14
+          if-no-files-found: error
