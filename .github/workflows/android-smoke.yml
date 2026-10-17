@@ -1,0 +1,119 @@
+name: Android smoke test
+
+# Installs the release APK on Android 10, 11 and 12 emulators (the range of Samsung Galaxy A11 and similar budget phones),
+# launches it and keeps the exact install result, crash log and a screenshot as artifacts.
+# Also checks that every ABI (32-bit armeabi-v7a phones included) ships the same native libraries.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['src/**', 'app.json', 'app.config.js', 'package.json', 'plugins/**', 'modules/**', '.github/workflows/android-smoke.yml']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      BUILD_NUMBER: ${{ github.run_number }}
+      EXPO_PUBLIC_API_URL: ${{ secrets.EXPO_PUBLIC_API_URL }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - run: npm ci
+      - run: npx expo prebuild --platform android --no-install
+      - name: Build release APK (phone ABIs + x86_64 for the emulator)
+        run: cd android && ./gradlew assembleRelease --no-daemon -PreactNativeArchitectures=arm64-v8a,armeabi-v7a,x86_64
+      - name: Check native libraries per ABI and manifest
+        run: |
+          apk=android/app/build/outputs/apk/release/app-release.apk
+          mkdir -p out && cp "$apk" out/app.apk
+          for abi in arm64-v8a armeabi-v7a x86_64; do
+            unzip -l "$apk" "lib/$abi/*" | awk '{print $4}' | grep '^lib/' | sed "s#lib/$abi/##" | sort > "out/libs-$abi.txt"
+            echo "$abi: $(wc -l < out/libs-$abi.txt) libraries"
+          done
+          if ! diff out/libs-arm64-v8a.txt out/libs-armeabi-v7a.txt; then
+            echo "::error title=32-bit libraries missing::armeabi-v7a (32-bit phones such as Galaxy A11) does not have the same native libraries as arm64-v8a"
+          fi
+          aapt=$(ls "$ANDROID_HOME"/build-tools/*/aapt | sort -V | tail -1)
+          "$aapt" dump badging "$apk" | grep -E "package:|sdkVersion|targetSdkVersion|native-code" | tee out/badging.txt
+          ls -la "$apk"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: smoke-apk
+          path: out/
+
+  emulator:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        api: [29, 30, 31]
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: smoke-apk
+          path: out
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Boot Android ${{ matrix.api }} emulator
+        run: |
+          sdk="$ANDROID_HOME/cmdline-tools/latest/bin"
+          image="system-images;android-${{ matrix.api }};google_apis;x86_64"
+          yes | "$sdk/sdkmanager" --licenses > /dev/null || true
+          "$sdk/sdkmanager" "emulator" "platform-tools" "$image" > /dev/null
+          echo no | "$sdk/avdmanager" create avd -n smoke -k "$image" --device "pixel" --force
+          nohup "$ANDROID_HOME/emulator/emulator" -avd smoke -no-window -no-audio -no-boot-anim -no-snapshot \
+            -gpu swiftshader_indirect -memory 2048 > emulator.log 2>&1 &
+          adb="$ANDROID_HOME/platform-tools/adb"
+          "$adb" wait-for-device
+          for i in $(seq 1 120); do
+            [ "$("$adb" shell getprop sys.boot_completed | tr -d '\r')" = "1" ] && break
+            sleep 5
+          done
+          "$adb" shell getprop ro.build.version.release
+      - name: Install, launch, collect logs
+        run: |
+          adb="$ANDROID_HOME/platform-tools/adb"
+          mkdir -p result
+          set +e
+          "$adb" install -r out/app.apk 2>&1 | tee result/install.txt
+          if ! grep -q Success result/install.txt; then
+            echo "::error title=Install failed on Android ${{ matrix.api }}::$(tail -1 result/install.txt)"
+          fi
+          "$adb" logcat -c
+          "$adb" shell monkey -p kz.uroki.app -c android.intent.category.LAUNCHER 1
+          sleep 40
+          "$adb" exec-out screencap -p > result/screen.png
+          pid=$("$adb" shell pidof kz.uroki.app | tr -d '\r')
+          "$adb" logcat -d > result/logcat.txt
+          grep -n -A40 -E "FATAL EXCEPTION|AndroidRuntime: |ReactNativeJS.*(Error|Exception)|SoLoader|UnsatisfiedLink" result/logcat.txt | head -300 > result/crash.txt
+          cat result/crash.txt
+          if [ -z "$pid" ]; then
+            echo "::error title=App is not running on Android ${{ matrix.api }}::see crash.txt / logcat.txt in the artifact"
+            exit 1
+          fi
+          echo "App is running on Android ${{ matrix.api }} (pid $pid)"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: smoke-android-${{ matrix.api }}
+          path: result/
