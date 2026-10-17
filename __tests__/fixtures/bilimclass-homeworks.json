@@ -1,0 +1,11 @@
+{
+  "data": [
+    {
+      "month": "Октябрь",
+      "homeworks": [
+        { "uuid": "m1", "subjectName": "Информатика", "date": "22.10.2026", "body": "Презентация про алгоритмы", "type": "text", "hasFiles": false },
+        { "uuid": "m2", "subjectName": "История Казахстана", "date": "2026-10-22T00:00:00", "body": "§ 12, вопросы 1–3", "type": "text", "hasFiles": true }
+      ]
+    }
+  ]
+}

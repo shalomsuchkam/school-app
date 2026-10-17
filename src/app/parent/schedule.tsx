@@ -2,8 +2,10 @@ import { useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { Alert, Pressable, StyleSheet, View } from 'react-native';
 
-import { Btn, Chip, EmojiPicker, Empty, ErrorBanner, Field, Group, Icon, Loading, Row, Screen, SectionLabel, Segmented, Sheet, ToggleRow, Txt, useToast } from '@/components/ui';
-import { api, type Child, type Family, type Setup, type Subject } from '@/lib/api';
+import { OverrideSheet } from '@/components/OverrideSheet';
+import { Banner, Btn, Chip, EmojiPicker, Empty, ErrorBanner, Field, Group, Icon, Loading, Row, Screen, SectionLabel, Segmented, Sheet, ToggleRow, Txt, useToast } from '@/components/ui';
+import { api, type Child, type Family, type Override, type Setup, type Subject } from '@/lib/api';
+import { useIsViewer } from '@/lib/auth';
 import { ChildSwitcher, currentChildReady, getCurrentChild, setCurrentChild, useCurrentChild } from '@/lib/currentChild';
 import { localIso, shortDate, wdLong, wdShort } from '@/lib/format';
 import { useT } from '@/lib/i18n';
@@ -18,6 +20,14 @@ function isoWeekParity(d: Date): 1 | 2 {
   x.setUTCDate(x.getUTCDate() + 4 - wd);
   const week = Math.ceil(((x.getTime() - Date.UTC(x.getUTCFullYear(), 0, 1)) / 86400000 + 1) / 7);
   return week % 2 ? 1 : 2;
+}
+// The family's calendar date (overrides are offered from today on, in family time).
+function todayIn(tz: string) {
+  try {
+    return new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+  } catch {
+    return localIso(new Date());
+  }
 }
 const hasAlt = (s: Setup) => (['1', '2'] as const).some((k) => Object.values(s.lessons_alt?.[k] ?? {}).some((ids) => ids.length));
 
@@ -46,6 +56,9 @@ export default function Schedule() {
   const [shown, setShown] = useState<'edit' | 'picker'>('picker');
   if (sheet && sheet !== shown) setShown(sheet);
   const toast = useToast();
+  const viewer = useIsViewer();
+  // one-day override editor: open flag + the date it opens on (null = next day)
+  const [ovr, setOvr] = useState<{ date: string | null } | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -213,6 +226,71 @@ export default function Schedule() {
     }
   };
 
+  const today = todayIn(fam.tz);
+  const overrides = (setup.overrides ?? []).filter((o) => o.date >= today);
+  const ovrLine = (o: Override) => {
+    const names = o.subject_ids.map((id) => byId.get(id)?.name).filter(Boolean);
+    const what = o.subject_ids.length === 0 ? t('parent.ovr.none') : names.length ? names.join(', ') : t('parent.ovr.none');
+    return o.note ? `${what} · «${o.note}»` : what;
+  };
+  const deleteOverride = (o: Override) => {
+    const cid = setup.child_id;
+    setSetup({ ...setup, overrides: (setup.overrides ?? []).filter((x) => x.date !== o.date) });
+    api
+      .deleteOverride(o.date, cid)
+      .then(
+        () =>
+          toast.show(t('parent.ovr.deleted'), {
+            label: t('parent.restore'),
+            run: () =>
+              api
+                .setOverride(o.date, { child_id: cid, subject_ids: o.subject_ids, note: o.note })
+                .then(load)
+                .catch((e: Error) => toast.show(e.message)),
+          }),
+        (e: Error) => toast.show(e.message),
+      )
+      .finally(load);
+  };
+  const overrideSection = (
+    <>
+      <SectionLabel right={viewer ? undefined : <Btn small kind="secondary" title={t('parent.ovr.action')} icon="swap-horizontal" onPress={() => setOvr({ date: null })} />}>
+        {t('parent.ovr.list')}
+      </SectionLabel>
+      {overrides.length ? (
+        <Group>
+          {overrides.map((o) => (
+            <Row
+              key={o.date}
+              icon="swap-horizontal"
+              tint="violet"
+              title={o.date === today ? `${t('parent.cal.today')}, ${shortDate(o.date)}` : shortDate(o.date)}
+              subtitle={ovrLine(o)}
+              onPress={viewer ? undefined : () => setOvr({ date: o.date })}
+              right={
+                viewer ? undefined : (
+                  <Pressable
+                    hitSlop={8}
+                    onPress={() => deleteOverride(o)}
+                    accessibilityRole="button"
+                    accessibilityLabel={t('parent.ovr.deleteA11y', { date: shortDate(o.date) })}
+                    style={({ pressed }) => [styles.mini, { backgroundColor: pressed ? p.badSoft : p.fill }]}
+                  >
+                    <Icon name="trash-outline" size={17} color={p.bad} />
+                  </Pressable>
+                )
+              }
+            />
+          ))}
+        </Group>
+      ) : (
+        <Txt v="sub" color={p.muted} style={{ marginLeft: 6 }}>
+          {viewer ? t('parent.ovr.noneYetViewer') : t('parent.ovr.noneYet')}
+        </Txt>
+      )}
+    </>
+  );
+
   return (
     <>
       <Screen title={t('parent.tab.schedule')} subtitle={t('parent.schedule.subtitle')} onRefresh={load}>
@@ -243,9 +321,13 @@ export default function Schedule() {
           })}
         </View>
 
-        <Group style={{ marginTop: 14 }}>
-          <ToggleRow icon="repeat" tint="violet" title={t('parent.schedule.alt')} subtitle={t('parent.schedule.altSub')} value={altOn} onChange={toggleAlt} />
-        </Group>
+        {viewer ? (
+          <Banner tone="neutral" icon="eye-outline" text={t('parent.viewerMode.schedule')} />
+        ) : (
+          <Group style={{ marginTop: 14 }}>
+            <ToggleRow icon="repeat" tint="violet" title={t('parent.schedule.alt')} subtitle={t('parent.schedule.altSub')} value={altOn} onChange={toggleAlt} />
+          </Group>
+        )}
         {altOn ? (
           <>
             <Segmented value={week} onChange={setParity} options={([0, 1, 2] as Parity[]).map((w) => ({ value: w, label: weekLabel(w) }))} style={{ marginTop: space.s }} />
@@ -256,13 +338,15 @@ export default function Schedule() {
         ) : null}
 
         <SectionLabel>{altOn ? `${wdLong(day)} · ${weekLabel(week)}` : wdLong(day)}</SectionLabel>
-        <Group>
-          <ToggleRow icon="school" tint="blue" title={t('parent.schedule.schoolDay')} value={isSchool} onChange={toggleSchoolDay} />
-        </Group>
+        {viewer ? null : (
+          <Group>
+            <ToggleRow icon="school" tint="blue" title={t('parent.schedule.schoolDay')} value={isSchool} onChange={toggleSchoolDay} />
+          </Group>
+        )}
 
         {isSchool ? (
           <>
-            <SectionLabel right={<Btn small kind="secondary" title={t('common.add')} icon="＋" onPress={() => setPicker(true)} />}>{t('parent.schedule.lessons', { n: lessons.length })}</SectionLabel>
+            <SectionLabel right={viewer ? undefined : <Btn small kind="secondary" title={t('common.add')} icon="＋" onPress={() => setPicker(true)} />}>{t('parent.schedule.lessons', { n: lessons.length })}</SectionLabel>
             {lessons.length ? (
               <Group>
                 {lessons.map((id, i) => {
@@ -275,7 +359,7 @@ export default function Schedule() {
                       title={`${i + 1}. ${name}`}
                       subtitle={s?.light ? t('parent.schedule.light') : undefined}
                       right={
-                        <View style={{ flexDirection: 'row', gap: 4 }}>
+                        viewer ? undefined : <View style={{ flexDirection: 'row', gap: 4 }}>
                           <Pressable
                             hitSlop={6}
                             disabled={i === 0}
@@ -312,8 +396,8 @@ export default function Schedule() {
               </Group>
             ) : (
               <Group>
-                <Empty icon="book-outline" title={t('parent.schedule.noLessons')} text={t('parent.schedule.noLessonsText', { add: t('common.add') })}>
-                  {week && setOf(0, day).length ? (
+                <Empty icon="book-outline" title={t('parent.schedule.noLessons')} text={viewer ? undefined : t('parent.schedule.noLessonsText', { add: t('common.add') })}>
+                  {week && setOf(0, day).length && !viewer ? (
                     <Btn small kind="secondary" icon="copy-outline" title={t('parent.schedule.copyEvery')} onPress={() => saveLessons(setOf(0, day))} style={{ marginTop: 14 }} />
                   ) : null}
                 </Empty>
@@ -326,16 +410,18 @@ export default function Schedule() {
           </Txt>
         )}
 
-        <SectionLabel right={<Btn small kind="secondary" title={t('parent.schedule.new')} icon="＋" onPress={() => setEdit({ emoji: '📘', light: false, name: '' })} />}>
+        {overrideSection}
+
+        <SectionLabel right={viewer ? undefined : <Btn small kind="secondary" title={t('parent.schedule.new')} icon="＋" onPress={() => setEdit({ emoji: '📘', light: false, name: '' })} />}>
           {t('parent.schedule.subjects', { n: setup.subjects.length })}
         </SectionLabel>
         {setup.subjects.length ? (
           <Group>
             {setup.subjects.map((s) => (
-              <Row key={s.id} icon={s.emoji} title={s.name} subtitle={s.light ? t('parent.schedule.light') : undefined} chevron onPress={() => setEdit(s)} />
+              <Row key={s.id} icon={s.emoji} title={s.name} subtitle={s.light ? t('parent.schedule.light') : undefined} chevron={!viewer} onPress={viewer ? undefined : () => setEdit(s)} />
             ))}
           </Group>
-        ) : (
+        ) : viewer ? null : (
           <View style={styles.wrap}>
             {SUBJECT_PRESETS.map((s) => (
               <Chip
@@ -355,11 +441,11 @@ export default function Schedule() {
 
         <SectionLabel>{t('parent.schedule.daysOff')}</SectionLabel>
         <Txt v="sub" color={p.muted} style={{ marginBottom: 8, marginLeft: 6 }}>
-          {t('parent.schedule.daysOffHint')}
+          {viewer ? t('parent.ovr.daysOffViewer') : t('parent.schedule.daysOffHint')}
         </Txt>
         <View style={styles.wrap}>
-          {upcoming.map((d) => (
-            <Chip key={d} label={shortDate(d)} icon={setup.days_off.includes(d) ? 'bed-outline' : undefined} selected={setup.days_off.includes(d)} onPress={() => toggleOff(d)} />
+          {(viewer ? upcoming.filter((d) => setup.days_off.includes(d)) : upcoming).map((d) => (
+            <Chip key={d} label={shortDate(d)} icon={setup.days_off.includes(d) ? 'bed-outline' : undefined} selected={setup.days_off.includes(d)} onPress={viewer ? undefined : () => toggleOff(d)} />
           ))}
         </View>
         {setup.holidays?.length ? (
@@ -421,7 +507,21 @@ export default function Schedule() {
           </>
         )}
       </Sheet>
-      {sheet ? null : toast.node}
+      {viewer ? null : (
+        <OverrideSheet
+          visible={ovr !== null}
+          setup={setup}
+          today={today}
+          date={ovr?.date}
+          onClose={() => setOvr(null)}
+          onSaved={(msg) => {
+            setOvr(null);
+            toast.show(msg);
+            load();
+          }}
+        />
+      )}
+      {sheet || ovr ? null : toast.node}
     </>
   );
 }

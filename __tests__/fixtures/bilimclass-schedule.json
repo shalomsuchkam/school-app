@@ -1,0 +1,18 @@
+{
+  "data": {
+    "days": [
+      {
+        "date": 1792605600,
+        "dateFormat": "21.10.2026",
+        "date_label": "Ср, 21 окт",
+        "isCurrent": false,
+        "isHoliday": false,
+        "schedule": [
+          { "uuid": "s1", "label": "Английский язык", "timeslot": "08:00 - 08:45", "cabinet": "101", "teacherFio": "Smith J.", "type": "regular", "theme": "Past Simple", "homeworkBody": "Ex. 3 p. 27" },
+          { "uuid": "s2", "label": "Музыка", "homeworkBody": "" }
+        ]
+      }
+    ],
+    "weeks": { "next": "26.10.2026", "prev": "12.10.2026", "next_time": 1793210400, "prev_time": 1792000800 }
+  }
+}

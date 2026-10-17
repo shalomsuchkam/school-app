@@ -1,7 +1,7 @@
 import type { Bundle } from './types';
 
 // Strings for the "child" screens. Keys: 'child.*'.
-const b: Bundle = {
+const base: Bundle = {
   ru: {
     // Home screen
     'child.greeting': 'Привет, {name}! Задания на',
@@ -547,4 +547,85 @@ const b: Bundle = {
     'child.rem.hourBody': 'Final deadline at {hard}',
   },
 };
+
+// Stage 5: chat, voice notes, home chores, appearance, presence.
+const features: Bundle = {
+  ru: {
+    'child.voice.readFail': 'Не удалось прочитать запись',
+    'child.voice.title': 'Голосовая заметка',
+    'child.voice.hint': 'Расскажи родителям, что задали или что не получается.',
+    'child.voice.start': 'Нажми, чтобы записать',
+    'child.voice.stop': 'Остановить запись',
+    'child.voice.again': 'Записать заново',
+    'child.voice.send': 'Отправить родителям',
+    'child.voice.sent': 'Голосовая заметка отправлена',
+    'child.voice.fail': 'Не отправилось: {error}',
+    'child.voice.retry': 'Отправить ещё раз',
+    'child.voice.permTitle': 'Нужен микрофон',
+    'child.voice.permText': 'Разреши доступ к микрофону, чтобы записать голосовую заметку для родителей. Запись слышат только они.',
+    'child.voice.openSettings': 'Открыть настройки',
+    'child.voice.recording': 'Запись · {time}',
+    'child.voice.max': 'Не дольше {n} секунд',
+    'child.voice.record': 'Голосом',
+    'child.voice.redo': 'Перезаписать',
+    'child.home.tag': 'Дом',
+    'child.home.min': '~{n} мин',
+    'child.section.home': 'Дела по дому · {done}/{total}',
+    'child.settings.title': 'Настройки',
+    'child.settings.bigText': 'Крупный шрифт',
+    'child.settings.bigTextSub': 'Текст на главном экране станет крупнее',
+  },
+  kk: {
+    'child.voice.readFail': 'Жазбаны оқу мүмкін болмады',
+    'child.voice.title': 'Дауыстық жазба',
+    'child.voice.hint': 'Ата-анаңа не берілгенін немесе не шықпай жатқанын айтып бер.',
+    'child.voice.start': 'Жазу үшін бас',
+    'child.voice.stop': 'Жазуды тоқтату',
+    'child.voice.again': 'Қайта жазу',
+    'child.voice.send': 'Ата-анаға жіберу',
+    'child.voice.sent': 'Дауыстық жазба жіберілді',
+    'child.voice.fail': 'Жіберілмеді: {error}',
+    'child.voice.retry': 'Қайта жіберу',
+    'child.voice.permTitle': 'Микрофон керек',
+    'child.voice.permText': 'Ата-анаңа дауыстық жазба жазу үшін микрофонға рұқсат бер. Жазбаны тек солар естиді.',
+    'child.voice.openSettings': 'Баптауларды ашу',
+    'child.voice.recording': 'Жазылуда · {time}',
+    'child.voice.max': '{n} секундтан аспайды',
+    'child.voice.record': 'Дауыспен',
+    'child.voice.redo': 'Қайта жазу',
+    'child.home.tag': 'Үй',
+    'child.home.min': '~{n} мин',
+    'child.section.home': 'Үй шаруасы · {done}/{total}',
+    'child.settings.title': 'Баптаулар',
+    'child.settings.bigText': 'Ірі қаріп',
+    'child.settings.bigTextSub': 'Басты экрандағы мәтін ірірек болады',
+  },
+  en: {
+    'child.voice.readFail': 'Could not read the recording',
+    'child.voice.title': 'Voice note',
+    'child.voice.hint': 'Tell your parents what was assigned or what’s not working.',
+    'child.voice.start': 'Tap to record',
+    'child.voice.stop': 'Stop recording',
+    'child.voice.again': 'Record again',
+    'child.voice.send': 'Send to parents',
+    'child.voice.sent': 'Voice note sent',
+    'child.voice.fail': 'Not sent: {error}',
+    'child.voice.retry': 'Send again',
+    'child.voice.permTitle': 'Microphone needed',
+    'child.voice.permText': 'Allow the microphone to record a voice note for your parents. Only they can hear it.',
+    'child.voice.openSettings': 'Open Settings',
+    'child.voice.recording': 'Recording · {time}',
+    'child.voice.max': 'Up to {n} seconds',
+    'child.voice.record': 'Voice',
+    'child.voice.redo': 'Re-record',
+    'child.home.tag': 'Home',
+    'child.home.min': '~{n} min',
+    'child.section.home': 'Chores at home · {done}/{total}',
+    'child.settings.title': 'Settings',
+    'child.settings.bigText': 'Large text',
+    'child.settings.bigTextSub': 'Text on the home screen gets bigger',
+  },
+};
+
+const b: Bundle = { ru: { ...base.ru, ...features.ru }, kk: { ...base.kk, ...features.kk }, en: { ...base.en, ...features.en } };
 export default b;

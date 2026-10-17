@@ -1,5 +1,7 @@
 import { Platform, StyleSheet, useColorScheme, type TextStyle, type ViewStyle } from 'react-native';
 
+import { schemeFor, useAppearance } from './appearance';
+
 /*
  * ───────────────────────────── DESIGN SPEC · «Тетрадь» ─────────────────────────────
  *
@@ -38,6 +40,9 @@ import { Platform, StyleSheet, useColorScheme, type TextStyle, type ViewStyle } 
  * lists, iOS-style tinted icon tiles), Card, Banner, Badge, ProgressBar, StatusBar, Stat, Segmented,
  * Btn (primary / secondary / plain / ghost / ok / bad), IconBtn, Chip, Field, Sheet (spring, drag to
  * dismiss), Toast, Empty, Skeleton, Loading, ErrorBanner, PressableScale, NotebookRule, BrandMark.
+ *
+ * Appearance. Per device (src/lib/appearance.ts): system, light, dark or by schedule (dark 20:00–07:00);
+ * `useScheme` / `usePalette` resolve it, so every screen follows without its own logic.
  *
  * Motion. Press feedback on press-in (scale 0.97, ~110 ms); springs for anything that moves (critically
  * damped by default, a little bounce only after a flick). Everything respects Reduce Motion: movement
@@ -112,8 +117,14 @@ export type Palette = typeof light;
 export type TileColor = keyof Palette['tile'];
 // For surfaces outside React Native views (the Android home-screen widget renders both schemes).
 export const palettes = { light, dark };
+// The scheme in use: Settings → Appearance (system / light / dark / by schedule, per device) over the system one.
+export function useScheme(): 'light' | 'dark' {
+  const system = useColorScheme();
+  const a = useAppearance();
+  return schemeFor(a, system);
+}
 export function usePalette(): Palette {
-  return useColorScheme() === 'dark' ? dark : light;
+  return useScheme() === 'dark' ? dark : light;
 }
 
 // Product states → semantic colours (one place to change what "late" looks like everywhere).

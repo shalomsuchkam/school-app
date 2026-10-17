@@ -2,8 +2,8 @@ import { useFocusEffect } from 'expo-router';
 import { useCallback, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
-import { Btn, Chip, EmojiPicker, Empty, Field, Group, Loading, Row, Screen, SectionLabel, Sheet, ToggleRow, Txt, useToast, WeekdayPicker } from '@/components/ui';
-import { api, type Child, type Family, type Item } from '@/lib/api';
+import { Btn, Chip, EmojiPicker, Empty, Field, Group, haptic, Icon, Loading, PressableScale, Row, Screen, SectionLabel, Segmented, Sheet, ToggleRow, Txt, useToast, WeekdayPicker } from '@/components/ui';
+import { api, type Category, type Child, type Family, type Item } from '@/lib/api';
 import { ChildSwitcher, setCurrentChild, useCurrentChild } from '@/lib/currentChild';
 import { weekdaysLabel } from '@/lib/format';
 import { useT } from '@/lib/i18n';
@@ -11,6 +11,9 @@ import { EMOJIS, ITEM_PRESETS } from '@/lib/presets';
 import { radius, usePalette } from '@/lib/theme';
 
 type Draft = Partial<Item> & { everyDay?: boolean };
+
+// Estimates offered for home chores (minutes); null = no estimate.
+const DURATIONS: (number | null)[] = [null, 5, 10, 15, 20, 30, 45, 60, 90, 120, 180, 240];
 
 export default function Lists() {
   const p = usePalette();
@@ -67,6 +70,8 @@ export default function Lists() {
       emoji: preset?.emoji ?? '✅',
       needs_photo: preset?.needs_photo ?? false,
       required: preset?.required ?? true,
+      category: 'school',
+      duration_min: null,
       weekdays: null,
       everyDay: true,
       // filtered by a child: a new item is for that child (changeable in the sheet)
@@ -80,6 +85,9 @@ export default function Lists() {
       needs_photo: !!draft.needs_photo,
       required: draft.required !== false,
       weekdays: draft.everyDay || !draft.weekdays?.length ? null : draft.weekdays,
+      category: (draft.category ?? 'school') as Category,
+      // the estimate belongs to home chores only
+      duration_min: draft.category === 'home' ? (draft.duration_min ?? null) : null,
       // null = for every child; left untouched for a single-child family
       ...(multi ? { child_id: kidName(draft.child_id) ? draft.child_id : null } : {}),
     };
@@ -125,7 +133,7 @@ export default function Lists() {
                   key={it.id}
                   icon={it.emoji}
                   title={it.title}
-                  subtitle={`${weekdaysLabel(it.weekdays)} · ${it.needs_photo ? t('parent.lists.withPhoto') : t('parent.lists.withCheck')}${it.required ? '' : t('parent.lists.optional')}`}
+                  subtitle={`${it.category === 'home' ? `${t('parent.lists.home')}${it.duration_min ? ` ~${t('common.dur.m', { m: it.duration_min })}` : ''} · ` : ''}${weekdaysLabel(it.weekdays)} · ${it.needs_photo ? t('parent.lists.withPhoto') : t('parent.lists.withCheck')}${it.required ? '' : t('parent.lists.optional')}`}
                   right={
                     who ? (
                       <View style={[styles.tag, { backgroundColor: p.brandSoft }]}>
@@ -164,6 +172,23 @@ export default function Lists() {
       <Sheet visible={!!draft} title={draft?.id ? t('parent.lists.editTitle') : t('parent.lists.newTitle')} onClose={() => setDraft(null)} overlay={toast.node}>
         <Field label={t('parent.lists.what')} value={draft?.title ?? ''} onChangeText={(title) => setDraft({ ...draft, title })} placeholder={t('parent.lists.whatPh')} maxLength={50} />
         <Txt v="sub" color={p.muted} style={{ marginBottom: 8, marginLeft: 4 }}>
+          {t('parent.lists.category')}
+        </Txt>
+        <Segmented
+          value={draft?.category ?? 'school'}
+          onChange={(category) => setDraft({ ...draft, category })}
+          options={[
+            { value: 'school' as Category, label: t('parent.lists.school') },
+            { value: 'home' as Category, label: t('parent.lists.home') },
+          ]}
+          style={{ marginBottom: 14 }}
+        />
+        {draft?.category === 'home' ? (
+          <Group style={{ marginBottom: 14 }}>
+            <Row icon="time" tint="teal" title={t('parent.lists.duration')} subtitle={t('parent.lists.durationSub')} right={<DurationStepper value={draft?.duration_min ?? null} onChange={(duration_min) => setDraft({ ...draft, duration_min })} />} />
+          </Group>
+        ) : null}
+        <Txt v="sub" color={p.muted} style={{ marginBottom: 8, marginLeft: 4 }}>
           {t('parent.icon')}
         </Txt>
         <EmojiPicker value={draft?.emoji ?? '✅'} options={EMOJIS} onChange={(emoji) => setDraft({ ...draft, emoji })} />
@@ -201,7 +226,44 @@ export default function Lists() {
   );
 }
 
+// − / + through DURATIONS; the far left is "no estimate".
+function DurationStepper({ value, onChange }: { value: number | null; onChange: (v: number | null) => void }) {
+  const p = usePalette();
+  const t = useT();
+  const i = Math.max(0, DURATIONS.indexOf(value));
+  const btn = (d: -1 | 1) => {
+    const off = (d < 0 && i === 0) || (d > 0 && i === DURATIONS.length - 1);
+    return (
+      <PressableScale
+        accessibilityRole="button"
+        accessibilityLabel={t(d < 0 ? 'parent.lists.shorter' : 'parent.lists.longer')}
+        accessibilityState={{ disabled: off }}
+        disabled={off}
+        onPress={() => {
+          haptic.tap();
+          onChange(DURATIONS[i + d]);
+        }}
+        hitSlop={6}
+        scaleTo={0.9}
+        style={[styles.step, { backgroundColor: p.fill, opacity: off ? 0.4 : 1 }]}
+      >
+        <Icon name={d < 0 ? 'remove' : 'add'} size={18} color={p.ink2} />
+      </PressableScale>
+    );
+  };
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+      {btn(-1)}
+      <Txt v="headline" style={{ minWidth: 58, textAlign: 'center', fontVariant: ['tabular-nums'] }} numberOfLines={1} adjustsFontSizeToFit>
+        {value ? t('common.dur.m', { m: value }) : '—'}
+      </Txt>
+      {btn(1)}
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
+  step: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
   wrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   tag: { borderRadius: radius.xs, paddingHorizontal: 7, paddingVertical: 2, maxWidth: 110 },
 });

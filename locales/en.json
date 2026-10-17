@@ -1,5 +1,6 @@
 {
   "ios": {
-    "NSCameraUsageDescription": "The camera is used to take photos of homework and of the things packed for tomorrow."
+    "NSCameraUsageDescription": "The camera is used to take photos of homework and of the things packed for tomorrow.",
+    "NSMicrophoneUsageDescription": "The microphone lets the student record a voice note about homework for their parents."
   }
 }

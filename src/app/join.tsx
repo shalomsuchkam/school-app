@@ -1,5 +1,5 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { Redirect, router } from 'expo-router';
+import { Redirect, router, useLocalSearchParams } from 'expo-router';
 import { useRef, useState } from 'react';
 import { Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
@@ -9,25 +9,32 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Btn, Field, haptic, IconBtn, Txt } from '@/components/ui';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
+import { CODE_LEN, codeFromLink, codeFromParam, normalizeCode } from '@/lib/invite';
 import { tn, useT } from '@/lib/i18n';
 import { radius, space, usePalette } from '@/lib/theme';
 
-const LEN = 6;
+const LEN = CODE_LEN;
 const MONO = Platform.select({ ios: 'Menlo', default: 'monospace' });
 const MAX_W = 560;
 const SLOTS = Array.from({ length: LEN }, (_, i) => i);
-const normalize = (v: string) =>
-  v
-    .toUpperCase()
-    .replace(/[^A-Z0-9]/g, '')
-    .slice(0, LEN);
+// typed or pasted: a whole invite link / shared message is reduced to its code
+const normalize = (v: string) => (v.length > LEN ? (codeFromLink(v) ?? normalizeCode(v)) : normalizeCode(v));
 
 export default function Join() {
   const p = usePalette();
   const insets = useSafeAreaInsets();
   const t = useT();
   const { session, signIn } = useAuth();
-  const [code, setCode] = useState('');
+  // uroki://join?code=K7QMZP (invite link / QR code) opens this screen with the code filled in,
+  // both on a cold start and while the app is running (the param then changes on this screen)
+  const params = useLocalSearchParams<{ code?: string | string[] }>();
+  const linked = codeFromParam(params.code);
+  const [code, setCode] = useState(linked ?? '');
+  const [seenLink, setSeenLink] = useState(linked);
+  if (linked !== seenLink) {
+    setSeenLink(linked);
+    if (linked) setCode(linked);
+  }
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
   const [joined, setJoined] = useState(false);
@@ -128,14 +135,15 @@ export default function Join() {
                 onFocus={() => setFocused(true)}
                 onBlur={() => setFocused(false)}
                 onSubmitEditing={submit}
-                autoFocus
+                // a linked code is complete: the name field is what's left to fill in
+                autoFocus={!linked}
                 autoCapitalize="characters"
                 autoCorrect={false}
                 autoComplete="off"
                 spellCheck={false}
                 keyboardType={Platform.OS === 'android' ? 'visible-password' : 'default'}
                 returnKeyType="go"
-                maxLength={LEN + 6}
+                maxLength={200}
                 caretHidden
                 accessibilityLabel={t('onboarding.join.codeA11y', { n: clean.length })}
                 style={styles.hidden}

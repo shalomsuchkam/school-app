@@ -8,7 +8,9 @@ import { getLang, t } from './i18n';
 // EXPO_PUBLIC_API_URL (build secret) points builds at the self-hosted server in Kazakhstan once it runs.
 export const API_BASE = process.env.EXPO_PUBLIC_API_URL || 'https://cmranrfjvvmhktntbnpg.supabase.co/functions/v1/app';
 
-export type Role = 'parent' | 'child';
+export type Role = 'parent' | 'child' | 'viewer';
+// Who may be invited (and the role a session holds).
+export type Category = 'school' | 'home';
 export type TaskStatus = 'todo' | 'done' | 'redo' | 'skip_pending' | 'skip_ok' | 'skip_no';
 export type Photo = { id: number; url: string | null; at: string; page: number; hm: string | null };
 export type Task = {
@@ -28,6 +30,12 @@ export type Task = {
   note: string | null;
   parent_comment: string | null;
   photos: Photo[];
+  // home chores vs school (lessons are always school); estimate in minutes or null
+  category?: Category;
+  duration_min?: number | null;
+  // chat messages on this task, and a signed link (900 s) to the child's voice note
+  messages?: number;
+  voice_url?: string | null;
 };
 export type ChildState = {
   name: string;
@@ -52,9 +60,22 @@ export type ChildState = {
   reward: { goal: number; text: string } | null;
   track_time: boolean;
   started_at: string | null;
+  // note of a one-day override for school_date
+  override_note?: string | null;
 };
-export type Day = { date: string; label: string; total: number; done: number; last_done_hm: string | null; on_time: boolean; tasks: Task[] };
-export type Overview = { child_id: number; child_name: string; now_hm: string; active: string; days: Day[]; streak: number; perfect_week: number; days_off: string[] };
+export type Day = { date: string; label: string; total: number; done: number; last_done_hm: string | null; on_time: boolean; tasks: Task[]; override_note?: string | null };
+export type Overview = {
+  child_id: number;
+  child_name: string;
+  now_hm: string;
+  active: string;
+  days: Day[];
+  streak: number;
+  perfect_week: number;
+  days_off: string[];
+  // most recent API call of this child's devices
+  child_seen?: string | null;
+};
 export type Family = {
   id: string;
   code: string;
@@ -71,8 +92,12 @@ export type Family = {
   soft_deadline: string;
   hard_deadline: string;
   remind_times: string[];
+  // quiet hours (HH:MM, may cross midnight; both null = off) and read-only tutors / teachers
+  quiet_from?: string | null;
+  quiet_to?: string | null;
+  allow_viewers?: boolean;
 };
-export type Member = { id: string; role: Role; name: string | null; telegram: boolean; me: boolean; child_id: number | null };
+export type Member = { id: string; role: Role; name: string | null; telegram: boolean; me: boolean; child_id: number | null; last_seen?: string | null };
 export type Child = { id: number; name: string; pos: number };
 export type Access = {
   active: boolean;
@@ -93,7 +118,20 @@ export type Me = {
 };
 export type Subject = { id: number; name: string; emoji: string; light: boolean };
 // child_id null = for every child in the family
-export type Item = { id: number; title: string; emoji: string; required: boolean; needs_photo: boolean; weekdays: number[] | null; pos: number; child_id?: number | null };
+export type Item = {
+  id: number;
+  title: string;
+  emoji: string;
+  required: boolean;
+  needs_photo: boolean;
+  weekdays: number[] | null;
+  pos: number;
+  child_id?: number | null;
+  category?: Category;
+  duration_min?: number | null;
+};
+// One day's lessons replacing the timetable (empty subject_ids = no lessons that day).
+export type Override = { date: string; subject_ids: number[]; note: string | null };
 export type Setup = {
   child_id: number;
   subjects: Subject[];
@@ -103,7 +141,14 @@ export type Setup = {
   items: Item[];
   days_off: string[];
   holidays: string[];
+  // this child's overrides from today to today + 30 days, by date
+  overrides?: Override[];
 };
+export type CalendarStatus = 'done_on_time' | 'done_late' | 'partial' | 'missed' | 'off' | 'future' | 'empty';
+export type CalendarDay = { date: string; status: CalendarStatus; total: number; done: number };
+export type Calendar = { month: string; child_id: number; days: CalendarDay[] };
+export type Message = { id: number; role: 'parent' | 'child'; name: string | null; body: string; created_at: string; mine: boolean };
+export type Invite = { code: string; role: Role; expires_at: string; url: string | null };
 export type Report = {
   child_id: number;
   child_name: string;
@@ -182,6 +227,19 @@ export const api = {
     return call('POST', `/child/photo?task_id=${task_id}`, undefined, { data, type: 'image/jpeg' });
   },
 
+  // Raw audio body (AAC in MP4, .m4a); the server checks the bytes and caps it at 2 MB.
+  voice: async (task_id: number, uri: string) => {
+    let data: Raw['data'];
+    try {
+      data = Platform.OS === 'web' ? await (await fetch(uri)).blob() : await new FsFile(uri).bytes();
+    } catch {
+      throw new ApiError(t('child.voice.readFail'), 0);
+    }
+    return call<{ ok: true }>('POST', `/child/voice?task_id=${task_id}`, undefined, { data, type: 'audio/mp4' });
+  },
+  messages: (task_id: number) => call<Message[]>('GET', `/tasks/${task_id}/messages`),
+  sendMessage: (task_id: number, body: string) => call<Message>('POST', `/tasks/${task_id}/messages`, { body }),
+
   overview: (child?: number) => call<Overview>('GET', `/parent/overview${child ? `?child=${child}` : ''}`),
   action: (id: number, action: ParentAction, comment?: string) => call<{ text: string }>('POST', '/parent/task', { id, action, comment }),
   parentNote: (task_id: number, note: string) => call('POST', '/parent/note', { task_id, note }),
@@ -193,6 +251,12 @@ export const api = {
   addChild: (name: string) => call<Child>('POST', '/children', { name }),
   renameChild: (id: number, name: string) => call('PATCH', `/children/${id}`, { name }),
   removeChild: (id: number) => call('DELETE', `/children/${id}`),
+  calendar: (month?: string, child?: number) => {
+    const q = [month ? `month=${month}` : '', child ? `child=${child}` : ''].filter(Boolean).join('&');
+    return call<Calendar>('GET', `/parent/calendar${q ? `?${q}` : ''}`);
+  },
+  setOverride: (date: string, o: { child_id?: number; subject_ids: number[]; note?: string | null }) => call<Override & { child_id: number }>('PUT', `/overrides/${date}`, o),
+  deleteOverride: (date: string, child?: number) => call<{ ok: true }>('DELETE', `/overrides/${date}${child ? `?child=${child}` : ''}`),
   nudge: (child?: number) => call<{ sent: number; left: number }>('POST', `/parent/nudge${child ? `?child=${child}` : ''}`, {}),
 
   addSubject: (s: Omit<Subject, 'id'>) => call<Subject>('POST', '/subjects', s),
@@ -206,7 +270,7 @@ export const api = {
   deleteItem: (id: number) => call('DELETE', `/items/${id}`),
 
   dayOff: (date: string, off: boolean) => call('POST', '/dayoff', { date, off }),
-  invite: (role: Role, child_id?: number) => call<{ code: string; role: Role; expires_at: string }>('POST', '/invite', { role, child_id }),
+  invite: (role: Role, child_id?: number) => call<Invite>('POST', '/invite', { role, child_id }),
   removeMember: (id: string) => call('DELETE', `/members/${id}`),
   leave: () => call('DELETE', '/members/me'),
   telegramLink: () => call<{ url: string }>('POST', '/telegram/link', {}),
@@ -218,5 +282,8 @@ export const api = {
 export const legalUrl = (kind: 'terms' | 'privacy', lang = 'ru') => `${API_BASE}/legal/${kind}?lang=${lang === 'en' || lang === 'kk' ? lang : 'ru'}`;
 // 402 = the family's subscription is not active.
 export const isPaywall = (e: unknown) => e instanceof ApiError && e.status === 402;
+
+// A read-only tutor / teacher device.
+export const isViewer = (r: Role | null | undefined) => r === 'viewer';
 
 export const isDone = (t: Task) => t.status === 'done' || t.status === 'skip_ok';

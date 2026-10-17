@@ -39,6 +39,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   return <AuthContext.Provider value={{ session, signIn, signOut }}>{children}</AuthContext.Provider>;
 }
 
+/** A tutor / teacher device: the parent screens, read-only. */
+export function useIsViewer() {
+  return useAuth().session?.role === 'viewer';
+}
+
 export function useAuth() {
   const c = useContext(AuthContext);
   if (!c) throw new Error('useAuth outside AuthProvider');

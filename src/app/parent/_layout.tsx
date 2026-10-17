@@ -17,7 +17,9 @@ export default function ParentTabs() {
   const { session } = useAuth();
   const t = useT();
   if (!session) return <Redirect href="/welcome" />;
-  if (session.role !== 'parent') return <Redirect href="/child" />;
+  if (session.role === 'child') return <Redirect href="/child" />;
+  // a viewer (tutor / teacher) sees Today, Schedule and Settings read-only; no checklist editor
+  const viewer = session.role === 'viewer';
   return (
     <Tabs
       screenOptions={{
@@ -39,10 +41,12 @@ export default function ParentTabs() {
     >
       <Tabs.Screen name="index" options={{ title: t('parent.tab.today'), tabBarIcon: icon('today') }} />
       <Tabs.Screen name="schedule" options={{ title: t('parent.tab.schedule'), tabBarIcon: icon('calendar') }} />
-      <Tabs.Screen name="lists" options={{ title: t('parent.tab.lists'), tabBarIcon: icon('checkbox') }} />
+      <Tabs.Screen name="lists" options={{ title: t('parent.tab.lists'), tabBarIcon: icon('checkbox'), href: viewer ? null : undefined }} />
       <Tabs.Screen name="settings" options={{ title: t('parent.tab.settings'), tabBarIcon: icon('settings') }} />
       {/* opened from Today; hidden from the tab bar so it keeps its 4 tabs */}
       <Tabs.Screen name="report" options={{ href: null, title: t('parent.report.title') }} />
+      <Tabs.Screen name="calendar" options={{ href: null, title: t('parent.cal.title') }} />
+      <Tabs.Screen name="bilimclass" options={{ href: null, title: t('parent.bc.title') }} />
     </Tabs>
   );
 }

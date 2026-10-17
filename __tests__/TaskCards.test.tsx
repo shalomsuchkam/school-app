@@ -70,4 +70,27 @@ describe.each(MATRIX)('task cards · $label', ({ width, height, lang }) => {
     expect(screen.getByText(`${t('child.st.submitted')} · 18:05`)).toBeOnTheScreen();
     for (const k of ['child.card.accept', 'child.card.redo', 'child.card.undo']) expect(screen.getByRole('button', { name: t(k) })).toBeDisabled();
   });
+
+  it('home chore: a house and the estimate under the title; chat button with the count', async () => {
+    const onChat = jest.fn();
+    await render(<ChildTaskCard t={task({ kind: 'item', label: 'Вынести мусор', emoji: '🗑', needs_photo: false, category: 'home', duration_min: 20, messages: 2 })} {...child} onChat={onChat} />);
+    expect(screen.getByText(`${t('child.home.tag')} · ${t('child.home.min', { n: 20 })}`)).toBeOnTheScreen();
+    await fireEvent.press(screen.getByRole('button', { name: t('common.chat.openN', { name: 'Вынести мусор', n: 2 }) }));
+    expect(onChat).toHaveBeenCalledWith(expect.objectContaining({ id: 1 }));
+  });
+
+  it('child lesson: voice note player and a record button', async () => {
+    const onVoice = jest.fn();
+    await render(<ChildTaskCard t={task({ voice_url: 'https://x/voice.m4a' })} {...child} onVoice={onVoice} />);
+    expect(screen.getByRole('button', { name: t('common.voice.play') })).toBeOnTheScreen();
+    await fireEvent.press(screen.getByRole('button', { name: t('child.voice.redo') }));
+    expect(onVoice).toHaveBeenCalled();
+  });
+
+  it('parent read-only (viewer): status, voice and chat, but no action buttons', async () => {
+    await render(<ParentTaskCard t={task({ status: 'skip_pending', voice_url: 'https://x/v.m4a' })} busy={false} onAction={noop} onOpen={noop} readOnly onChat={noop} />);
+    expect(screen.queryByRole('button', { name: t('child.card.approve') })).toBeNull();
+    expect(screen.getByRole('button', { name: t('common.voice.play') })).toBeOnTheScreen();
+    expect(screen.getByRole('button', { name: t('common.chat.open', { name: 'Математика' }) })).toBeOnTheScreen();
+  });
 });

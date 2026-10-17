@@ -1,5 +1,6 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import * as Haptics from 'expo-haptics';
+import { createContext, useContext } from 'react';
 import { Text, type ColorValue, type StyleProp, type TextProps, type TextStyle } from 'react-native';
 
 import { type, usePalette } from '@/lib/theme';
@@ -15,9 +16,15 @@ export const haptic = {
 export type Variant = keyof typeof type;
 // Dynamic Type: text follows the system font size, capped so large titles and dense rows keep their layout.
 export const MAX_SCALE: Record<Variant, number> = { display: 1.2, largeTitle: 1.3, title: 1.4, headline: 1.5, label: 1.4, body: 1.6, callout: 1.6, sub: 1.6, caps: 1.4 };
+// In-app text size on top of Dynamic Type (the child's "large text" setting). The Dynamic Type cap shrinks by
+// the same factor, so the combined size never exceeds what the layout was designed for.
+export const TextScale = createContext(1);
 export function Txt({ v = 'body', color, style, ...rest }: TextProps & { v?: Variant; color?: string; style?: StyleProp<TextStyle> }) {
   const p = usePalette();
-  return <Text maxFontSizeMultiplier={MAX_SCALE[v]} {...rest} style={[type[v], { color: color ?? p.ink }, style]} />;
+  const k = useContext(TextScale);
+  const base = type[v];
+  const scaled = k !== 1 ? { fontSize: Math.round(base.fontSize * k), lineHeight: Math.round(base.lineHeight * k) } : null;
+  return <Text maxFontSizeMultiplier={Math.max(1, MAX_SCALE[v] / k)} {...rest} style={[base, scaled, { color: color ?? p.ink }, style]} />;
 }
 
 // ---------- icons ----------

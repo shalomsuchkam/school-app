@@ -2,14 +2,15 @@ import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { Alert, Linking, Modal, Pressable, StyleSheet, View } from 'react-native';
 
+import { AppearancePicker } from '@/components/AppearancePicker';
 import { InviteSheet } from '@/components/InviteSheet';
 import { Paywall } from '@/components/Paywall';
 import { PhoneLimitGuide } from '@/components/PhoneLimitGuide';
 import { Btn, Chip, Field, Group, Icon, Loading, Row, Screen, SectionLabel, Segmented, Sheet, TimeStepper, ToggleRow, Txt, useToast, WeekdayPicker } from '@/components/ui';
 import { billingAvailable, openManage } from '@/lib/billing';
 import { api, ApiError, legalUrl, type Child, type Me, type Role } from '@/lib/api';
-import { useAuth } from '@/lib/auth';
-import { shortDate, toMin } from '@/lib/format';
+import { useAuth, useIsViewer } from '@/lib/auth';
+import { lastSeen, shortDate, toMin } from '@/lib/format';
 import { getLang, LANGS, setLang, tn, useT, type Lang } from '@/lib/i18n';
 import { usePalette } from '@/lib/theme';
 
@@ -32,6 +33,7 @@ export default function Settings() {
   const [guide, setGuide] = useState(false);
   const [paywall, setPaywall] = useState(false);
   const toast = useToast();
+  const viewer = useIsViewer();
 
   const load = useCallback(async () => {
     try {
@@ -47,6 +49,7 @@ export default function Settings() {
     }, [load]),
   );
   if (!me) return <Loading error={error} onRetry={load} />;
+  if (viewer) return <ViewerSettings me={me} />;
   const f = me.family;
 
   const patch = async (x: Parameters<typeof api.updateFamily>[0], msg?: string) => {
@@ -142,6 +145,19 @@ export default function Settings() {
 
   const parents = me.members.filter((m) => m.role === 'parent');
   const children = me.members.filter((m) => m.role === 'child');
+  const viewers = me.members.filter((m) => m.role === 'viewer');
+  const roleName = (r: Role) => t(r === 'parent' ? 'parent.settings.parent' : r === 'viewer' ? 'parent.settings.viewer' : 'parent.settings.student');
+
+  // quiet hours: both ends together or none (the window may cross midnight)
+  const quietOn = !!(f.quiet_from && f.quiet_to);
+  const setQuiet = (from: string, to: string) => (from === to ? toast.show(t('parent.quiet.same')) : patch({ quiet_from: from, quiet_to: to }));
+  const toggleViewers = (on: boolean) => {
+    if (on || !viewers.length) return patch({ allow_viewers: on });
+    Alert.alert(t('parent.viewers.offTitle'), t('parent.viewers.offMsg'), [
+      { text: t('common.cancel'), style: 'cancel' },
+      { text: t('parent.viewers.off'), style: 'destructive', onPress: () => patch({ allow_viewers: false }).then(load) },
+    ]);
+  };
   const kids = me.children;
   const kidName = (id: number | null) => (id ? kids.find((c) => c.id === id)?.name : undefined);
 
@@ -283,6 +299,27 @@ export default function Settings() {
           <ToggleRow icon="timer" tint="teal" title={t('parent.settings.trackTime')} subtitle={t('parent.settings.trackTimeSub')} value={f.track_time} onChange={(v) => patch({ track_time: v })} />
         </Group>
 
+        <SectionLabel>{t('parent.quiet.section')}</SectionLabel>
+        <Group>
+          <ToggleRow
+            icon="moon"
+            tint="violet"
+            title={t('parent.quiet.on')}
+            subtitle={t('parent.quiet.onSub')}
+            value={quietOn}
+            onChange={(on) => patch(on ? { quiet_from: '21:30', quiet_to: '07:00' } : { quiet_from: null, quiet_to: null })}
+          />
+          {quietOn ? (
+            <Row icon="volume-mute" tint="gray" title={t('parent.quiet.from')} right={<TimeStepper value={f.quiet_from!} onChange={(v) => setQuiet(v, f.quiet_to!)} />} />
+          ) : null}
+          {quietOn ? <Row icon="sunny" tint="orange" title={t('parent.quiet.to')} right={<TimeStepper value={f.quiet_to!} onChange={(v) => setQuiet(f.quiet_from!, v)} />} /> : null}
+        </Group>
+        {quietOn ? (
+          <Txt v="sub" color={p.muted} style={{ marginTop: 8, marginHorizontal: 6 }}>
+            {t('parent.quiet.hint')}
+          </Txt>
+        ) : null}
+
         <SectionLabel>{t('parent.settings.reward')}</SectionLabel>
         <Group>
           <ToggleRow icon="trophy" tint="orange" title={t('parent.settings.rewardOn')} subtitle={t('parent.settings.rewardOnSub')} value={rewardOn} onChange={toggleReward} />
@@ -317,13 +354,15 @@ export default function Settings() {
 
         <SectionLabel>{t('parent.settings.family')}</SectionLabel>
         <Group>
-          {[...parents, ...children].map((m) => (
+          {[...parents, ...children, ...viewers].map((m) => {
+            const seen = m.me ? null : lastSeen(m.last_seen);
+            return (
             <Row
               key={m.id}
-              icon={m.role === 'parent' ? 'person-circle' : 'school'}
-              tint={m.role === 'parent' ? 'gray' : 'blue'}
-              title={`${m.name || (m.role === 'parent' ? t('parent.settings.parent') : t('parent.settings.student'))}${m.me ? t('parent.settings.you') : ''}`}
-              subtitle={`${m.role === 'parent' ? t('parent.settings.parent') : t('parent.settings.student')}${m.role === 'child' && kids.length > 1 && kidName(m.child_id) ? ` · ${kidName(m.child_id)}` : ''}${m.telegram ? ' · Telegram' : ''}`}
+              icon={m.role === 'parent' ? 'person-circle' : m.role === 'viewer' ? 'eye' : 'school'}
+              tint={m.role === 'parent' ? 'gray' : m.role === 'viewer' ? 'teal' : 'blue'}
+              title={`${m.name || roleName(m.role)}${m.me ? t('parent.settings.you') : ''}`}
+              subtitle={`${roleName(m.role)}${m.role === 'child' && kids.length > 1 && kidName(m.child_id) ? ` · ${kidName(m.child_id)}` : ''}${m.telegram ? ' · Telegram' : ''}${seen ? ` · ${seen.text}` : ''}`}
               right={
                 !m.me ? (
                   <Pressable hitSlop={12} accessibilityRole="button" onPress={() => removeMember(m.id, m.name || t('parent.settings.device'))}>
@@ -334,9 +373,21 @@ export default function Settings() {
                 ) : undefined
               }
             />
-          ))}
+            );
+          })}
           <Row icon="person-add" tint="green" title={t('parent.settings.inviteChild')} chevron onPress={openInviteChild} />
           <Row icon="people" tint="green" title={t('parent.settings.inviteParent')} chevron onPress={() => setInvite('parent')} />
+        </Group>
+
+        <SectionLabel>{t('parent.viewers.section')}</SectionLabel>
+        <Group>
+          <ToggleRow icon="eye" tint="teal" title={t('parent.viewers.allow')} subtitle={t('parent.viewers.allowSub')} value={!!f.allow_viewers} onChange={toggleViewers} />
+          {f.allow_viewers ? <Row icon="person-add" tint="teal" title={t('parent.viewers.invite')} chevron onPress={() => setInvite('viewer')} /> : null}
+        </Group>
+
+        <SectionLabel>{t('parent.bc.section')}</SectionLabel>
+        <Group>
+          <Row icon="cloud-download" tint="blue" title={t('parent.bc.row')} subtitle={t('parent.bc.rowSub')} chevron onPress={() => router.push('/parent/bilimclass')} />
         </Group>
 
         <SectionLabel>{t('common.language')}</SectionLabel>
@@ -347,6 +398,9 @@ export default function Settings() {
         <Group style={{ marginTop: 10 }}>
           <Row icon="globe" tint="teal" title={t('common.country')} value={countryName} />
         </Group>
+
+        <SectionLabel>{t('common.theme.section')}</SectionLabel>
+        <AppearancePicker />
 
         <SectionLabel>{t('parent.settings.notifications')}</SectionLabel>
         <Group>
@@ -482,6 +536,44 @@ export default function Settings() {
       />
       {childEdit !== null || newChild !== null ? null : toast.node}
     </>
+  );
+}
+
+// A tutor / teacher device: language, appearance and leaving the family; nothing about the family itself.
+function ViewerSettings({ me }: { me: Me }) {
+  const p = usePalette();
+  const t = useT();
+  const { signOut } = useAuth();
+  const leave = () =>
+    Alert.alert(t('parent.viewerMode.leaveTitle'), t('parent.viewerMode.leaveMsg'), [
+      { text: t('common.cancel'), style: 'cancel' },
+      {
+        text: t('parent.viewerMode.leave'),
+        style: 'destructive',
+        onPress: async () => {
+          await api.leave().catch(() => {});
+          await signOut();
+          router.replace('/welcome');
+        },
+      },
+    ]);
+  return (
+    <Screen title={t('parent.tab.settings')}>
+      <Group>
+        <Row icon="eye" tint="teal" title={me.device.name || t('parent.settings.viewer')} subtitle={t('parent.viewerMode.text')} />
+      </Group>
+      <SectionLabel>{t('common.language')}</SectionLabel>
+      <Segmented value={getLang()} onChange={(l: Lang) => setLang(l)} options={LANGS.map((l) => ({ value: l.code, label: l.label }))} />
+      <SectionLabel>{t('common.theme.section')}</SectionLabel>
+      <AppearancePicker />
+      <SectionLabel>{t('parent.settings.account')}</SectionLabel>
+      <Group>
+        <Row icon="log-out-outline" title={t('parent.viewerMode.leave')} danger onPress={leave} />
+      </Group>
+      <Txt v="sub" color={p.muted} style={{ textAlign: 'center', marginTop: 20 }}>
+        {t('parent.settings.version', { v: '1.0' })}
+      </Txt>
+    </Screen>
   );
 }
 

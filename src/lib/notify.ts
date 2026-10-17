@@ -5,6 +5,7 @@ import { isDone, type ChildState } from './api';
 import { fromMin, toMin } from './format';
 import { exactAlarmsAllowed } from './exactAlarm';
 import { t } from './i18n';
+import { inQuiet, type Quiet } from './quiet';
 
 // Local reminders scheduled on the phone: they work offline and need no push service.
 const supported = Platform.OS !== 'web';
@@ -23,7 +24,7 @@ export async function notificationsAllowed(ask: boolean): Promise<boolean> {
       name: t('child.rem.channel'),
       importance: Notifications.AndroidImportance.HIGH,
       vibrationPattern: [0, 250, 150, 250],
-      lightColor: '#6355F5',
+      lightColor: '#2A4BB0',
     });
   }
   const cur = await Notifications.getPermissionsAsync();
@@ -62,7 +63,7 @@ function zonedDate(iso: string, min: number, tz: string) {
 }
 
 type Slot = { id: string; at: number; title: string; body: string };
-function daySlots(s: ChildState, due: string, names: string | null): Slot[] {
+export function daySlots(s: ChildState, due: string, names: string | null, quiet?: Quiet): Slot[] {
   const list = [
     ...s.remind_times.map((hm) => ({ m: toMin(hm), title: t('child.rem.timeTitle'), body: names ? t('child.rem.left', { names }) : t('child.rem.generic') })),
     { m: toMin(s.soft) - 30, title: t('child.rem.halfTitle'), body: names ? t('child.rem.halfLeft', { soft: s.soft, names }) : t('child.rem.halfAll', { soft: s.soft }) },
@@ -72,21 +73,22 @@ function daySlots(s: ChildState, due: string, names: string | null): Slot[] {
   const seen = new Set<number>();
   const out: Slot[] = [];
   for (const sl of list) {
-    if (seen.has(sl.m) || sl.m <= 0 || sl.m >= 1440) continue;
+    // quiet hours: the server would not push then either, and a skipped reminder is not sent later
+    if (seen.has(sl.m) || sl.m <= 0 || sl.m >= 1440 || inQuiet(sl.m, quiet)) continue;
     seen.add(sl.m);
     out.push({ id: `rem-${due}-${fromMin(sl.m)}`, at: zonedDate(due, sl.m, s.tz || 'Asia/Almaty').getTime(), title: sl.title, body: sl.body });
   }
   return out;
 }
 
-async function sync(s: ChildState | null) {
+async function sync(s: ChildState | null, quiet: Quiet) {
   const now = Date.now();
   const wanted = new Map<string, Slot>();
   if (s) {
     const left = s.tasks.filter((x) => x.required && !isDone(x));
     // The current due day lists what is left (nothing once all is done); later days get generic text.
-    const all = left.length ? daySlots(s, s.due_date, left.map((x) => x.label).join(', ')) : [];
-    for (const u of s.upcoming ?? []) if (u.due_date !== s.due_date) all.push(...daySlots(s, u.due_date, null));
+    const all = left.length ? daySlots(s, s.due_date, left.map((x) => x.label).join(', '), quiet) : [];
+    for (const u of s.upcoming ?? []) if (u.due_date !== s.due_date) all.push(...daySlots(s, u.due_date, null, quiet));
     all
       .filter((sl) => sl.at > now)
       .sort((a, b) => a.at - b.at)
@@ -119,14 +121,15 @@ async function sync(s: ChildState | null) {
 
 // One run at a time: overlapping refreshes (focus, poll, app resume) never interleave.
 let queue: Promise<unknown> = Promise.resolve();
-function enqueue(s: ChildState | null) {
-  const run = queue.then(() => sync(s));
+function enqueue(s: ChildState | null, quiet: Quiet = null) {
+  const run = queue.then(() => sync(s, quiet));
   queue = run.catch(() => {});
   return run;
 }
 
-export async function scheduleReminders(s: ChildState) {
-  if (supported) await enqueue(s);
+// quiet: the family's quiet hours (GET /me → family.quiet_from / quiet_to); reminders inside are skipped.
+export async function scheduleReminders(s: ChildState, quiet?: Quiet) {
+  if (supported) await enqueue(s, quiet);
 }
 
 export async function cancelReminders() {

@@ -4,14 +4,19 @@ import { Alert, AppState, Pressable, StyleSheet, useWindowDimensions, View } fro
 import Animated, { FadeIn, FadeInDown, FadeOut, FadeOutDown, useReducedMotion } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { AppearancePicker } from '@/components/AppearancePicker';
+import { ChatSheet } from '@/components/ChatSheet';
 import { Paywall } from '@/components/Paywall';
 import { Confetti } from '@/components/Confetti';
 import { PhotoViewer } from '@/components/PhotoViewer';
 import { ProgressRing } from '@/components/ProgressRing';
 import { NoteSheet, SkipSheet } from '@/components/SkipSheet';
 import { ChildTaskCard } from '@/components/TaskCards';
-import { Banner, Btn, Card, CONTENT_MAX, Empty, ErrorBanner, haptic, Icon, type IconName, IconTile, Loading, PressableScale, ProgressBar, Screen, SectionLabel, Stat, Txt, useLayout, useToast } from '@/components/ui';
+import { Banner, Btn, Card, CONTENT_MAX, Empty, ErrorBanner, Group, haptic, Icon, IconBtn, type IconName, IconTile, Loading, PressableScale, ProgressBar, Screen, SectionLabel, Sheet, Stat, TextScale, ToggleRow, Txt, useLayout, useToast } from '@/components/ui';
+import { VoiceSheet } from '@/components/VoiceNote';
 import { api, ApiError, isPaywall, isDone, type ChildState, type Task } from '@/lib/api';
+import { BIG_TEXT_SCALE, setBigText, useAppearance } from '@/lib/appearance';
+import type { Quiet } from '@/lib/quiet';
 import { useAuth } from '@/lib/auth';
 import { duration, longDate, shortDate } from '@/lib/format';
 import { t as tr, tn, useT } from '@/lib/i18n';
@@ -133,6 +138,13 @@ export default function ChildHome() {
   const [confetti, setConfetti] = useState(0);
   const [noteFor, setNoteFor] = useState<Task | null>(null);
   const [starting, setStarting] = useState(false);
+  const [chat, setChat] = useState<Task | null>(null);
+  const [voiceFor, setVoiceFor] = useState<Task | null>(null);
+  const [settings, setSettings] = useState(false);
+  const { bigText } = useAppearance();
+  // the family's quiet hours (from /me): local reminders inside the window are not scheduled
+  const quiet = useRef<Quiet>(null);
+  const quietAt = useRef(0);
   // Bumped by a successful load while photos wait offline: the effect below then sends them.
   const [onlineTick, setOnlineTick] = useState(0);
   const queue = usePhotoQueue();
@@ -179,7 +191,17 @@ export default function ChildHome() {
         reward: st.reward,
         track_time: st.track_time,
         started_at: st.started_at,
+        override_note: st.override_note,
       });
+      // quiet hours change rarely: re-read them at most every 10 minutes
+      if (Date.now() - quietAt.current > 600_000) {
+        try {
+          const me = await api.me();
+          quiet.current = { from: me.family.quiet_from ?? null, to: me.family.quiet_to ?? null };
+          quietAt.current = Date.now();
+          lastKey.current = null; // reschedule with the new window
+        } catch {}
+      }
       if (key === lastKey.current && Date.now() - lastAt.current < 600_000) return;
       lastKey.current = key;
       const ts = Date.now();
@@ -195,7 +217,7 @@ export default function ChildHome() {
         haptic.success();
       }
       prevAll.current = all;
-      if (ok && my === seq.current.shown) await scheduleReminders(st);
+      if (ok && my === seq.current.shown) await scheduleReminders(st, quiet.current);
     } catch (e) {
       if (isPaywall(e)) {
         await cancelReminders();
@@ -250,6 +272,8 @@ export default function ChildHome() {
   const schoolLabel = longDate(s.school_date);
   const lessons = s.tasks.filter((x) => x.kind === 'lesson');
   const items = s.tasks.filter((x) => x.kind === 'item');
+  const prep = items.filter((x) => x.category !== 'home');
+  const home = items.filter((x) => x.category === 'home');
   const queuedBy = new Map<number, number>();
   for (const q of queue) queuedBy.set(q.task_id, (queuedBy.get(q.task_id) ?? 0) + 1);
   const next = nextTask([...lessons, ...items], new Set(queuedBy.keys()));
@@ -322,10 +346,18 @@ export default function ChildHome() {
     setNotifOk(ok);
     if (ok) {
       try {
-        await scheduleReminders(s);
+        await scheduleReminders(s, quiet.current);
       } catch {} // permission is granted; the next load schedules them again
     }
     toast.show(ok ? t('child.notif.on') : t('child.notif.denied'));
+  };
+  // the chat reports its real count back: the badge updates before the next poll
+  const setCount = (taskId: number, n: number) => setS((cur) => (cur ? { ...cur, tasks: cur.tasks.map((x) => (x.id === taskId && x.messages !== n ? { ...x, messages: n } : x)) } : cur));
+  const voiceSent = () => {
+    setVoiceFor(null);
+    toast.show(t('child.voice.sent'));
+    lastKey.current = null;
+    load();
   };
   const logout = () =>
     Alert.alert(t('child.logout.title'), t('child.logout.text'), [
@@ -344,15 +376,19 @@ export default function ChildHome() {
 
   return (
     <>
+      <TextScale value={bigText ? BIG_TEXT_SCALE : 1}>
       <Screen onRefresh={load} footer={next ? <NextAction key={next.id} task={next} onPress={() => (next.needs_photo ? openCamera(next) : check(next, true))} /> : null}>
-        <Pressable onLongPress={logout} delayLongPress={1200}>
-          <Txt v="callout" color={p.muted}>
-            {t('child.greeting', { name: s.name })}
-          </Txt>
-          <Txt v="largeTitle" accessibilityRole="header" style={{ marginTop: 2 }}>
-            {schoolLabel.charAt(0).toUpperCase() + schoolLabel.slice(1)}
-          </Txt>
-        </Pressable>
+        <View style={styles.top}>
+          <Pressable onLongPress={logout} delayLongPress={1200} style={{ flex: 1, minWidth: 0 }}>
+            <Txt v="callout" color={p.muted}>
+              {t('child.greeting', { name: s.name })}
+            </Txt>
+            <Txt v="largeTitle" accessibilityRole="header" style={{ marginTop: 2 }}>
+              {schoolLabel.charAt(0).toUpperCase() + schoolLabel.slice(1)}
+            </Txt>
+          </Pressable>
+          <IconBtn icon="settings-outline" label={t('child.settings.title')} onPress={() => setSettings(true)} />
+        </View>
 
         {/* Hero: how far along, and how much time is left. Colour only where it carries meaning. */}
         <Card tone={allDone ? 'ok' : undefined} style={styles.hero}>
@@ -403,14 +439,20 @@ export default function ChildHome() {
           </View>
         ) : null}
 
+        {s.override_note ? <Banner tone="brand" icon="swap-horizontal" title={t('common.overrideTitle')} text={s.override_note} /> : null}
+
         {!s.tasks.length ? <Empty icon="sunny-outline" title={t('child.empty.title')} text={t('child.empty.text')} /> : null}
         {lessons.length ? <SectionLabel>{t('child.section.lessons', { done: lessons.filter(isDone).length, total: lessons.length })}</SectionLabel> : null}
         {lessons.map((tk) => (
-          <ChildTaskCard key={tk.id} t={tk} onPhoto={openCamera} onSkip={setSkip} onCheck={check} onOpen={openPhoto} onNote={setNoteFor} overdue={h.overdue} queued={queuedBy.get(tk.id) ?? 0} />
+          <ChildTaskCard key={tk.id} t={tk} onPhoto={openCamera} onSkip={setSkip} onCheck={check} onOpen={openPhoto} onNote={setNoteFor} overdue={h.overdue} queued={queuedBy.get(tk.id) ?? 0} onChat={setChat} onVoice={setVoiceFor} />
         ))}
-        {items.length ? <SectionLabel>{t('child.section.items', { done: items.filter(isDone).length, total: items.length })}</SectionLabel> : null}
-        {items.map((tk) => (
-          <ChildTaskCard key={tk.id} t={tk} onPhoto={openCamera} onSkip={setSkip} onCheck={check} onOpen={openPhoto} overdue={h.overdue} queued={queuedBy.get(tk.id) ?? 0} />
+        {prep.length ? <SectionLabel>{t('child.section.items', { done: prep.filter(isDone).length, total: prep.length })}</SectionLabel> : null}
+        {prep.map((tk) => (
+          <ChildTaskCard key={tk.id} t={tk} onPhoto={openCamera} onSkip={setSkip} onCheck={check} onOpen={openPhoto} overdue={h.overdue} queued={queuedBy.get(tk.id) ?? 0} onChat={setChat} />
+        ))}
+        {home.length ? <SectionLabel>{t('child.section.home', { done: home.filter(isDone).length, total: home.length })}</SectionLabel> : null}
+        {home.map((tk) => (
+          <ChildTaskCard key={tk.id} t={tk} onPhoto={openCamera} onSkip={setSkip} onCheck={check} onOpen={openPhoto} overdue={h.overdue} queued={queuedBy.get(tk.id) ?? 0} onChat={setChat} />
         ))}
 
         {/* Progress beyond today: the streak, the reward it leads to, and today's time at homework. */}
@@ -473,13 +515,26 @@ export default function ChildHome() {
       <SkipSheet task={skip} onClose={() => setSkip(null)} onSend={sendSkip} overlay={skip ? toast.node : null} />
       <NoteSheet task={noteFor} onClose={() => setNoteFor(null)} onSave={(text) => noteFor && saveNote(noteFor, text)} overlay={noteFor ? toast.node : null} />
       <PhotoViewer url={viewer?.url ?? null} id={viewer?.id} caption={viewer?.caption} onClose={() => setViewer(null)} />
+      <ChatSheet task={chat} onClose={() => setChat(null)} onCount={setCount} />
+      <VoiceSheet task={voiceFor} onClose={() => setVoiceFor(null)} onSent={voiceSent} />
+      <Sheet visible={settings} title={t('child.settings.title')} onClose={() => setSettings(false)}>
+        <Group>
+          <ToggleRow icon="text" tint="blue" title={t('child.settings.bigText')} subtitle={t('child.settings.bigTextSub')} value={bigText} onChange={setBigText} />
+        </Group>
+        <Txt v="sub" color={p.muted} style={{ marginTop: space.l, marginBottom: space.xs, marginLeft: 4, fontWeight: '600' }}>
+          {t('common.theme.section')}
+        </Txt>
+        <AppearancePicker />
+      </Sheet>
       <Confetti run={confetti} />
       {skip || noteFor ? null : toast.node}
+      </TextScale>
     </>
   );
 }
 
 const styles = StyleSheet.create({
+  top: { flexDirection: 'row', alignItems: 'flex-start', gap: space.s },
   hero: { marginTop: space.m, padding: space.m, gap: space.s },
   heroRow: { flexDirection: 'row', alignItems: 'center', gap: space.m },
   timeRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },

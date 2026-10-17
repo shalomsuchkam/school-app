@@ -1,0 +1,28 @@
+{
+  "data": {
+    "date": "19 - 25 октябрь 2026",
+    "days": [
+      {
+        "day": "Понедельник",
+        "date": "19.10.2026",
+        "isHoliday": false,
+        "subjects": [
+          { "scheduleUuid": "a1", "label": "Математика", "homeworkUuid": "h1", "type": "regular", "sMaxScore": 10, "homeworkBody": "<p>Стр. 42, № 5&nbsp;и 6</p>", "homeworkType": "text", "homeworkBooks": [], "hasFiles": false, "hasBooks": false, "timeslot": "08:00 - 08:45", "cabinet": "204", "theme": "Дроби", "teacherFio": "Иванова А. Б." },
+          { "scheduleUuid": "a2", "label": "Русский язык", "homeworkUuid": "h2", "type": "regular", "homeworkBody": "Упр. 118<br>выучить правило", "timeslot": "08:55 - 09:40" },
+          { "scheduleUuid": "a3", "label": "Физическая культура", "homeworkUuid": null, "type": "regular", "homeworkBody": null, "timeslot": "09:50 - 10:35" },
+          { "scheduleUuid": "a4", "label": "Казахский язык и литература", "type": "sor", "homeworkBody": "Жаттығу 7", "timeslot": "10:45 - 11:30" }
+        ]
+      },
+      {
+        "day": "Вторник",
+        "date": "20.10.2026",
+        "isHoliday": false,
+        "subjects": [
+          { "scheduleUuid": "b1", "label": "Познание мира", "homeworkBody": "Нарисовать карту двора" },
+          { "scheduleUuid": "b2", "label": "Математика", "homeworkBody": "  " }
+        ]
+      },
+      { "day": "Суббота", "date": "24.10.2026", "isHoliday": true, "subjects": [] }
+    ]
+  }
+}

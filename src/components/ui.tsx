@@ -194,7 +194,10 @@ export function Row({
   danger,
   chevron,
   disabled,
+  selected,
 }: {
+  /** One option of a pick-one list (announced as selected). */
+  selected?: boolean;
   /** Ionicons name, legacy symbol or a user-chosen emoji. */
   icon?: string;
   /** Solid tile colour with a white glyph (Settings style). Without it, icons sit on a soft brand tile. */
@@ -234,7 +237,12 @@ export function Row({
   );
   if (!onPress || disabled) return body;
   return (
-    <Pressable onPress={onPress} accessibilityRole="button" style={({ pressed }) => [pressed && { backgroundColor: p.fill }]}>
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityState={selected !== undefined ? { selected } : undefined}
+      style={({ pressed }) => [pressed && { backgroundColor: p.fill }]}
+    >
       {body}
     </Pressable>
   );

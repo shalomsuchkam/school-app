@@ -207,7 +207,12 @@ export default function WeeklyReport() {
       title={t('parent.report.title')}
       subtitle={t('parent.report.range', { from: shortDate(report.from), to: shortDate(report.to) })}
       onRefresh={load}
-      right={<IconBtn icon="close" label={t('common.close')} onPress={back} />}
+      right={
+        <View style={{ flexDirection: 'row', gap: space.xs }}>
+          <IconBtn icon="calendar-outline" label={t('parent.cal.open')} onPress={() => router.push('/parent/calendar')} />
+          <IconBtn icon="close" label={t('common.close')} onPress={back} />
+        </View>
+      }
       footer={toast.node}
     >
       <ChildSwitcher list={kids} value={childId} onChange={switchChild} />
@@ -249,6 +254,7 @@ export default function WeeklyReport() {
           )}
         </>
       )}
+      <Btn kind="ghost" icon="calendar-outline" title={t('parent.cal.openMonth')} onPress={() => router.push('/parent/calendar')} style={{ marginTop: space.m }} />
       {/* printing to PDF needs the native print module: not in the web preview */}
       {Platform.OS !== 'web' ? (
         <View style={styles.pdf}>

@@ -2,16 +2,17 @@ import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
-import { Alert, Linking, Platform, useColorScheme } from 'react-native';
+import { Alert, AppState, Linking, Platform } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
-import { setTooOldHandler } from '@/lib/api';
+import { isViewer, setTooOldHandler } from '@/lib/api';
+import { initAppearance, refreshAppearance } from '@/lib/appearance';
 import { AuthProvider, useAuth } from '@/lib/auth';
 import { initLang, t, useLang } from '@/lib/i18n';
 import { registerPush } from '@/lib/push';
-import { palettes, usePalette } from '@/lib/theme';
+import { palettes, usePalette, useScheme } from '@/lib/theme';
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
@@ -34,7 +35,11 @@ function Root() {
   const p = usePalette();
   const [langReady, setLangReady] = useState(false);
   useEffect(() => {
-    initLang().finally(() => setLangReady(true));
+    // language and the per-device appearance (theme mode, large text) are read before the splash hides
+    Promise.all([initLang(), initAppearance()]).finally(() => setLangReady(true));
+    // "by schedule" flips at 07:00 / 20:00: re-check when the app comes back to the foreground
+    const sub = AppState.addEventListener('change', (st) => st === 'active' && refreshAppearance());
+    return () => sub.remove();
   }, []);
   // the whole tree re-renders in the new language when it is switched in Settings
   const lang = useLang();
@@ -43,7 +48,8 @@ function Root() {
   // Register this phone for server push once signed in (parents are asked for permission here;
   // the child is asked on the home screen together with local reminders).
   useEffect(() => {
-    if (session) registerPush(session.role === 'parent').catch(() => {});
+    // viewers (tutors) get no push from the server (POST /push answers 403): don't register them
+    if (session && !isViewer(session.role)) registerPush(session.role === 'parent').catch(() => {});
   }, [session]);
   useEffect(() => {
     if (ready) SplashScreen.hideAsync().catch(() => {});
@@ -67,14 +73,14 @@ const LightNav = { ...DefaultTheme, colors: { ...DefaultTheme.colors, primary: p
 const DarkNav = { ...DarkTheme, colors: { ...DarkTheme.colors, primary: palettes.dark.brand, background: palettes.dark.bg, card: palettes.dark.bgElevated, text: palettes.dark.ink, border: palettes.dark.line } };
 
 export default function RootLayout() {
-  const scheme = useColorScheme();
+  const scheme = useScheme();
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <KeyboardProvider>
         <SafeAreaProvider>
           <ThemeProvider value={scheme === 'dark' ? DarkNav : LightNav}>
             <AuthProvider>
-              <StatusBar style="auto" />
+              <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />
               <Root />
             </AuthProvider>
           </ThemeProvider>

@@ -18,3 +18,17 @@ jest.mock('expo-haptics', () => ({
   notificationAsync: jest.fn(() => Promise.resolve()),
   NotificationFeedbackType: { Success: 'success', Warning: 'warning', Error: 'error' },
 }));
+// expo-audio's native module: a silent player / recorder with the hook shapes the app uses.
+jest.mock('expo-audio', () => {
+  const player = { play: jest.fn(), pause: jest.fn(), replace: jest.fn(), seekTo: jest.fn(() => Promise.resolve()), remove: jest.fn() };
+  const recorder = { record: jest.fn(), stop: jest.fn(() => Promise.resolve()), prepareToRecordAsync: jest.fn(() => Promise.resolve()), getStatus: () => ({ isRecording: false, durationMillis: 0 }), uri: null };
+  return {
+    RecordingPresets: { HIGH_QUALITY: { extension: '.m4a', sampleRate: 44100, numberOfChannels: 2, bitRate: 128000 } },
+    useAudioPlayer: () => player,
+    useAudioPlayerStatus: () => ({ playing: false, currentTime: 0, duration: 0, isLoaded: false, didJustFinish: false }),
+    useAudioRecorder: () => recorder,
+    useAudioRecorderState: () => ({ canRecord: true, isRecording: false, durationMillis: 0, mediaServicesDidReset: false, url: null }),
+    requestRecordingPermissionsAsync: jest.fn(() => Promise.resolve({ granted: true, canAskAgain: true })),
+    setAudioModeAsync: jest.fn(() => Promise.resolve()),
+  };
+});

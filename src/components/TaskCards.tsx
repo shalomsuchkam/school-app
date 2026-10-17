@@ -6,7 +6,9 @@ import type { ParentAction, Task } from '@/lib/api';
 import { t as tr, tn, useT } from '@/lib/i18n';
 import { radius, space, usePalette } from '@/lib/theme';
 
+import { ChatButton } from './ChatSheet';
 import { Badge, Btn, Icon, type IconName, PressableScale, Txt } from './ui';
+import { canRecordVoice, VoicePlayer } from './VoiceNote';
 
 // Status at a glance: the colour of the left bar and the chip tells the story before any reading.
 // todo = neutral, wait = waiting for the parent (amber), ok = done/accepted (green), bad = redo/declined/overdue (red).
@@ -56,13 +58,28 @@ function Shell({ tone, children }: { tone: Tone; children: React.ReactNode }) {
   );
 }
 
-function Head({ t, tone, text, right }: { t: Task; tone: Tone; text: string; right?: React.ReactNode }) {
+// Home chores carry a house and the parent's time estimate ("~20 мин") under the title.
+function Meta({ t }: { t: Task }) {
+  const p = usePalette();
+  if (t.category !== 'home') return null;
+  return (
+    <View style={styles.meta}>
+      <Icon name="home-outline" size={14} color={p.ink2} />
+      <Txt v="sub" color={p.ink2} numberOfLines={1} style={{ fontWeight: '500' }}>
+        {t.duration_min ? `${tr('child.home.tag')} · ${tr('child.home.min', { n: t.duration_min })}` : tr('child.home.tag')}
+      </Txt>
+    </View>
+  );
+}
+const metaA11y = (t: Task) => (t.category === 'home' ? `, ${tr('child.home.tag')}${t.duration_min ? `, ${tr('child.home.min', { n: t.duration_min })}` : ''}` : '');
+
+function Head({ t, tone, text, right, onChat }: { t: Task; tone: Tone; text: string; right?: React.ReactNode; onChat?: (t: Task) => void }) {
   const p = usePalette();
   const c = useTone(tone);
   return (
     <View style={styles.head}>
       {/* Label + status are read as one phrase by TalkBack; the tick button stays separately focusable. */}
-      <View accessible accessibilityLabel={`${t.emoji} ${t.label}. ${c.word}: ${text}`} style={styles.headText}>
+      <View accessible accessibilityLabel={`${t.emoji} ${t.label}${metaA11y(t)}. ${c.word}: ${text}`} style={styles.headText}>
         <View style={[styles.emo, { backgroundColor: tone === 'todo' ? p.fill : c.bg }]}>
           <Text style={{ fontSize: 22 }}>{t.emoji}</Text>
           {/* state at a glance, even before reading: a small seal on the subject tile */}
@@ -76,9 +93,11 @@ function Head({ t, tone, text, right }: { t: Task; tone: Tone; text: string; rig
           <Txt v="headline" numberOfLines={2} color={tone === 'ok' ? p.ink2 : p.ink}>
             {t.label}
           </Txt>
+          <Meta t={t} />
           <Badge label={text} tone={c.badge} />
         </View>
       </View>
+      {onChat ? <ChatButton count={t.messages ?? 0} label={t.label} onPress={() => onChat(t)} /> : null}
       {right}
     </View>
   );
@@ -185,8 +204,14 @@ export function ChildTaskCard({
   onNote,
   overdue = false,
   queued = 0,
+  onChat,
+  onVoice,
 }: {
   t: Task;
+  /** Opens the task's chat with the parents (icon with the message count). */
+  onChat?: (t: Task) => void;
+  /** Opens the voice-note recorder. */
+  onVoice?: (t: Task) => void;
   onPhoto: (t: Task) => void;
   onSkip: (t: Task) => void;
   onCheck: (t: Task, done: boolean) => void;
@@ -209,22 +234,30 @@ export function ChildTaskCard({
     const on = t.status === 'done' || t.status === 'skip_ok';
     return (
       <Shell tone={tone}>
-        <Head t={t} tone={tone} text={text} right={t.status === 'skip_pending' ? null : <Check on={on} label={t.label} onPress={() => onCheck(t, !on)} />} />
+        <Head t={t} tone={tone} text={text} onChat={onChat} right={t.status === 'skip_pending' ? null : <Check on={on} label={t.label} onPress={() => onCheck(t, !on)} />} />
         <Notes t={t} onNote={onNote} />
+        {t.voice_url ? <VoicePlayer url={t.voice_url} /> : null}
       </Shell>
     );
   }
   const open = !['skip_ok', 'skip_pending', 'done'].includes(t.status);
   const canSkip = ['todo', 'skip_no', 'redo'].includes(t.status) && t.photos.length === 0;
   const photoLabel = t.kind === 'lesson' ? tt('child.card.takePhoto') : tt('child.card.photo');
+  // a voice note explains a lesson's homework ("we were told to learn the poem"): offered on lessons
+  const voiceBtn =
+    onVoice && canRecordVoice && t.kind === 'lesson' ? (
+      <Btn small kind="plain" icon="mic-outline" title={t.voice_url ? tt('child.voice.redo') : tt('child.voice.record')} onPress={() => onVoice(t)} />
+    ) : null;
   return (
     <Shell tone={tone}>
-      <Head t={t} tone={tone} text={text} />
+      <Head t={t} tone={tone} text={text} onChat={onChat} />
       <Notes t={t} onNote={onNote} />
       <Thumbs t={t} onOpen={onOpen} />
+      {t.voice_url ? <VoicePlayer url={t.voice_url} /> : null}
       {t.status === 'done' && t.photos.length < 2 ? (
         <View style={styles.btns}>
           <Btn small kind="plain" icon="add" title={tt('child.card.morePage')} onPress={() => onPhoto(t)} />
+          {voiceBtn}
         </View>
       ) : open ? (
         <View style={styles.btns}>
@@ -239,7 +272,10 @@ export function ChildTaskCard({
               {canSkip ? <Btn small kind="plain" title={t.kind === 'lesson' ? tt('child.card.noHw') : tt('child.card.notNeeded')} onPress={() => onSkip(t)} /> : null}
             </>
           )}
+          {voiceBtn}
         </View>
+      ) : voiceBtn ? (
+        <View style={styles.btns}>{voiceBtn}</View>
       ) : null}
     </Shell>
   );
@@ -251,8 +287,13 @@ export function ParentTaskCard({
   onAction,
   onOpen,
   overdue = false,
+  readOnly = false,
+  onChat,
 }: {
   t: Task;
+  /** A viewer (tutor / teacher): status, notes, photos and voice only; no actions. */
+  readOnly?: boolean;
+  onChat?: (t: Task) => void;
   busy: boolean;
   onAction: (t: Task, a: ParentAction) => void;
   onOpen: (url: string, caption: string, id: number) => void;
@@ -263,7 +304,9 @@ export function ParentTaskCard({
   const [tone, text] = statusFor(t, 'parent', overdue);
   const a = (x: ParentAction) => () => onAction(t, x);
   let actions: React.ReactNode = null;
-  if (t.status === 'skip_pending') {
+  if (readOnly) {
+    actions = null;
+  } else if (t.status === 'skip_pending') {
     actions = (
       <>
         <Btn small kind="ok" title={tt('child.card.approve')} onPress={a('skip_ok')} disabled={busy} style={{ flex: 1 }} />
@@ -285,9 +328,10 @@ export function ParentTaskCard({
   }
   return (
     <Shell tone={tone}>
-      <Head t={t} tone={tone} text={text} />
+      <Head t={t} tone={tone} text={text} onChat={onChat} />
       <Notes t={t} />
       <Thumbs t={t} onOpen={onOpen} />
+      {t.voice_url ? <VoicePlayer url={t.voice_url} /> : null}
       {actions ? <View style={styles.btns}>{actions}</View> : null}
     </Shell>
   );
@@ -304,6 +348,7 @@ const styles = StyleSheet.create({
   time: { position: 'absolute', left: 6, bottom: 6, backgroundColor: 'rgba(20,18,14,0.62)', borderRadius: radius.xs, paddingHorizontal: 6, paddingVertical: 1 },
   btns: { flexDirection: 'row', gap: space.xs, marginTop: space.s, flexWrap: 'wrap' },
   notes: { gap: space.xs, marginTop: space.s },
+  meta: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   comment: { borderRadius: radius.s, borderLeftWidth: 3, paddingHorizontal: space.s, paddingVertical: space.xs },
   note: { flexDirection: 'row', alignItems: 'flex-start', gap: space.xs, borderRadius: radius.s, borderWidth: 1, borderStyle: 'dashed', paddingHorizontal: space.s, paddingVertical: space.xs, minHeight: 40 },
   check: { width: 40, height: 40, borderRadius: 20, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },

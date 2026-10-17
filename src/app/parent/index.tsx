@@ -1,16 +1,17 @@
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useRef, useState } from 'react';
-import { AppState, Pressable, StyleSheet, View } from 'react-native';
+import { AppState, Clipboard, Pressable, StyleSheet, View } from 'react-native';
 
+import { ChatSheet } from '@/components/ChatSheet';
 import { Paywall } from '@/components/Paywall';
 import { PhoneLimitGuide } from '@/components/PhoneLimitGuide';
 import { PhotoViewer } from '@/components/PhotoViewer';
 import { ParentTaskCard } from '@/components/TaskCards';
 import { Badge, Banner, Btn, Card, Empty, ErrorBanner, Field, Group, haptic, Icon, IconBtn, Loading, PressableScale, Row, Screen, SectionLabel, Segmented, SegmentBar, Sheet, Txt, useLayout, useToast } from '@/components/ui';
 import { api, ApiError, isDone, isPaywall, type Child, type Day, type Me, type Overview, type ParentAction, type Task } from '@/lib/api';
-import { useAuth } from '@/lib/auth';
+import { useAuth, useIsViewer } from '@/lib/auth';
 import { ChildSwitcher, currentChildReady, getCurrentChild, setCurrentChild, useCurrentChild } from '@/lib/currentChild';
-import { longDate, toMin } from '@/lib/format';
+import { lastSeen, longDate, toMin } from '@/lib/format';
 import { tn, useT } from '@/lib/i18n';
 import { elevation, radius, space, usePalette } from '@/lib/theme';
 
@@ -44,7 +45,7 @@ export default function Today() {
   const [mode, setMode] = useState<'day' | 'history'>('day');
   const [busy, setBusy] = useState<number | null>(null);
   const [openDay, setOpenDay] = useState<string | null>(null);
-  const [viewer, setViewer] = useState<{ url: string; caption: string; id: number } | null>(null);
+  const [photo, setPhoto] = useState<{ url: string; caption: string; id: number } | null>(null);
   const [paywall, setPaywall] = useState(false);
   const [hard, setHard] = useState<string | null>(null);
   const [today, setToday] = useState<string | null>(null);
@@ -53,6 +54,8 @@ export default function Today() {
   const [toolOpen, setToolOpen] = useState(false);
   const [toolBusy, setToolBusy] = useState(false);
   const [guide, setGuide] = useState(false);
+  const [chat, setChat] = useState<Task | null>(null);
+  const viewer = useIsViewer();
   const seq = useRef({ sent: 0, shown: 0 });
   // Last payload we rendered: lets a poll that brought nothing new skip the whole re-render.
   const lastKey = useRef<string | null>(null);
@@ -167,7 +170,7 @@ export default function Today() {
       toast.show((e as Error).message);
     }
   };
-  const open = (url: string, caption: string, id: number) => setViewer({ url, caption, id });
+  const open = (url: string, caption: string, id: number) => setPhoto({ url, caption, id });
   const switchChild = (id: number | null) => {
     if (id === null || id === data.child_id) return;
     setCurrentChild(id);
@@ -197,6 +200,20 @@ export default function Today() {
     },
     { ok: 0, wait: 0, bad: 0 },
   );
+  // the chat sheet reports the real count back: the badge updates before the next poll
+  const setCount = (taskId: number, n: number) =>
+    setData((cur) => (cur ? { ...cur, days: cur.days.map((d) => ({ ...d, tasks: d.tasks.map((x) => (x.id === taskId && x.messages !== n ? { ...x, messages: n } : x)) })) } : cur));
+  const pasteNote = async () => {
+    if (!tool) return;
+    try {
+      const text = (await Clipboard.getString()).trim();
+      if (!text) return toast.show(t('parent.task.pasteEmpty'));
+      setTool({ ...tool, text: text.slice(0, 300) });
+    } catch {
+      toast.show(t('parent.task.pasteEmpty'));
+    }
+  };
+  const seen = lastSeen(data.child_seen);
   const toolTitle = !tool ? '' : tool.mode === 'redo' ? t('parent.task.redoTitle') : tool.mode === 'comment' ? t('parent.task.comment') : t('parent.task.note');
 
   return (
@@ -205,9 +222,14 @@ export default function Today() {
         title={kids.find((c) => c.id === data.child_id)?.name || data.child_name || t('parent.tab.today')}
         subtitle={t('parent.today.subtitle', { date: longDate(active.date) })}
         onRefresh={load}
-        right={<IconBtn icon="stats-chart-outline" label={t('parent.today.report')} onPress={() => router.push('/parent/report')} />}
+        right={
+          <View style={styles.headBtns}>
+            <IconBtn icon="calendar-outline" label={t('parent.cal.open')} onPress={() => router.push('/parent/calendar')} />
+            <IconBtn icon="stats-chart-outline" label={t('parent.today.report')} onPress={() => router.push('/parent/report')} />
+          </View>
+        }
         footer={
-          mode === 'day' && left > 0 ? (
+          mode === 'day' && left > 0 && !viewer ? (
             <View pointerEvents="box-none" style={[styles.fabWrap, { paddingHorizontal: pad }]}>
               <PressableScale accessibilityRole="button" accessibilityLabel={t('parent.today.nudge')} onPress={() => (haptic.tap(), nudge())} style={[styles.fab, elevation(p, 2), { backgroundColor: p.brandFill }]}>
                 <Icon name="notifications" size={18} color="#fff" />
@@ -219,8 +241,17 @@ export default function Today() {
           ) : null
         }
       >
+        {seen ? (
+          <View style={styles.seen} accessible accessibilityLabel={`${kids.find((c) => c.id === data.child_id)?.name ?? data.child_name}: ${seen.text}`}>
+            <View style={[styles.seenDot, { backgroundColor: seen.online ? p.okFill : p.border }]} />
+            <Txt v="sub" color={p.muted}>
+              {seen.text}
+            </Txt>
+          </View>
+        ) : null}
         <ChildSwitcher list={kids} value={childId} onChange={switchChild} />
         <ErrorBanner error={error} onRetry={load} />
+        {viewer ? <Banner tone="neutral" icon="eye-outline" text={t('parent.viewerMode.banner')} /> : null}
         <Segmented
           value={mode}
           onChange={setMode}
@@ -284,7 +315,9 @@ export default function Today() {
               ) : null}
             </Card>
 
-            {overdue ? (
+            {active.override_note ? <Banner tone="brand" icon="swap-horizontal" title={t('common.overrideTitle')} text={active.override_note} /> : null}
+
+            {overdue && !viewer ? (
               <Banner
                 tone="bad"
                 icon="phone-portrait-outline"
@@ -297,14 +330,14 @@ export default function Today() {
             {!active.total ? (
               <Card style={{ marginTop: space.xs }}>
                 <Empty icon="calendar-outline" title={t('parent.today.emptyTitle')} text={t('parent.today.emptyText')}>
-                  <Btn title={t('parent.today.openSchedule')} kind="secondary" onPress={() => router.push('/parent/schedule')} style={{ marginTop: space.m }} />
+                  {viewer ? null : <Btn title={t('parent.today.openSchedule')} kind="secondary" onPress={() => router.push('/parent/schedule')} style={{ marginTop: space.m }} />}
                 </Empty>
               </Card>
             ) : (
               <>
                 {[...pending, ...active.tasks.filter((x) => x.status !== 'skip_pending')]
                   .reduce<{ k: string; items: Task[] }[]>((acc, task) => {
-                    const k = task.kind === 'lesson' ? t('parent.today.groupLessons') : t('parent.today.groupPrep');
+                    const k = task.kind === 'lesson' ? t('parent.today.groupLessons') : task.category === 'home' ? t('parent.today.groupHome') : t('parent.today.groupPrep');
                     const g = acc.find((x) => x.k === k) ?? (acc.push({ k, items: [] }), acc[acc.length - 1]);
                     g.items.push(task);
                     return acc;
@@ -315,7 +348,7 @@ export default function Today() {
                         {g.k} · {g.items.filter(isDone).length}/{g.items.length}
                       </SectionLabel>
                       {g.items.map((x) => (
-                        <TaskBlock key={x.id} x={x} busy={busy === x.id} act={act} open={open} tool={openTool} overdue={overdue} />
+                        <TaskBlock key={x.id} x={x} busy={busy === x.id} act={act} open={open} tool={openTool} overdue={overdue} viewer={viewer} chat={setChat} />
                       ))}
                     </View>
                   ))}
@@ -324,10 +357,10 @@ export default function Today() {
             <Btn title={t('parent.today.report')} icon="stats-chart-outline" kind="ghost" onPress={() => router.push('/parent/report')} style={{ marginTop: space.s }} />
           </>
         ) : (
-          <History days={history} openDay={openDay} setOpenDay={setOpenDay} busy={busy} act={act} open={open} tool={openTool} />
+          <History days={history} openDay={openDay} setOpenDay={setOpenDay} busy={busy} act={act} open={open} tool={openTool} viewer={viewer} chat={setChat} />
         )}
       </Screen>
-      <PhotoViewer url={viewer?.url ?? null} id={viewer?.id} caption={viewer?.caption} onClose={() => setViewer(null)} />
+      <PhotoViewer url={photo?.url ?? null} id={photo?.id} caption={photo?.caption} onClose={() => setPhoto(null)} />
       <Sheet visible={toolOpen} title={toolTitle} onClose={() => setToolOpen(false)} overlay={toolOpen ? toast.node : null}>
         {tool ? (
           <>
@@ -346,6 +379,7 @@ export default function Today() {
             <Txt v="sub" color={p.muted} style={{ marginBottom: 14, marginLeft: 4 }}>
               {t(tool.mode === 'redo' ? 'parent.task.redoHint' : tool.mode === 'comment' ? 'parent.task.commentHint' : 'parent.task.noteHint')}
             </Txt>
+            {tool.mode === 'note' ? <Btn small kind="secondary" icon="clipboard-outline" title={t('parent.task.paste')} onPress={pasteNote} style={{ alignSelf: 'flex-start', marginBottom: 14 }} /> : null}
             <Btn
               title={tool.mode === 'redo' ? t('parent.task.redoBtn') : tool.mode === 'comment' ? t('parent.task.send') : t('common.save')}
               kind={tool.mode === 'redo' ? 'bad' : 'primary'}
@@ -357,6 +391,7 @@ export default function Today() {
         ) : null}
       </Sheet>
       <PhoneLimitGuide visible={guide} onClose={() => setGuide(false)} />
+      <ChatSheet task={chat} readOnly={viewer} onClose={() => setChat(null)} onCount={setCount} />
       {toolOpen ? null : toast.node}
     </>
   );
@@ -380,6 +415,8 @@ function TaskBlock({
   open,
   tool,
   overdue,
+  viewer,
+  chat,
 }: {
   x: Task;
   busy: boolean;
@@ -387,6 +424,8 @@ function TaskBlock({
   open: (url: string, caption: string, id: number) => void;
   tool: (t: Task, mode: ToolMode) => void;
   overdue?: boolean;
+  viewer?: boolean;
+  chat: (t: Task) => void;
 }) {
   const p = usePalette();
   const t = useT();
@@ -404,11 +443,13 @@ function TaskBlock({
       </Txt>
     </Pressable>
   );
+  // viewers read: status, notes, photos, voice and the chat; nothing to change
+  if (viewer) return <ParentTaskCard t={x} busy={false} onAction={act} onOpen={open} overdue={overdue} readOnly onChat={chat} />;
   return (
     <View>
       {/* not accessible as a whole, so screen readers still reach the card's own buttons */}
       <Pressable accessible={false} onLongPress={() => tool(x, 'comment')} delayLongPress={400}>
-        <ParentTaskCard t={x} busy={busy} onAction={act} onOpen={open} overdue={overdue} />
+        <ParentTaskCard t={x} busy={busy} onAction={act} onOpen={open} overdue={overdue} onChat={chat} />
       </Pressable>
       <View style={styles.tools} accessibilityLabel={t('parent.task.toolsA11y', { name: x.label })}>
         {link('comment', 'chatbubble-outline', null, t('parent.task.comment'))}
@@ -426,7 +467,11 @@ function History({
   act,
   open,
   tool,
+  viewer,
+  chat,
 }: {
+  viewer?: boolean;
+  chat: (t: Task) => void;
   days: Day[];
   openDay: string | null;
   setOpenDay: (d: string | null) => void;
@@ -461,7 +506,7 @@ function History({
             {openDay === d.date ? (
               <View style={{ marginTop: 8 }}>
                 {d.tasks.map((x) => (
-                  <TaskBlock key={x.id} x={x} busy={busy === x.id} act={act} open={open} tool={tool} />
+                  <TaskBlock key={x.id} x={x} busy={busy === x.id} act={act} open={open} tool={tool} viewer={viewer} chat={chat} />
                 ))}
               </View>
             ) : null}
@@ -473,6 +518,9 @@ function History({
 }
 
 const styles = StyleSheet.create({
+  headBtns: { flexDirection: 'row', gap: space.xs },
+  seen: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: -space.s, marginBottom: space.s, marginLeft: 2 },
+  seenDot: { width: 8, height: 8, borderRadius: 4 },
   hero: { gap: space.s },
   heroTop: { flexDirection: 'row', alignItems: 'center' },
   streaks: { flexDirection: 'row', gap: space.s },

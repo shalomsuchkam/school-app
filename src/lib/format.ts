@@ -1,4 +1,4 @@
-import { t, ta } from './i18n';
+import { locale, t, ta } from './i18n';
 
 // Weekday names in the current language; d = ISO weekday 1..7.
 export const wdShort = (d: number) => ta('common.wdShort')[d - 1] ?? '';
@@ -37,4 +37,25 @@ export function weekdaysLabel(w: number[] | null) {
   const s = [...w].sort();
   if (s.join() === '1,2,3,4,5') return t('common.monFri');
   return s.map((d) => wdShort(d)).join(', ');
+}
+
+// ---------- presence ----------
+export const ONLINE_MS = 5 * 60_000;
+/** "2 часа назад" via Intl.RelativeTimeFormat in the app language (falls back to "2 ч назад"). */
+export function relativeAgo(iso: string, now: number = Date.now(), loc = locale()): string {
+  const diff = Math.max(0, now - Date.parse(iso));
+  const min = Math.floor(diff / 60_000);
+  const [n, unit]: [number, Intl.RelativeTimeFormatUnit] =
+    min < 60 ? [min, 'minute'] : min < 1440 ? [Math.floor(min / 60), 'hour'] : min < 1440 * 30 ? [Math.floor(min / 1440), 'day'] : [Math.floor(min / (1440 * 30)), 'month'];
+  try {
+    return new Intl.RelativeTimeFormat(loc, { numeric: 'auto' }).format(-n, unit);
+  } catch {
+    return t('common.ago', { when: unit === 'minute' ? duration(n) : unit === 'hour' ? t('common.dur.h', { h: n }) : t('common.dur.d', { d: n * (unit === 'month' ? 30 : 1) }) });
+  }
+}
+/** Online (seen in the last 5 min) or "был(а) 2 часа назад"; null when the device never called the API. */
+export function lastSeen(iso: string | null | undefined, now: number = Date.now()): { online: boolean; text: string } | null {
+  if (!iso || Number.isNaN(Date.parse(iso))) return null;
+  if (now - Date.parse(iso) < ONLINE_MS) return { online: true, text: t('common.online') };
+  return { online: false, text: t('common.seen', { when: relativeAgo(iso, now) }) };
 }
