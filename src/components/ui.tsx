@@ -38,6 +38,7 @@ import {
   type ViewStyle,
   useWindowDimensions,
 } from 'react-native';
+import DateTimePicker, { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import { KeyboardAvoidingView, useKeyboardState } from 'react-native-keyboard-controller';
 import Animated, { cancelAnimation, Easing, interpolate, useAnimatedStyle, useReducedMotion, useSharedValue, withRepeat, withSpring, withTiming } from 'react-native-reanimated';
@@ -45,7 +46,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { scheduleOnRN } from 'react-native-worklets';
 
 import { fromMin, toMin, wdShort } from '@/lib/format';
-import { useT } from '@/lib/i18n';
+import { getLang, useT } from '@/lib/i18n';
 import { elevation, hairline, radius, space, type as typeScale, usePalette, type TileColor } from '@/lib/theme';
 
 import { Glyph, haptic, Icon, iconOf, isIconName, MAX_SCALE, Txt, type IconName } from './ui/core';
@@ -450,8 +451,9 @@ export function Field(props: TextInputProps & { label?: string }) {
   );
 }
 
+// Web preview only: the system time picker does not exist there, so ± buttons remain.
 // clamp: stay within one day (00:00–23:45) instead of wrapping past midnight
-export function TimeStepper({ value, onChange, step = 15, clamp }: { value: string; onChange: (v: string) => void; step?: number; clamp?: boolean }) {
+function TimeButtons({ value, onChange, step = 15, clamp }: { value: string; onChange: (v: string) => void; step?: number; clamp?: boolean }) {
   const p = usePalette();
   const t = useT();
   const m = toMin(value);
@@ -483,6 +485,65 @@ export function TimeStepper({ value, onChange, step = 15, clamp }: { value: stri
       </Txt>
       {btn(step, 'add')}
     </View>
+  );
+}
+
+// Time of day as a tappable value: the system picker pops up (Android dialog, iOS wheel in a sheet).
+// `step` and `clamp` only matter for the web preview's ± buttons.
+export function TimeStepper(props: { value: string; onChange: (v: string) => void; step?: number; clamp?: boolean }) {
+  const { value, onChange } = props;
+  const p = usePalette();
+  const t = useT();
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState(value);
+  if (Platform.OS === 'web') return <TimeButtons {...props} />;
+  const asDate = (hm: string) => {
+    const d = new Date();
+    d.setHours(Math.floor(toMin(hm) / 60), toMin(hm) % 60, 0, 0);
+    return d;
+  };
+  const hm = (d: Date) => fromMin(d.getHours() * 60 + d.getMinutes());
+  const commit = (v: string) => {
+    if (v === value) return;
+    haptic.tap();
+    onChange(v);
+  };
+  const press = () => {
+    if (Platform.OS === 'android') {
+      DateTimePickerAndroid.open({ value: asDate(value), mode: 'time', is24Hour: true, onChange: (e, d) => e.type === 'set' && d && commit(hm(d)) });
+    } else {
+      setDraft(value);
+      setOpen(true);
+    }
+  };
+  return (
+    <>
+      <PressableScale
+        accessibilityRole="button"
+        accessibilityLabel={`${t('ui.pickTime')}: ${value}`}
+        onPress={press}
+        hitSlop={6}
+        scaleTo={0.95}
+        style={[styles.timeChip, { backgroundColor: p.fill }]}
+      >
+        <Icon name="time-outline" size={16} color={p.ink2} />
+        <Txt v="headline" style={{ fontVariant: ['tabular-nums'] }}>
+          {value}
+        </Txt>
+      </PressableScale>
+      {Platform.OS === 'ios' ? (
+        <Sheet visible={open} title={t('ui.pickTime')} onClose={() => setOpen(false)}>
+          <DateTimePicker value={asDate(draft)} mode="time" display="spinner" is24Hour minuteInterval={5} locale={getLang()} onChange={(_, d) => d && setDraft(hm(d))} />
+          <Btn
+            title={t('ui.timeDone')}
+            onPress={() => {
+              setOpen(false);
+              commit(draft);
+            }}
+          />
+        </Sheet>
+      ) : null}
+    </>
   );
 }
 
@@ -794,6 +855,7 @@ const styles = StyleSheet.create({
   wrap: { flexDirection: 'row', flexWrap: 'wrap', gap: space.xs },
   input: { borderRadius: radius.m, paddingHorizontal: 14, paddingVertical: 13 },
   step: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
+  timeChip: { flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 36, paddingHorizontal: 12, borderRadius: 18 },
   emoji: { width: 46, height: 46, borderRadius: radius.m, alignItems: 'center', justifyContent: 'center', borderWidth: 2 },
   sheet: { borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, paddingTop: 8 },
   sheetHead: { paddingHorizontal: 20, paddingBottom: space.s },

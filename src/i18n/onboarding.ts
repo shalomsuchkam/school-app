@@ -142,6 +142,8 @@ const b: Bundle = {
     // ui kit
     'ui.earlier': 'Раньше',
     'ui.later': 'Позже',
+    'ui.pickTime': 'Выберите время',
+    'ui.timeDone': 'Готово',
   },
   kk: {
     'onboarding.welcome.title': 'Сабақтар\nбақылауда',
@@ -264,6 +266,8 @@ const b: Bundle = {
     'onboarding.tpl.skip': 'Бірден соңғы қадамға',
     'ui.earlier': 'Ертерек',
     'ui.later': 'Кешірек',
+    'ui.pickTime': 'Уақытты таңдаңыз',
+    'ui.timeDone': 'Дайын',
   },
   en: {
     'onboarding.welcome.title': 'Homework\nunder control',
@@ -386,6 +390,8 @@ const b: Bundle = {
     'onboarding.tpl.skip': 'Skip to the last step',
     'ui.earlier': 'Earlier',
     'ui.later': 'Later',
+    'ui.pickTime': 'Choose a time',
+    'ui.timeDone': 'Done',
   },
 };
 export default b;

@@ -91,18 +91,21 @@ jobs:
             echo "signing=debug" >> "$GITHUB_OUTPUT"
           fi
           ./gradlew assembleRelease --no-daemon -PreactNativeArchitectures=arm64-v8a,armeabi-v7a "${signing[@]}"
+          mkdir -p ../out && cp app/build/outputs/apk/release/app-release.apk ../out/Uroki.apk
+          # a lighter APK for 32-bit phones (Galaxy A11 and other budget models): about half the size
+          ./gradlew assembleRelease --no-daemon -PreactNativeArchitectures=armeabi-v7a "${signing[@]}"
+          cp app/build/outputs/apk/release/app-release.apk ../out/Uroki-32bit.apk
           # Google Play takes an .aab signed with the private upload key (all ABIs incl. x86_64 for Chromebooks/tablets)
           if [ ${#signing[@]} -gt 0 ]; then
             ./gradlew bundleRelease --no-daemon -PreactNativeArchitectures=arm64-v8a,armeabi-v7a,x86_64 "${signing[@]}"
           fi
       - run: |
           mkdir -p out
-          cp android/app/build/outputs/apk/release/app-release.apk out/Uroki.apk
           if [ -f android/app/build/outputs/bundle/release/app-release.aab ]; then cp android/app/build/outputs/bundle/release/app-release.aab out/Uroki.aab; fi
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: android
-          path: out/Uroki.*
+          path: out/Uroki*
 
   ios:
     needs: test
@@ -162,6 +165,6 @@ jobs:
           fail_on_unmatched_files: false
           files: out/*
           body: |
-            **Android:** скачайте `Uroki.apk` на телефон и откройте (разрешите установку из этого источника).
+            **Android:** скачайте `Uroki.apk` на телефон и откройте (разрешите установку из этого источника). Для 32-битных телефонов (Samsung Galaxy A11 и подобные) есть облегчённый `Uroki-32bit.apk`.
             **iPhone:** `Uroki-unsigned.ipa` нужно подписать своим Apple ID через Sideloadly или AltStore (бесплатный Apple ID — приложение работает 7 дней, потом переподписать).
             ${{ needs.android.outputs.signing == 'release' && 'APK подписан закрытым ключом проекта, поэтому новые версии ставятся поверх старых. Если стояла тестовая версия и установка не проходит, удалите её один раз.' || 'Это тестовая сборка: APK подписан общедоступным тестовым ключом. Версии для магазина приложений будут подписаны закрытым ключом, и тестовую версию перед их установкой нужно будет один раз удалить.' }}
