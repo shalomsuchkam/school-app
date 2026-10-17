@@ -5,9 +5,6 @@ name: Android smoke test
 # Also checks that every ABI (32-bit armeabi-v7a phones included) ships the same native libraries.
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths: ['src/**', 'app.json', 'app.config.js', 'package.json', 'plugins/**', 'modules/**', '.github/workflows/android-smoke.yml']
 
 permissions:
   contents: read
@@ -84,11 +81,16 @@ jobs:
           nohup "$ANDROID_HOME/emulator/emulator" -avd smoke -no-window -no-audio -no-boot-anim -no-snapshot \
             -gpu swiftshader_indirect -memory 2048 > emulator.log 2>&1 &
           adb="$ANDROID_HOME/platform-tools/adb"
-          "$adb" wait-for-device
+          ls -la /dev/kvm || true
+          if ! timeout 600 "$adb" wait-for-device; then
+            echo "::error title=Emulator did not start::see the log below"; tail -100 emulator.log; exit 1
+          fi
+          booted=""
           for i in $(seq 1 120); do
-            [ "$("$adb" shell getprop sys.boot_completed | tr -d '\r')" = "1" ] && break
+            [ "$("$adb" shell getprop sys.boot_completed | tr -d '\r')" = "1" ] && booted=1 && break
             sleep 5
           done
+          [ -n "$booted" ] || { echo "::error title=Emulator did not finish booting"; tail -100 emulator.log; exit 1; }
           "$adb" shell getprop ro.build.version.release
       - name: Install, launch, collect logs
         run: |
