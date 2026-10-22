@@ -385,6 +385,11 @@ export default function Settings() {
           {f.allow_viewers ? <Row icon="person-add" tint="teal" title={t('parent.viewers.invite')} chevron onPress={() => setInvite('viewer')} /> : null}
         </Group>
 
+        <SectionLabel>{t('screen.section')}</SectionLabel>
+        <Group>
+          <Row icon="hourglass" tint="violet" title={t('screen.row')} subtitle={t('screen.rowSub')} chevron onPress={() => router.push('/parent/screen')} />
+        </Group>
+
         <SectionLabel>{t('parent.bc.section')}</SectionLabel>
         <Group>
           <Row icon="cloud-download" tint="blue" title={t('parent.bc.row')} subtitle={t('parent.bc.rowSub')} chevron onPress={() => router.push('/parent/bilimclass')} />

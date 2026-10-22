@@ -162,6 +162,53 @@ export type Report = {
 };
 export type ParentAction = 'ok' | 'done' | 'redo' | 'skip_ok' | 'skip_no' | 'reset' | 'undo' | 'comment';
 
+// Screen time (docs/SCREEN_TIME.md). Package names are Android package names; times are HH:MM in the family tz.
+export type AppLimit = { pkg: string; name: string; minutes: number };
+export type ScreenWindow = { from: string; to: string; allowed: string[] };
+export type SchoolWindow = ScreenWindow & { days: number[] };
+export type ScreenRules = {
+  child_id: number;
+  enabled: boolean;
+  daily_limit_min: number | null;
+  app_limits: AppLimit[];
+  blocked_apps: string[];
+  always_allowed: string[];
+  bedtime: ScreenWindow | null;
+  school: SchoolWindow | null;
+  homework_lock: boolean;
+  homework_lock_from: string;
+  block_new_apps: boolean;
+  // read-only here: set through screenUnlock
+  unlock_until: string | null;
+  updated_at: string | null;
+};
+export type ReportedApp = { pkg: string; name: string; installed_at?: string | number };
+export type GuardReport = { usage_access: boolean; overlay: boolean; battery_ok: boolean; running: boolean };
+export type DeviceReport = {
+  device_id: string;
+  apps: ReportedApp[];
+  usage: { date?: string; total_min?: number; apps?: Record<string, number> };
+  guard: Partial<GuardReport>;
+  reported_at: string | null;
+  approved: string[];
+};
+export type Textbook = { id: number; child_id: number | null; title: string; url: string; created_at: string };
+export type ScreenState = {
+  rules: ScreenRules;
+  homework_done: boolean;
+  homework_date: string;
+  homework_due_today: boolean;
+  tz: string;
+  textbooks: Textbook[];
+  device: DeviceReport | null;
+  today: string;
+  school_day: boolean;
+  approved: string[];
+  new_apps: string[];
+  lang: 'ru' | 'kk' | 'en';
+};
+export type ScreenPatch = Partial<Omit<ScreenRules, 'child_id' | 'unlock_until' | 'updated_at'>> & { child_id: number };
+
 export class ApiError extends Error {
   constructor(message: string, public status: number) {
     super(message);
@@ -179,6 +226,8 @@ let token: string | null = null;
 export const setToken = (t: string | null) => {
   token = t;
 };
+// The signed-in device's token (the child's screen guard polls the server with it).
+export const getToken = () => token;
 
 type Raw = { data: Uint8Array<ArrayBuffer> | Blob; type: string };
 async function call<T>(method: string, path: string, body?: unknown, raw?: Raw): Promise<T> {
@@ -276,6 +325,19 @@ export const api = {
   telegramLink: () => call<{ url: string }>('POST', '/telegram/link', {}),
   telegramUnlink: () => call('DELETE', '/telegram'),
   pushToken: (t: string) => call('POST', '/push', { token: t }),
+
+  // Screen time: a child device always gets its own rules (child is ignored there).
+  getScreenRules: (child?: number) => call<ScreenState>('GET', `/screen/rules${child ? `?child=${child}` : ''}`),
+  putScreenRules: (patch: ScreenPatch) => call<ScreenRules>('PUT', '/screen/rules', patch),
+  // minutes 1..240 opens the phone for that long; 0 cancels
+  screenUnlock: (child_id: number, minutes: number) => call<ScreenRules>('POST', '/screen/unlock', { child_id, minutes }),
+  screenApprove: (child_id: number, pkg: string, action: 'allow' | 'block' | 'limit', minutes?: number) =>
+    call<ScreenRules>('POST', '/screen/approve', { child_id, pkg, action, ...(action === 'limit' ? { minutes } : null) }),
+
+  // Textbook links (child_id null = every child); a parent without `child` gets all of the family's links.
+  textbooks: (child?: number) => call<Textbook[]>('GET', `/textbooks${child ? `?child=${child}` : ''}`),
+  addTextbook: (b: { child_id: number | null; title: string; url: string }) => call<Textbook>('POST', '/textbooks', b),
+  deleteTextbook: (id: number) => call<{ ok: true }>('DELETE', `/textbooks/${id}`),
 };
 
 // Public legal pages served by the backend.

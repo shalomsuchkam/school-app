@@ -5,11 +5,13 @@ import Animated, { FadeIn, FadeInDown, FadeOut, FadeOutDown, useReducedMotion } 
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppearancePicker } from '@/components/AppearancePicker';
+import { Bookshelf } from '@/components/Bookshelf';
 import { ChatSheet } from '@/components/ChatSheet';
 import { Paywall } from '@/components/Paywall';
 import { Confetti } from '@/components/Confetti';
 import { PhotoViewer } from '@/components/PhotoViewer';
 import { ProgressRing } from '@/components/ProgressRing';
+import { ScreenTimePanel } from '@/components/ScreenTimePanel';
 import { NoteSheet, SkipSheet } from '@/components/SkipSheet';
 import { ChildTaskCard } from '@/components/TaskCards';
 import { Banner, Btn, Card, CONTENT_MAX, Empty, ErrorBanner, Group, haptic, Icon, IconBtn, type IconName, IconTile, Loading, PressableScale, ProgressBar, Screen, SectionLabel, Sheet, Stat, TextScale, ToggleRow, Txt, useLayout, useToast } from '@/components/ui';
@@ -439,6 +441,8 @@ export default function ChildHome() {
           </View>
         ) : null}
 
+        <ScreenTimePanel />
+
         {s.override_note ? <Banner tone="brand" icon="swap-horizontal" title={t('common.overrideTitle')} text={s.override_note} /> : null}
 
         {!s.tasks.length ? <Empty icon="sunny-outline" title={t('child.empty.title')} text={t('child.empty.text')} /> : null}
@@ -454,6 +458,8 @@ export default function ChildHome() {
         {home.map((tk) => (
           <ChildTaskCard key={tk.id} t={tk} onPhoto={openCamera} onSkip={setSkip} onCheck={check} onOpen={openPhoto} overdue={h.overdue} queued={queuedBy.get(tk.id) ?? 0} onChat={setChat} />
         ))}
+
+        <Bookshelf onToast={toast.show} />
 
         {/* Progress beyond today: the streak, the reward it leads to, and today's time at homework. */}
         <View style={styles.stats}>

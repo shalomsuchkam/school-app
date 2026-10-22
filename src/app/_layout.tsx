@@ -63,6 +63,7 @@ function Root() {
       <Stack.Screen name="onboarding" options={{ animation: 'slide_from_right' }} />
       <Stack.Screen name="child/index" />
       <Stack.Screen name="child/camera" options={{ presentation: 'fullScreenModal', animation: 'slide_from_bottom' }} />
+      <Stack.Screen name="child/reader" options={{ presentation: 'fullScreenModal', animation: 'slide_from_bottom' }} />
       <Stack.Screen name="parent" />
     </Stack>
   );
