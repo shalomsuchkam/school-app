@@ -1,0 +1,220 @@
+# «Уроки» lite backend: only what supabase/functions/app needs, for a 1 vCPU / 1 GB VPS.
+# Run through lib.sh (`compose ...`), which passes the env files:
+#   kit/versions.env (images) + /opt/uroki/config.env (API_DOMAIN, ACME_EMAIL, APP_MODE) + /opt/uroki/secrets.env (600)
+#
+# Memory limits (hard, per container):  db 256M + storage 128M + functions 128M + caddy 64M + rest 48M = 624M.
+# Exposure: only Caddy publishes ports (80/443, IPv4). Docker-published ports bypass ufw, so nothing else is published.
+name: uroki
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+x-hardening: &hardening
+  restart: unless-stopped
+  logging: *logging
+  security_opt:
+    - no-new-privileges:true
+
+services:
+  db:
+    <<: *hardening
+    image: ${DB_IMAGE:?versions.env}
+    mem_limit: 256m
+    memswap_limit: 512m
+    shm_size: 64m
+    command:
+      - postgres
+      - -c
+      - config_file=/etc/postgresql/postgresql.conf
+      # ~1 GB box: small caches, few connections, no parallel query/JIT
+      - -c
+      - shared_buffers=128MB
+      - -c
+      - effective_cache_size=384MB
+      - -c
+      - work_mem=2MB
+      - -c
+      - maintenance_work_mem=32MB
+      - -c
+      - max_connections=40
+      - -c
+      - wal_buffers=4MB
+      - -c
+      - min_wal_size=64MB
+      - -c
+      - max_wal_size=256MB
+      - -c
+      - max_parallel_workers_per_gather=0
+      - -c
+      - max_parallel_maintenance_workers=1
+      - -c
+      - autovacuum_max_workers=2
+      - -c
+      - jit=off
+      - -c
+      - huge_pages=off
+      - -c
+      - cron.max_running_jobs=4
+      - -c
+      - log_min_messages=warning
+    environment:
+      POSTGRES_HOST: /var/run/postgresql
+      PGPORT: "5432"
+      POSTGRES_PORT: "5432"
+      PGDATABASE: postgres
+      POSTGRES_DB: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?secrets.env}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?secrets.env}
+      JWT_SECRET: ${JWT_SECRET:?secrets.env}
+      JWT_EXP: "3600"
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+    networks: [backend]
+
+  rest:
+    <<: *hardening
+    image: ${REST_IMAGE:?versions.env}
+    mem_limit: 48m
+    memswap_limit: 96m
+    cap_drop: [ALL]
+    read_only: true
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGRST_DB_URI: postgres://authenticator:${AUTHENTICATOR_PASSWORD:?secrets.env}@db:5432/postgres
+      PGRST_DB_SCHEMAS: public
+      PGRST_DB_ANON_ROLE: anon
+      PGRST_JWT_SECRET: ${JWT_SECRET:?secrets.env}
+      PGRST_DB_USE_LEGACY_GUCS: "false"
+      PGRST_DB_POOL: "5"
+      PGRST_DB_MAX_ROWS: "1000" # same default as Supabase Cloud
+      PGRST_LOG_LEVEL: warn
+    networks: [backend, edge]
+
+  storage:
+    <<: *hardening
+    image: ${STORAGE_IMAGE:?versions.env}
+    mem_limit: 128m
+    memswap_limit: 256m
+    depends_on:
+      db:
+        condition: service_healthy
+      rest:
+        condition: service_started
+    environment:
+      NODE_OPTIONS: --max-old-space-size=80
+      ANON_KEY: ${ANON_KEY:?secrets.env}
+      SERVICE_KEY: ${SERVICE_ROLE_KEY:?secrets.env}
+      POSTGREST_URL: http://rest:3000
+      AUTH_JWT_SECRET: ${JWT_SECRET:?secrets.env}
+      PGRST_JWT_SECRET: ${JWT_SECRET:?secrets.env}
+      DATABASE_URL: postgres://supabase_storage_admin:${STORAGE_DB_PASSWORD:?secrets.env}@db:5432/postgres
+      STORAGE_PUBLIC_URL: https://${API_DOMAIN:?config.env}
+      REQUEST_ALLOW_X_FORWARDED_PATH: "true"
+      FILE_SIZE_LIMIT: "52428800"
+      STORAGE_BACKEND: file
+      FILE_STORAGE_BACKEND_PATH: /var/lib/storage
+      GLOBAL_S3_BUCKET: stub
+      TENANT_ID: stub
+      REGION: local
+      ENABLE_IMAGE_TRANSFORMATION: "false"
+    volumes:
+      - ${UROKI_DIR:-/opt/uroki}/data/storage:/var/lib/storage
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:5000/status"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks: [backend, edge]
+
+  functions:
+    <<: *hardening
+    image: ${DENO_IMAGE:?versions.env}
+    mem_limit: 128m
+    memswap_limit: 192m
+    user: "1000:1000"
+    cap_drop: [ALL]
+    read_only: true
+    tmpfs: [/tmp]
+    depends_on:
+      rest:
+        condition: service_started
+      storage:
+        condition: service_healthy
+    # Dependencies are fetched by deploy.sh (`deno cache`, pinned by deno.lock); at runtime nothing is downloaded.
+    command:
+      - run
+      - --cached-only
+      - --lock=/srv/lock/deno.lock
+      - --frozen
+      - --no-prompt
+      - --allow-net
+      - --allow-env
+      - /srv/functions/app/index.ts
+    environment:
+      # signPhotos (core.ts) builds photo links from SUPABASE_URL, so it must be the public https name.
+      # Inside docker this name resolves to Caddy (network alias below), which lets REST/Storage through
+      # only from private addresses.
+      SUPABASE_URL: https://${API_DOMAIN:?config.env}
+      SUPABASE_SERVICE_ROLE_KEY: ${SERVICE_ROLE_KEY:?secrets.env}
+    volumes:
+      - ${UROKI_DIR:-/opt/uroki}/app:/srv:ro
+      - ${UROKI_DIR:-/opt/uroki}/data/deno:/deno-dir
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8000/functions/v1/app/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    networks: [backend, edge]
+
+  caddy:
+    <<: *hardening
+    image: ${CADDY_IMAGE:?versions.env}
+    mem_limit: 64m
+    memswap_limit: 128m
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+    depends_on:
+      - functions
+    ports:
+      - "0.0.0.0:80:80/tcp"
+      - "0.0.0.0:443:443/tcp"
+    environment:
+      API_DOMAIN: ${API_DOMAIN:?config.env}
+      ACME_EMAIL: ${ACME_EMAIL:-}
+      ACME_EMAIL_ON: ${ACME_EMAIL:+on}
+      APP_MODE: ${APP_MODE:-maintenance}
+    volumes:
+      - ${UROKI_DIR:-/opt/uroki}/kit/caddy:/etc/caddy:ro
+      - ${UROKI_DIR:-/opt/uroki}/data/caddy/data:/data
+      - ${UROKI_DIR:-/opt/uroki}/data/caddy/config:/config
+    networks:
+      edge:
+        # the function calls https://API_DOMAIN/rest/v1 and /storage/v1: resolve it straight to Caddy (no hairpin NAT)
+        aliases:
+          - ${API_DOMAIN:?config.env}
+
+volumes:
+  db-data:
+    name: uroki-db-data
+
+networks:
+  # db, rest, storage, functions: no route to the internet from here
+  backend:
+    name: uroki-backend
+    internal: true
+  # Caddy + what it proxies to; the function also needs the internet (Telegram, Expo push, RevenueCat)
+  edge:
+    name: uroki-edge

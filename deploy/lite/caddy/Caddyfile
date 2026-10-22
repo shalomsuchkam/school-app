@@ -1,0 +1,81 @@
+# «Уроки» lite gateway. Env (docker-compose.yml): API_DOMAIN, ACME_EMAIL, APP_MODE (local | maintenance).
+# Switch modes with the `maintenance-on` / `maintenance-off` actions (or: sudo /opt/uroki/kit/mode.sh local|maintenance).
+# Optional Let's Encrypt e-mail: ACME_EMAIL_ON=on only when ACME_EMAIL is set (an empty `email` is a parse error).
+(acme-email-) {
+}
+
+(acme-email-on) {
+	email {$ACME_EMAIL}
+}
+
+{
+	import acme-email-{$ACME_EMAIL_ON}
+	servers {
+		# ufw opens 443/tcp only: no HTTP/3
+		protocols h1 h2
+	}
+}
+
+# The function rate-limits by cf-connecting-ip / x-real-ip (lib.ts clientIp): overwrite both with the real peer,
+# so a client cannot spoof its address.
+(app-local) {
+	reverse_proxy functions:8000 {
+		header_up Cf-Connecting-Ip {remote_host}
+		header_up X-Real-IP {remote_host}
+	}
+}
+
+(app-maintenance) {
+	header Content-Type "application/json; charset=utf-8"
+	header Retry-After 600
+	respond `{"error":"Идут технические работы. Попробуйте через несколько минут."}` 503
+}
+
+{$API_DOMAIN} {
+	encode zstd gzip
+	header -Server
+
+	log {
+		output stdout
+		format json
+	}
+
+	route {
+		@app path /functions/v1/app /functions/v1/app/*
+		handle @app {
+			import app-{$APP_MODE:maintenance}
+		}
+
+		# Short-lived signed photo/voice links issued by the function (createSignedUrls, 15 min): public.
+		@signed path /storage/v1/object/sign/app-photos/*
+		handle @signed {
+			uri strip_prefix /storage/v1
+			reverse_proxy storage:5000
+		}
+
+		# REST and Storage for the function itself (it calls SUPABASE_URL=https://API_DOMAIN from inside docker).
+		# Never reachable from the internet.
+		@rest {
+			path /rest/v1/*
+			remote_ip private_ranges
+		}
+		handle @rest {
+			uri strip_prefix /rest/v1
+			reverse_proxy rest:3000
+		}
+
+		@storage {
+			path /storage/v1/*
+			remote_ip private_ranges
+		}
+		handle @storage {
+			uri strip_prefix /storage/v1
+			reverse_proxy storage:5000
+		}
+
+		handle {
+			header Content-Type "application/json; charset=utf-8"
+			respond `{"error":"not found"}` 404
+		}
+	}
+}

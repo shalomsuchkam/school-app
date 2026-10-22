@@ -1,0 +1,256 @@
+name: Server (lite, KZ)
+
+# The lite self-hosted backend on the 1 GB VPS (deploy/lite, README there). Every action runs over SSH.
+#   inspect             strictly read-only look at the server (OS, RAM/disk/swap, ports, docker, web servers, DNS)
+#   install             first install / re-install (idempotent): swap, ufw, docker, the stack, schema, function
+#   deploy              new function code + pending migrations, restart the function, health check (fails if not OK)
+#   migrate-from-cloud  copy public.app_* rows from Supabase Cloud (read-only there) into the server, one transaction
+#   status              read-only state: containers, memory, tick, TLS, backups
+#   maintenance-on/off  503 «технические работы» / back to the function
+#   backup              fresh backup on the server; with BACKUP_PASSPHRASE also an encrypted dump as an artifact
+# Push to main touching supabase/functions/** or supabase/migrations/** runs `deploy` (skipped with a notice when
+# the SSH secrets are not set).
+#
+# Repository secrets (Settings -> Secrets and variables -> Actions):
+#   SELFHOST_HOST (or the old SELFHOST_SSH_HOST)   server IPv4, e.g. 194.110.54.193
+#   SELFHOST_USER (or the old SELFHOST_SSH_USER)   root, or a user with passwordless sudo
+#   SELFHOST_SSH_KEY                               private key (ed25519) whose public key is on the server
+#   SELFHOST_SSH_PORT                              optional, default 22
+#   SELFHOST_SSH_KNOWN_HOSTS                       optional host key line(s); without it: ssh-keyscan (TOFU) and the
+#                                                  fingerprint is printed as a notice — compare it with the server
+#   SELFHOST_ACME_EMAIL                            optional e-mail for Let's Encrypt expiry notices
+#   SUPABASE_DB_URL                                migrate-from-cloud only: cloud Session pooler URL (IPv4)
+#   BACKUP_PASSPHRASE                              backup artifact only
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'What to do on the server (inspect and status change nothing)'
+        type: choice
+        options: [inspect, install, deploy, migrate-from-cloud, status, maintenance-on, maintenance-off, backup]
+        default: inspect
+  push:
+    branches: [main]
+    paths: ['supabase/functions/**', 'supabase/migrations/**']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: server-lite
+  cancel-in-progress: false
+
+env:
+  API_DOMAIN: api.urokiapp.kz
+  EXPECTED_IP: 194.110.54.193
+
+jobs:
+  server:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      ACTION: ${{ github.event_name == 'push' && 'deploy' || inputs.action }}
+      SSH_HOST: ${{ secrets.SELFHOST_HOST || secrets.SELFHOST_SSH_HOST }}
+      SSH_USER: ${{ secrets.SELFHOST_USER || secrets.SELFHOST_SSH_USER }}
+      SSH_KEY: ${{ secrets.SELFHOST_SSH_KEY }}
+      SSH_PORT: ${{ secrets.SELFHOST_SSH_PORT }}
+      SSH_KNOWN_HOSTS: ${{ secrets.SELFHOST_SSH_KNOWN_HOSTS }}
+      ACME_EMAIL: ${{ secrets.SELFHOST_ACME_EMAIL }}
+    steps:
+      - name: Check secrets
+        id: secrets
+        run: |
+          missing=()
+          [ -n "$SSH_HOST" ] || missing+=("SELFHOST_HOST")
+          [ -n "$SSH_USER" ] || missing+=("SELFHOST_USER")
+          [ -n "$SSH_KEY" ] || missing+=("SELFHOST_SSH_KEY")
+          if [ ${#missing[@]} -eq 0 ]; then
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+            echo "Action: $ACTION"
+          elif [ "$GITHUB_EVENT_NAME" = push ]; then
+            echo "::notice title=Server deploy skipped::Secrets not set: ${missing[*]} (see deploy/lite/README.md)."
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error title=Missing secrets::Add repository secrets: ${missing[*]} (see deploy/lite/README.md)"
+            exit 1
+          fi
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        if: steps.secrets.outputs.ok == 'true'
+
+      - name: Lint the kit
+        if: steps.secrets.outputs.ok == 'true'
+        run: |
+          for f in deploy/lite/*.sh; do bash -n "$f"; done
+          if command -v shellcheck >/dev/null; then shellcheck -x deploy/lite/*.sh; fi
+
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
+        if: steps.secrets.outputs.ok == 'true' && (env.ACTION == 'install' || env.ACTION == 'deploy')
+        with:
+          deno-version: v2.9.7
+
+      - name: Type-check and test the function
+        if: steps.secrets.outputs.ok == 'true' && (env.ACTION == 'install' || env.ACTION == 'deploy')
+        run: |
+          deno check supabase/functions/app/index.ts
+          deno test --allow-env --allow-net supabase/functions/app/logic_test.ts
+
+      - name: Set up SSH
+        if: steps.secrets.outputs.ok == 'true'
+        run: |
+          port=${SSH_PORT:-22}
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/uroki
+          chmod 600 ~/.ssh/uroki
+          if [ -n "$SSH_KNOWN_HOSTS" ]; then
+            printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          else
+            ssh-keyscan -p "$port" -T 20 "$SSH_HOST" 2>/dev/null > ~/.ssh/known_hosts || true
+            [ -s ~/.ssh/known_hosts ] || { echo "::error::ssh-keyscan got no host key from the server (host/port?)"; exit 1; }
+            ssh-keygen -lf ~/.ssh/known_hosts | while read -r line; do
+              echo "::notice title=SSH host key (trust on first use)::$line — compare with the ps.kz console, then save 'ssh-keyscan' output as SELFHOST_SSH_KNOWN_HOSTS"
+            done
+          fi
+          cat > ~/.ssh/config <<EOF
+          Host uroki
+            HostName ${SSH_HOST}
+            User ${SSH_USER}
+            Port ${port}
+            IdentityFile ~/.ssh/uroki
+            IdentitiesOnly yes
+            StrictHostKeyChecking yes
+            BatchMode yes
+            ConnectTimeout 20
+            ServerAliveInterval 30
+          EOF
+          if [ "$SSH_USER" = root ]; then sudo_cmd=""; else sudo_cmd="sudo -n"; fi
+          echo "SUDO=$sudo_cmd" >> "$GITHUB_ENV"
+          ssh uroki true || { echo "::error::SSH login failed (host, user, key, port?)"; exit 1; }
+          ssh uroki "$sudo_cmd true" || { echo "::error::SSH works but '$SSH_USER' has no passwordless sudo"; exit 1; }
+
+      - name: Inspect (read-only)
+        if: steps.secrets.outputs.ok == 'true' && env.ACTION == 'inspect'
+        run: |
+          ssh uroki "$SUDO bash -s -- $API_DOMAIN" < deploy/lite/inspect.sh
+          echo
+          echo "===== DNS seen from GitHub"
+          got=$(getent ahostsv4 "$API_DOMAIN" | awk '{ print $1 }' | sort -u | tr '\n' ' ')
+          echo "$API_DOMAIN -> ${got:-(does not resolve)}  (expected $EXPECTED_IP)"
+          case " $got " in
+            *" $EXPECTED_IP "*) echo "::notice title=DNS::$API_DOMAIN resolves to $EXPECTED_IP" ;;
+            *) echo "::warning title=DNS::$API_DOMAIN does not resolve to $EXPECTED_IP yet (HTTPS certificate needs it)" ;;
+          esac
+
+      - name: Upload the kit and the function
+        if: steps.secrets.outputs.ok == 'true' && (env.ACTION == 'install' || env.ACTION == 'deploy')
+        run: |
+          b="$RUNNER_TEMP/bundle"
+          mkdir -p "$b/kit" "$b/app/functions"
+          cp -a deploy/lite/. "$b/kit/"
+          cp -a supabase/functions/app "$b/app/functions/app"
+          find "$b/app/functions" -name '*_test.ts' -delete
+          cp -a supabase/migrations "$b/app/migrations"
+          tar -C "$b" -czf - . | ssh uroki "$SUDO bash -c 'set -e; mkdir -p /opt/uroki; rm -rf /opt/uroki/upload; install -d -m 700 /opt/uroki/upload; tar -xzf - -C /opt/uroki/upload --no-same-owner'"
+
+      - name: Install
+        if: steps.secrets.outputs.ok == 'true' && env.ACTION == 'install'
+        run: |
+          q() { printf '%q' "$1"; }
+          ssh uroki "$SUDO env API_DOMAIN=$(q "$API_DOMAIN") ACME_EMAIL=$(q "$ACME_EMAIL") SSH_PORT=$(q "${SSH_PORT:-22}") bash /opt/uroki/upload/kit/install.sh"
+
+      - name: Deploy
+        if: steps.secrets.outputs.ok == 'true' && env.ACTION == 'deploy'
+        run: ssh uroki "$SUDO bash /opt/uroki/upload/kit/deploy.sh"
+
+      - name: Public health check (real DNS, from GitHub)
+        if: steps.secrets.outputs.ok == 'true' && (env.ACTION == 'install' || env.ACTION == 'deploy' || env.ACTION == 'maintenance-off')
+        run: |
+          mode=$(ssh uroki "$SUDO awk -F= '\$1 == \"APP_MODE\" { print \$2 }' /opt/uroki/config.env")
+          url="https://$API_DOMAIN/functions/v1/app/"
+          for i in 1 2 3 4 5 6; do
+            code=$(curl -sS -o body.json -w '%{http_code}' --max-time 20 "$url" || true)
+            if [ "$mode" = maintenance ] && [ "$code" = 503 ]; then
+              echo "::warning title=Maintenance mode::$url answers 503 on purpose (run maintenance-off to serve the app)"
+              exit 0
+            fi
+            if [ "$code" = 200 ] && grep -q '"ok":true' body.json; then
+              echo "OK: $url -> $(cat body.json)"
+              exit 0
+            fi
+            echo "attempt $i: HTTP $code"; sleep 10
+          done
+          if [ "$ACTION" = install ]; then
+            echo "::warning title=Public URL not reachable yet::$url — check the A record ($EXPECTED_IP) and ports 80/443; re-run status later"
+            exit 0
+          fi
+          echo "::error title=Health check failed::$url did not answer {\"ok\":true}"
+          exit 1
+
+      - name: Status
+        if: steps.secrets.outputs.ok == 'true' && env.ACTION == 'status'
+        run: ssh uroki "$SUDO bash /opt/uroki/kit/status.sh"
+
+      - name: Maintenance mode
+        if: steps.secrets.outputs.ok == 'true' && (env.ACTION == 'maintenance-on' || env.ACTION == 'maintenance-off')
+        run: |
+          if [ "$ACTION" = maintenance-on ]; then m=maintenance; else m=local; fi
+          ssh uroki "$SUDO bash /opt/uroki/kit/mode.sh $m"
+
+      - name: Migrate data from Supabase Cloud (read-only there)
+        if: steps.secrets.outputs.ok == 'true' && env.ACTION == 'migrate-from-cloud'
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          # cloud app_secrets rows to carry over; app_fn_url stays this server's
+          SECRETS_SQL: "copy (select key, value from public.app_secrets where key like 'app\\_%' and key <> 'app_fn_url' order by key) to stdout"
+        run: |
+          [ -n "$SUPABASE_DB_URL" ] || { echo "::error title=Missing secret::Add SUPABASE_DB_URL (cloud Session pooler URL)"; exit 1; }
+          ssh uroki "$SUDO test -x /opt/uroki/kit/import-cloud.sh" || { echo "::error::run the install action first"; exit 1; }
+          img=$(grep '^PG_CLIENT_IMAGE=' deploy/lite/versions.env | cut -d= -f2-)
+          docker pull -q "$img" >/dev/null
+          # the URL travels only as an environment variable (-e NAME), never in argv or the log
+          pg() { docker run --rm -i -e SUPABASE_DB_URL -e SECRETS_SQL -e PGCONNECT_TIMEOUT=20 "$img" "$@"; }
+          pg sh -c 'exec psql "$SUPABASE_DB_URL" -X -q -At -c "show server_version"' > /dev/null \
+            || { echo "::error::cannot connect to the cloud database (SUPABASE_DB_URL; use the IPv4 Session pooler string)"; exit 1; }
+          {
+            set -e
+            # pg_dump only reads (it runs in a read-only repeatable-read transaction)
+            pg sh -c 'exec pg_dump "$SUPABASE_DB_URL" --data-only --no-owner --no-privileges --table="public.app_*" --exclude-table-data=public.app_secrets'
+            echo "create temp table _cloud_secrets (key text primary key, value text);"
+            echo "copy pg_temp._cloud_secrets (key, value) from stdin;"
+            pg sh -c 'exec psql "$SUPABASE_DB_URL" -X -q -v ON_ERROR_STOP=1 -c "set default_transaction_read_only = on" -c "$SECRETS_SQL"'
+            printf '%s\n' '\.'
+            echo '-- UROKI-IMPORT-COMPLETE'
+          } | ssh uroki "$SUDO bash /opt/uroki/kit/import-cloud.sh"
+          echo "::notice title=Photos not migrated::Only table rows were copied. Photos/voice notes stay in Supabase Cloud Storage (current data is test-only)."
+
+      - name: Backup
+        if: steps.secrets.outputs.ok == 'true' && env.ACTION == 'backup'
+        env:
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: |
+          ssh uroki "$SUDO bash /opt/uroki/kit/backup.sh"
+          if [ -z "$BACKUP_PASSPHRASE" ]; then
+            echo "::notice title=No artifact::BACKUP_PASSPHRASE is not set: the backup stays on the server only (/opt/uroki/backups)."
+            exit 0
+          fi
+          mkdir -p backup-out
+          f="backup-out/uroki-app-$(date -u +%Y%m%d-%H%M).dump.enc"
+          # plaintext only flows through the pipe; the passphrase is read from the environment, not argv
+          ssh uroki "$SUDO bash /opt/uroki/kit/backup.sh --stdout" |
+            openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -pass env:BACKUP_PASSPHRASE -out "$f"
+          size=$(stat -c %s "$f")
+          [ "$size" -gt 1024 ] || { echo "::error::encrypted dump is only $size bytes"; exit 1; }
+          echo "encrypted dump: $f ($size bytes)"
+          echo "BACKUP_READY=1" >> "$GITHUB_ENV"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: steps.secrets.outputs.ok == 'true' && env.ACTION == 'backup' && env.BACKUP_READY == '1'
+        with:
+          name: uroki-server-backup-${{ github.run_number }}
+          path: backup-out/
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Clean up
+        if: always()
+        run: rm -rf ~/.ssh/uroki backup-out body.json

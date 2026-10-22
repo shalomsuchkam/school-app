@@ -1,0 +1,2 @@
+# resolve `. lib.sh` relative to each script, wherever shellcheck is run from
+source-path=SCRIPTDIR
