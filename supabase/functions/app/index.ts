@@ -13,6 +13,7 @@ import {
   validTz,
 } from "./lib.ts";
 import { notifyChild, notifyParents, tg, tgEnabled } from "./notify.ts";
+import { screenRoute } from "./screen.ts";
 
 // viewer = a tutor or teacher the family let in (allow_viewers): reads the parent's dashboards, changes nothing
 type Role = "parent" | "child" | "viewer";
@@ -40,7 +41,7 @@ const readerOnly = (d: Device) => {
   if (d.role === "child") throw new HttpError(403, "Только для родителя");
 };
 // Everything a viewer device may call; the rest answers 403 before any handler runs.
-const VIEWER_GET = new Set(["/me", "/setup", "/parent/overview", "/parent/report", "/parent/calendar"]);
+const VIEWER_GET = new Set(["/me", "/setup", "/parent/overview", "/parent/report", "/parent/calendar", "/screen/rules", "/textbooks"]);
 const viewerAllowed = (M: string, path: string, seg: string[]) =>
   (M === "GET" && (VIEWER_GET.has(path) || (seg[0] === "tasks" && seg[2] === "messages" && seg.length === 3))) ||
   (M === "DELETE" && path === "/members/me"); // leaving the family is always possible
@@ -431,10 +432,10 @@ async function route(req: Request, path: string): Promise<Response> {
   }
 
   // Daily use (the child's tasks and actions, the parent's dashboard and approvals) needs an active subscription
-  // or the owner's free access. Setting the family up (schedule, lists, invites, settings) is always possible,
-  // so a new family can finish onboarding and then start the store trial.
+  // or the owner's free access. Setting the family up (schedule, lists, invites, settings, textbook links) is always
+  // possible, so a new family can finish onboarding and then start the store trial. Screen time is a daily feature.
   const fam0 = await getFamily(famId);
-  const daily = seg[0] === "child" || seg[0] === "parent" || seg[0] === "tasks";
+  const daily = seg[0] === "child" || seg[0] === "parent" || seg[0] === "tasks" || seg[0] === "screen";
   if (daily && !accessOf(fam0, await billingOn()).active) {
     throw new HttpError(402, d.role !== "child" ? "Подписка закончилась" : "Попроси родителя продлить подписку");
   }
@@ -444,6 +445,9 @@ async function route(req: Request, path: string): Promise<Response> {
   const kid = await kidOf(fam0, d.role === "child" ? d.child_id : qChild, M !== "GET");
 
   if (path === "/setup" && M === "GET") return json(await setup(kid));
+
+  // screen time and textbook links (screen.ts, docs/SCREEN_TIME.md)
+  if (seg[0] === "screen" || seg[0] === "textbooks") return await screenRoute(req, path, seg, d, fam0, qChild);
 
   // per-task chat between the child and the parents (viewers read only)
   if (seg[0] === "tasks" && seg[2] === "messages" && seg.length === 3) {

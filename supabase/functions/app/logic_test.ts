@@ -153,3 +153,202 @@ Deno.test("new server messages are translated", () => {
   eq(tr("kk", "Тихие часы: укажите начало и конец в формате ЧЧ:ММ"), "Тыныш сағаттар: басы мен соңын СС:ММ пішімінде көрсетіңіз");
   eq(tr("en", "Длительность: от 1 до 240 минут"), "Duration: 1 to 240 minutes");
 });
+
+// ---------- screen time (docs/SCREEN_TIME.md "Decision order"; the Kotlin guard mirrors these cases) ----------
+const S = await import("./screen.ts");
+const { screenDecision, defaultRules, parseRulesPatch, parseReport, classifyNewApps, toRules, countedTotal, minutesRu, textbookUrl } = S;
+type Rules = ReturnType<typeof defaultRules>;
+type Ctx = Parameters<typeof screenDecision>[1];
+const rules = (p: Partial<Rules> = {}): Rules => ({ ...defaultRules(12), enabled: true, ...p });
+const ctx = (p: Record<string, unknown> = {}): Ctx => ({
+  pkg: "com.game", nowLocalHM: "12:00", isoWeekday: 3, isSchoolDay: true, homeworkDone: true, homeworkDueToday: true, usageApp: 0, usageTotal: 0,
+  isNew: false, approved: true, nowUtc: "2026-10-22T10:00:00Z", ...p,
+} as Ctx);
+const why = (r: Rules | null, c: Record<string, unknown> = {}) => screenDecision(r, ctx(c)).reason;
+const allowed = (r: Rules | null, c: Record<string, unknown> = {}) => screenDecision(r, ctx(c)).allow;
+const throws = (f: () => unknown, msg: string) => {
+  try {
+    f();
+  } catch (e) {
+    eq((e as Error).message, msg);
+    return;
+  }
+  throw new Error(`expected "${msg}"`);
+};
+
+Deno.test("screen: 1 disabled or missing rules allow everything", () => {
+  eq(allowed(null), true);
+  eq(allowed(rules({ enabled: false, blocked_apps: ["com.game"], daily_limit_min: 1 }), { usageTotal: 999 }), true);
+  eq(screenDecision(rules(), ctx()), { allow: true, reason: null }, "11: nothing applies");
+});
+
+Deno.test("screen: 2 system packages and always_allowed are never blocked", () => {
+  const strict = rules({
+    blocked_apps: ["kz.uroki.app", "com.android.dialer", "com.whatsapp"], block_new_apps: true, daily_limit_min: 10,
+    bedtime: { from: "00:00", to: "23:59", allowed: [] }, homework_lock: true, homework_lock_from: "00:00",
+    app_limits: [{ pkg: "com.whatsapp", name: "WhatsApp", minutes: 1 }],
+  });
+  const worst = { isNew: true, approved: false, homeworkDone: false, usageApp: 999, usageTotal: 999 };
+  for (const pkg of ["kz.uroki.app", "com.android.dialer", "com.google.android.dialer", "com.android.systemui", "com.android.launcher3", "com.google.android.apps.messaging"]) {
+    eq(allowed(strict, { ...worst, pkg }), true, pkg);
+  }
+  eq(why(strict, { ...worst, pkg: "com.whatsapp" }), "blocked", "not yet always-allowed");
+  eq(allowed({ ...strict, always_allowed: ["com.whatsapp"] }, { ...worst, pkg: "com.whatsapp" }), true, "always_allowed beats blocked/limits");
+  eq(why(strict, { ...worst, pkg: "com.android.settings" }), "new_app", "settings only during guard setup");
+  eq(why(strict, { ...worst, isNew: false, pkg: "com.android.settings" }), "bedtime");
+  eq(allowed(strict, { ...worst, pkg: "com.android.settings", setupOpen: true }), true);
+  eq(allowed(strict, { ...worst, pkg: "com.vendor.home", isSystem: true }), true, "device-resolved launcher");
+  eq(S.SYSTEM_PACKAGES.includes("com.android.settings"), false);
+});
+
+Deno.test("screen: 3 unlock_until in the future allows, in the past does not", () => {
+  const r = rules({ blocked_apps: ["com.game"], unlock_until: "2026-10-22T10:30:00Z" });
+  eq(allowed(r), true);
+  eq(allowed(r, { nowUtc: "2026-10-22T10:30:00Z" }), false, "ends exactly at unlock_until");
+  eq(why(r, { nowUtc: new Date("2026-10-22T11:00:00Z") }), "blocked");
+  eq(allowed(r, { nowUtc: Date.parse("2026-10-22T10:29:00Z") }), true, "ms timestamps work too");
+  eq(allowed(rules({ daily_limit_min: 5, unlock_until: "2026-10-22T10:30:00Z" }), { usageTotal: 60 }), true, "bonus time beats the limit");
+});
+
+Deno.test("screen: 4 blocked apps, 5 new apps", () => {
+  eq(why(rules({ blocked_apps: ["com.game"] })), "blocked");
+  eq(why(rules({ blocked_apps: ["com.other"] })), null);
+  const r = rules({ block_new_apps: true });
+  eq(why(r, { isNew: true, approved: false }), "new_app");
+  eq(why(r, { isNew: true, approved: true }), null, "approved");
+  eq(why(r, { isNew: false, approved: false }), null, "baseline app");
+  eq(why(rules({ block_new_apps: false }), { isNew: true, approved: false }), null, "switch off");
+  eq(why(rules({ block_new_apps: true, blocked_apps: ["com.game"] }), { isNew: true, approved: false }), "blocked", "4 before 5");
+});
+
+Deno.test("screen: 6 bedtime window across midnight", () => {
+  const r = rules({ bedtime: { from: "21:30", to: "07:00", allowed: ["com.audiobooks"] }, daily_limit_min: 10 });
+  eq(why(r, { nowLocalHM: "21:29" }), null);
+  eq(why(r, { nowLocalHM: "21:30" }), "bedtime", "start inclusive");
+  eq(why(r, { nowLocalHM: "23:59" }), "bedtime");
+  eq(why(r, { nowLocalHM: "00:00" }), "bedtime");
+  eq(why(r, { nowLocalHM: "06:59" }), "bedtime");
+  eq(why(r, { nowLocalHM: "07:00" }), null, "end exclusive");
+  eq(allowed(r, { nowLocalHM: "22:00", pkg: "com.audiobooks", usageTotal: 999 }), true, "window's allowed apps run, limits not checked");
+  eq(why(r, { nowLocalHM: "12:00", pkg: "com.audiobooks", usageTotal: 999 }), "daily_limit", "outside the window limits apply");
+  eq(why({ ...r, blocked_apps: ["com.audiobooks"] }, { nowLocalHM: "22:00", pkg: "com.audiobooks" }), "blocked", "4 before 6");
+  eq(why(rules({ bedtime: { from: "13:00", to: "15:00", allowed: [] } }), { nowLocalHM: "14:00" }), "bedtime", "same-day window");
+});
+
+Deno.test("screen: 7 school window only on listed days", () => {
+  const r = rules({ school: { from: "08:00", to: "14:00", days: [1, 2, 3, 4, 5], allowed: ["com.calculator"] } });
+  eq(why(r, { nowLocalHM: "09:00" }), "school");
+  eq(why(r, { nowLocalHM: "09:00", isoWeekday: 6 }), null, "Saturday");
+  eq(why(r, { nowLocalHM: "09:00", isSchoolDay: false }), null, "holiday or day off on a listed weekday");
+  eq(why(r, { nowLocalHM: "09:00", homeworkDueToday: false }), "school", "independent of the homework day");
+  eq(why(r, { nowLocalHM: "07:59" }), null);
+  eq(why(r, { nowLocalHM: "14:00" }), null, "end exclusive");
+  eq(allowed(r, { nowLocalHM: "09:00", pkg: "com.calculator" }), true);
+  const night = rules({ school: { from: "23:00", to: "01:00", days: [3], allowed: [] } });
+  eq(why(night, { nowLocalHM: "00:30", isoWeekday: 3 }), "school", "crosses midnight, weekday of the current local date");
+  const both = rules({ bedtime: { from: "07:00", to: "09:00", allowed: [] }, school: { from: "08:00", to: "14:00", days: [3], allowed: [] } });
+  eq(why(both, { nowLocalHM: "08:30" }), "bedtime", "6 before 7");
+});
+
+Deno.test("screen: 8 homework lock", () => {
+  const r = rules({ homework_lock: true, homework_lock_from: "15:00" });
+  eq(why(r, { nowLocalHM: "15:00", homeworkDone: false }), "homework");
+  eq(why(r, { nowLocalHM: "23:59", homeworkDone: false }), "homework");
+  eq(why(r, { nowLocalHM: "14:59", homeworkDone: false }), null, "before lock_from");
+  eq(why(r, { nowLocalHM: "16:00", homeworkDone: true }), null, "done");
+  eq(why(r, { nowLocalHM: "16:00", homeworkDone: false, homeworkDueToday: false }), null, "Friday before Monday: due on Sunday");
+  eq(why(r, { nowLocalHM: "16:00", homeworkDone: false, homeworkDueToday: true, isSchoolDay: false, isoWeekday: 7 }), "homework", "Sunday before Monday");
+  eq(why(r, { nowLocalHM: "16:00", homeworkDone: false, homeworkDueToday: false, isSchoolDay: true }), null, "school day before a holiday");
+  eq(why(rules({ homework_lock: false }), { nowLocalHM: "16:00", homeworkDone: false }), null, "off");
+  eq(why({ ...r, app_limits: [{ pkg: "com.game", name: "G", minutes: 5 }] }, { nowLocalHM: "16:00", homeworkDone: false, usageApp: 99 }), "homework", "8 before 9");
+});
+
+Deno.test("screen: 9 app limits, 10 daily limit", () => {
+  const r = rules({ app_limits: [{ pkg: "com.game", name: "Game", minutes: 30 }], daily_limit_min: 120 });
+  eq(why(r, { usageApp: 29, usageTotal: 29 }), null);
+  eq(why(r, { usageApp: 30, usageTotal: 30 }), "app_limit", "reached");
+  eq(why(r, { pkg: "com.other", usageApp: 30, usageTotal: 30 }), null, "other apps unaffected");
+  eq(why(r, { usageApp: 31, usageTotal: 200 }), "app_limit", "9 before 10");
+  eq(why(r, { pkg: "com.other", usageTotal: 120 }), "daily_limit");
+  eq(why(r, { pkg: "com.other", usageTotal: 119 }), null);
+  eq(why(rules({ daily_limit_min: null }), { usageTotal: 10_000 }), null, "no overall limit");
+  eq(countedTotal(rules({ always_allowed: ["com.whatsapp"] }), { "com.game": 20, "com.whatsapp": 50, "kz.uroki.app": 30, "com.android.dialer": 5 }), 20);
+});
+
+Deno.test("screen: rules patch validation", () => {
+  eq(parseRulesPatch({ enabled: true, child_id: 5, unlock_until: "2030-01-01T00:00:00Z", updated_at: "x" }), { enabled: true }, "read-only fields ignored");
+  eq(parseRulesPatch({ daily_limit_min: null }), { daily_limit_min: null });
+  eq(parseRulesPatch({ daily_limit_min: 1440 }).daily_limit_min, 1440);
+  throws(() => parseRulesPatch({ daily_limit_min: 0 }), "Минуты: от 1 до 1440");
+  throws(() => parseRulesPatch({ daily_limit_min: 1441 }), "Минуты: от 1 до 1440");
+  throws(() => parseRulesPatch({ daily_limit_min: 1.5 }), "Минуты: от 1 до 1440");
+  throws(() => parseRulesPatch({ enabled: "yes" }), "Неверные правила");
+  eq(parseRulesPatch({ blocked_apps: ["a.b", "a.b", "c_d.e"] }).blocked_apps, ["a.b", "c_d.e"], "deduped");
+  throws(() => parseRulesPatch({ blocked_apps: ["com.bad app"] }), "Неверное имя приложения");
+  throws(() => parseRulesPatch({ always_allowed: ["x".repeat(201)] }), "Неверное имя приложения");
+  throws(() => parseRulesPatch({ always_allowed: Array.from({ length: 201 }, (_, i) => `p${i}`) }), "Не больше 200 приложений в списке");
+  eq(parseRulesPatch({ always_allowed: Array.from({ length: 200 }, (_, i) => `p${i}`) }).always_allowed.length, 200);
+  eq(parseRulesPatch({ app_limits: [{ pkg: "a.b", minutes: 5 }, { pkg: "a.b", name: " TikTok ", minutes: 30 }] }).app_limits, [{ pkg: "a.b", name: "TikTok", minutes: 30 }]);
+  throws(() => parseRulesPatch({ app_limits: Array.from({ length: 101 }, (_, i) => ({ pkg: `p${i}`, minutes: 1 })) }), "Не больше 100 ограничений по приложениям");
+  throws(() => parseRulesPatch({ app_limits: [{ pkg: "a.b", minutes: 0 }] }), "Минуты: от 1 до 1440");
+  eq(parseRulesPatch({ bedtime: { from: "21:30", to: "07:00" } }).bedtime, { from: "21:30", to: "07:00", allowed: [] });
+  eq(parseRulesPatch({ bedtime: null }).bedtime, null);
+  throws(() => parseRulesPatch({ bedtime: { from: "24:00", to: "07:00" } }), "Время в формате ЧЧ:ММ");
+  throws(() => parseRulesPatch({ bedtime: { from: "7:00", to: "08:00" } }), "Время в формате ЧЧ:ММ");
+  throws(() => parseRulesPatch({ bedtime: { from: "07:00", to: "07:00" } }), "Начало и конец совпадают");
+  eq(parseRulesPatch({ school: { from: "08:00", to: "14:00" } }).school.days, [1, 2, 3, 4, 5], "default days");
+  eq(parseRulesPatch({ school: { from: "08:00", to: "14:00", days: [5, 1, 1] } }).school.days, [1, 5]);
+  throws(() => parseRulesPatch({ school: { from: "08:00", to: "14:00", days: [0] } }), "День недели 1–7");
+  throws(() => parseRulesPatch({ school: { from: "08:00", to: "14:00", days: [] } }), "День недели 1–7");
+  throws(() => parseRulesPatch({ homework_lock_from: "3pm" }), "Время в формате ЧЧ:ММ");
+});
+
+Deno.test("screen: defaults and stored rows", () => {
+  const d = toRules(null, 7);
+  eq([d.child_id, d.enabled, d.daily_limit_min, d.bedtime, d.school, d.homework_lock_from, d.unlock_until], [7, false, null, null, null, "15:00", null]);
+  eq([d.app_limits, d.blocked_apps, d.always_allowed], [[], [], []]);
+  const r = toRules({ enabled: true, school: { from: "08:00", to: "14:00" }, unlock_until: "2026-10-22T18:30:00+00:00" }, 7);
+  eq(r.school, { from: "08:00", to: "14:00", days: [1, 2, 3, 4, 5], allowed: [] });
+  eq(r.unlock_until, "2026-10-22T18:30:00.000Z");
+});
+
+Deno.test("screen: device report cleanup", () => {
+  const r = parseReport({
+    apps: [{ pkg: "com.a", name: " A ", installed_at: 1761127200000 }, { pkg: "com.a", name: "dup" }, { pkg: "bad pkg" }, { pkg: "com.b", name: "x".repeat(100), installed_at: "nope" }],
+    usage: { date: "2026-10-22", total_min: 30.4, apps: { "com.a": 20, "bad pkg": 5, "com.b": -3 } },
+    guard: { usage_access: true, overlay: 1, admin: false },
+  });
+  eq(r.apps.map((a) => a.pkg), ["com.a", "com.b"]);
+  eq(r.apps[0], { pkg: "com.a", name: "A", installed_at: "2025-10-22T10:00:00.000Z" });
+  eq([r.apps[1].name.length, r.apps[1].installed_at], [80, null]);
+  eq(r.usage, { date: "2026-10-22", total_min: 30, apps: { "com.a": 20, "com.b": 0 } });
+  eq(r.guard, { usage_access: true, overlay: true, admin: false, battery_ok: false, running: false });
+  eq(parseReport({ usage: { date: "2026-02-30" } }).usage.date, null);
+  eq(parseReport({}).apps, []);
+  throws(() => parseReport({ apps: Array.from({ length: 501 }, (_, i) => ({ pkg: `p${i}` })) }), "Не больше 500 приложений");
+});
+
+Deno.test("screen: new-app detection", () => {
+  const on = rules({ block_new_apps: true, always_allowed: ["com.whatsapp"], app_limits: [{ pkg: "com.tiktok", name: "T", minutes: 5 }] });
+  const app = (pkg: string, installed_at: string | null = null) => ({ pkg, name: pkg, installed_at });
+  const enabledAt = "2026-10-20T00:00:00Z";
+  eq(classifyNewApps([app("com.a"), app("com.b")], new Set(), on, enabledAt).map((x) => x.approved), [true, true], "first report = baseline");
+  eq(classifyNewApps([app("com.a"), app("com.c")], new Set(["com.a"]), on, enabledAt), [{ pkg: "com.c", name: "com.c", approved: false }], "only unseen");
+  eq(classifyNewApps([app("com.c", "2026-10-21T00:00:00Z")], new Set(), on, enabledAt)[0].approved, false, "installed after enabling, even in the first report");
+  eq(classifyNewApps([app("com.c", "2026-10-19T00:00:00Z")], new Set(["com.a"]), on, enabledAt)[0].approved, true, "installed before enabling");
+  eq(classifyNewApps([app("com.whatsapp"), app("com.tiktok"), app("com.android.dialer")], new Set(["x"]), on, enabledAt).every((x) => x.approved), true, "already decided or system");
+  eq(classifyNewApps([app("com.c")], new Set(["x"]), { ...on, block_new_apps: false }, enabledAt)[0].approved, true, "switch off");
+  eq(classifyNewApps([app("com.c")], new Set(["x"]), { ...on, enabled: false }, enabledAt)[0].approved, true, "rules off");
+});
+
+Deno.test("screen: textbook links and texts", () => {
+  eq(textbookUrl(" https://okulyk.kz/book/1 "), "https://okulyk.kz/book/1");
+  eq(textbookUrl("http://x.kz"), "http://x.kz");
+  throws(() => textbookUrl("javascript:alert(1)"), "Ссылка должна начинаться с http:// или https://");
+  throws(() => textbookUrl("file:///etc/passwd"), "Ссылка должна начинаться с http:// или https://");
+  throws(() => textbookUrl("okulyk.kz"), "Ссылка должна начинаться с http:// или https://");
+  throws(() => textbookUrl("https://x.kz/" + "a".repeat(500)), "Ссылка длиннее 500 символов");
+  eq([minutesRu(1), minutesRu(3), minutesRu(5), minutesRu(11), minutesRu(21), minutesRu(22), minutesRu(240)], ["1 минуту", "3 минуты", "5 минут", "11 минут", "21 минуту", "22 минуты", "240 минут"]);
+  eq(tr("en", "Минуты: от 0 до 240"), "Minutes: 0 to 240");
+  eq(tr("kk", "Неверное имя приложения"), "Қолданба атауы қате");
+});

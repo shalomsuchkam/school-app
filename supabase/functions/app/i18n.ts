@@ -63,6 +63,22 @@ const T: Record<string, { kk: string; en: string }> = {
     kk: "Алдымен отбасы баптауларында репетиторларға рұқсат беріңіз",
     en: "Allow tutors in the family settings first",
   },
+  // screen time and textbooks
+  "Неверные правила": { kk: "Ережелер қате", en: "Invalid rules" },
+  "Время в формате ЧЧ:ММ": { kk: "Уақыт СС:ММ пішімінде болуы керек", en: "Time must be HH:MM" },
+  "Начало и конец совпадают": { kk: "Басы мен соңы бірдей", en: "Start and end are the same" },
+  "Минуты: от 1 до 1440": { kk: "Минуттар: 1-ден 1440-қа дейін", en: "Minutes: 1 to 1440" },
+  "Минуты: от 0 до 240": { kk: "Минуттар: 0-ден 240-қа дейін", en: "Minutes: 0 to 240" },
+  "Неверное имя приложения": { kk: "Қолданба атауы қате", en: "Invalid app package name" },
+  "Не больше 200 приложений в списке": { kk: "Тізімде 200 қолданбадан артық емес", en: "At most 200 apps per list" },
+  "Не больше 100 ограничений по приложениям": { kk: "Қолданба шектеулері 100-ден артық емес", en: "At most 100 app limits" },
+  "Не больше 500 приложений": { kk: "500 қолданбадан артық емес", en: "At most 500 apps" },
+  "Ссылка должна начинаться с http:// или https://": {
+    kk: "Сілтеме http:// немесе https:// деп басталуы керек",
+    en: "The link must start with http:// or https://",
+  },
+  "Ссылка длиннее 500 символов": { kk: "Сілтеме 500 таңбадан ұзын", en: "The link is longer than 500 characters" },
+  "Не больше 100 учебников": { kk: "100 оқулықтан артық емес", en: "At most 100 textbooks" },
   // action results (prefix before ": ")
   "↩️ Выполнение отменено": { kk: "↩️ Орындау болдырылмады", en: "↩️ Completion undone" },
   "↩️ Отменено": { kk: "↩️ Болдырылмады", en: "↩️ Undone" },

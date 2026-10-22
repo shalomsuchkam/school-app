@@ -5,6 +5,8 @@ Authenticated calls send `Authorization: Bearer <device token>`. Send `x-lang: r
 Errors always come back as `{ "error": "<text>" }` with an HTTP status (400, 401, 402, 403, 404, 409, 413, 415, 429, 500).
 
 This document covers only the endpoints that are **new or changed** in this stage. Everything else keeps working as before.
+Stage 6 (screen time and textbook links, migration `20261022_screen_time.sql`) is in §12; its full contract is
+[`SCREEN_TIME.md`](SCREEN_TIME.md).
 
 Types used below:
 
@@ -354,3 +356,50 @@ The response is `{ "ok": true }`. Reload `/child/state` to get the new `voice_ur
 | Сначала разрешите репетиторов в настройках семьи | Allow tutors in the family settings first |
 
 The privacy policy now mentions voice notes, chat messages and viewers, so `LEGAL_VERSION` is now `2026-10-19.1`.
+
+---
+
+## 12. Stage 6: screen time and textbooks (migration `20261022_screen_time.sql`)
+
+The contract, including the decision order the phone's guard applies, is [`SCREEN_TIME.md`](SCREEN_TIME.md). Summary:
+
+| Method | Path | Who | Subscription |
+|---|---|---|---|
+| GET | `/screen/rules?child=ID` | parent, viewer, child (own child) | required (402) |
+| PUT | `/screen/rules` | parent | required |
+| POST | `/screen/unlock` | parent | required |
+| POST | `/screen/approve` | parent | required |
+| POST | `/screen/report` | child device | required |
+| GET | `/textbooks?child=ID` | parent, viewer, child (own + shared) | not required |
+| POST | `/textbooks` | parent | not required |
+| DELETE | `/textbooks/:id` | parent | not required |
+
+- `GET /screen/rules` → `{ rules, homework_done, homework_date, homework_due_today, tz, approved, lang, textbooks, device, today, school_day, new_apps }`.
+- `PUT /screen/rules`, `POST /screen/unlock`, `POST /screen/approve` → the full `ScreenRules`.
+- `POST /screen/report` → `{ ok: true, rules, homework_done, homework_date, homework_due_today, tz, approved, lang, today, school_day, new_apps }`.
+- Step 7 (school window) applies only when `school_day` is true; step 8 (homework lock) only when
+  `homework_due_today` is true.
+- Viewers are added to the viewer allow-list for the two GETs only; every other screen/textbook call answers 403.
+- With a lapsed subscription `/screen/*` returns 402; the guard then stops enforcing.
+- Pushes: the child gets «⏱ Родитель дал N минут» on an unlock; parents get «Новое приложение: <name>» (push and
+  Telegram) once per package when `block_new_apps` blocks a newly installed app (up to 3 names per push).
+
+New error messages (ru → en; kk is translated as well):
+
+| ru | en |
+|---|---|
+| Неверные правила | Invalid rules |
+| Время в формате ЧЧ:ММ | Time must be HH:MM |
+| Начало и конец совпадают | Start and end are the same |
+| Минуты: от 1 до 1440 | Minutes: 1 to 1440 |
+| Минуты: от 0 до 240 | Minutes: 0 to 240 |
+| Неверное имя приложения | Invalid app package name |
+| Не больше 200 приложений в списке | At most 200 apps per list |
+| Не больше 100 ограничений по приложениям | At most 100 app limits |
+| Не больше 500 приложений | At most 500 apps |
+| Ссылка должна начинаться с http:// или https:// | The link must start with http:// or https:// |
+| Ссылка длиннее 500 символов | The link is longer than 500 characters |
+| Не больше 100 учебников | At most 100 textbooks |
+
+Existing messages reused: `Только для родителя`, `Только для ученика`, `Ученик не найден`, `Название пустое`,
+`День недели 1–7`, `Неизвестное действие`, `Слишком много попыток. Попробуйте позже.`
