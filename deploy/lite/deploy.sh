@@ -9,10 +9,10 @@ BUNDLE=$(dirname "$SRC_KIT")
 # shellcheck source=lib.sh
 . "$SRC_KIT/lib.sh"
 need_root
-[ -s "$SECRETS_FILE" ] && [ -f "$CONFIG_FILE" ] || die "not installed yet: run the 'install' action first"
+if [ ! -s "$SECRETS_FILE" ] || [ ! -f "$CONFIG_FILE" ]; then die "not installed yet: run the 'install' action first"; fi
 command -v docker >/dev/null || die "docker missing: run the 'install' action first"
 
-caddy_sum() { cat "$KIT_DIR/caddy/Caddyfile" 2>/dev/null | sha256sum | cut -d' ' -f1; }
+caddy_sum() { sha256sum < "$KIT_DIR/caddy/Caddyfile" 2>/dev/null | cut -d' ' -f1; }
 before=$(caddy_sum)
 install_kit "$SRC_KIT"
 sync_app "$BUNDLE"
