@@ -316,13 +316,13 @@ Deno.test("screen: device report cleanup", () => {
   const r = parseReport({
     apps: [{ pkg: "com.a", name: " A ", installed_at: 1761127200000 }, { pkg: "com.a", name: "dup" }, { pkg: "bad pkg" }, { pkg: "com.b", name: "x".repeat(100), installed_at: "nope" }],
     usage: { date: "2026-10-22", total_min: 30.4, apps: { "com.a": 20, "bad pkg": 5, "com.b": -3 } },
-    guard: { usage_access: true, overlay: 1, admin: false },
+    guard: { usage_access: true, overlay: 1 },
   });
   eq(r.apps.map((a) => a.pkg), ["com.a", "com.b"]);
   eq(r.apps[0], { pkg: "com.a", name: "A", installed_at: "2025-10-22T10:00:00.000Z" });
   eq([r.apps[1].name.length, r.apps[1].installed_at], [80, null]);
   eq(r.usage, { date: "2026-10-22", total_min: 30, apps: { "com.a": 20, "com.b": 0 } });
-  eq(r.guard, { usage_access: true, overlay: true, admin: false, battery_ok: false, running: false });
+  eq(r.guard, { usage_access: true, overlay: true, battery_ok: false, running: false });
   eq(parseReport({ usage: { date: "2026-02-30" } }).usage.date, null);
   eq(parseReport({}).apps, []);
   throws(() => parseReport({ apps: Array.from({ length: 501 }, (_, i) => ({ pkg: `p${i}` })) }), "Не больше 500 приложений");

@@ -223,7 +223,7 @@ export function parseReport(b: any) {
   return {
     apps,
     usage: { date: validDate(u.date) ? u.date : null, total_min: mins(u.total_min), apps: usageApps },
-    guard: { usage_access: !!g.usage_access, overlay: !!g.overlay, admin: !!g.admin, battery_ok: !!g.battery_ok, running: !!g.running },
+    guard: { usage_access: !!g.usage_access, overlay: !!g.overlay, battery_ok: !!g.battery_ok, running: !!g.running },
   };
 }
 

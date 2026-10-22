@@ -64,7 +64,7 @@ create table if not exists public.app_screen_reports (
   child_id bigint not null references public.app_children(id) on delete cascade,
   apps jsonb not null default '[]',             -- [{pkg, name, installed_at}]
   usage jsonb not null default '{}',            -- {date, total_min, apps: {pkg: minutes}}
-  guard jsonb not null default '{}',            -- {usage_access, overlay, admin, battery_ok, running}
+  guard jsonb not null default '{}',            -- {usage_access, overlay, battery_ok, running}
   reported_at timestamptz not null default now()
 );
 alter table public.app_screen_reports drop constraint if exists app_screen_reports_shape_chk;

@@ -1,7 +1,9 @@
 # Screen time & textbooks — shared contract (v1)
 
 Parental controls for the child's phone, configured by the parent in «Уроки». Android is enforced by the
-native module `modules/screen-guard` (UsageStats + foreground service + full-screen block overlay + device admin).
+native module `modules/screen-guard` (UsageStats + foreground service with a visible notification + full-screen block screen). There is no
+anti-uninstall (no device admin): if the child removes «Уроки» or turns a permission off, the reports stop or show it and
+the parent sees «Защита выключена» in the app.
 iOS will use Apple's Screen Time API (FamilyControls/ManagedSettings/DeviceActivity) once Apple grants the
 Family Controls entitlement; until then iOS shows the rules but does not enforce them.
 
@@ -97,7 +99,7 @@ Textbooks are opened inside «Уроки» (in-app viewer), so they stay availab
   `{ child_id, minutes: 0 }` cancels. Pushes the child: «Родитель дал N минут». Returns the full rules.
 - `POST /screen/report` — child device only. Body:
   `{ apps: [{ pkg, name, installed_at? }], usage: { date: "YYYY-MM-DD", total_min, apps: { [pkg]: minutes } },
-     guard: { usage_access, overlay, admin, battery_ok, running } }`
+     guard: { usage_access, overlay, battery_ok, running } }`
   Stores the latest report per child device (≤ 500 apps, names ≤ 80 chars). If `block_new_apps` and the report has
   packages not seen before → notify parents «Новое приложение: <name>» (once per package).
   → `{ ok: true, rules: ScreenRules, homework_done, homework_date, homework_due_today, tz, approved, lang, today, school_day, new_apps }`
@@ -130,9 +132,9 @@ child, the device (its report) or the family.
 ## Native module API (`modules/screen-guard`, Android; iOS/web stubs return `supported:false`)
 
 ```ts
-status(): Promise<{ supported, usage_access, overlay, admin, battery_ok, running }>
+status(): Promise<{ supported, usage_access, overlay, battery_ok, running, configured }>
 openUsageAccessSettings(): Promise<void>; openOverlaySettings(): Promise<void>
-requestDeviceAdmin(): Promise<void>; openBatterySettings(): Promise<void>
+openBatterySettings(): Promise<void>
 start(config: { apiBase, token, childId }): Promise<void>  // foreground service: polls rules, reports usage
 stop(): Promise<void>
 setRules(snapshot: { rules: ScreenRules, homework_done: boolean, tz: string }): Promise<void> // immediate refresh
