@@ -101,7 +101,14 @@ jobs:
           port=${SSH_PORT:-22}
           install -m 700 -d ~/.ssh
           # keys pasted from Windows carry CRLF; keys pasted as one line lose their newlines
-          key=$(printf '%s' "$SSH_KEY" | tr -d '\r')
+          key=$(printf '%s' "$SSH_KEY" | tr -d '\r' | sed '1s/^\xEF\xBB\xBF//')
+          # also accept the whole key file as base64 (one line, nothing to break when pasting)
+          if ! printf '%s' "$key" | grep -q 'PRIVATE KEY-----'; then
+            decoded=$(printf '%s' "$key" | tr -d ' \n' | base64 -d 2>/dev/null | tr -d '\r' || true)
+            if printf '%s' "$decoded" | grep -q 'PRIVATE KEY-----'; then key=$decoded; fi
+          fi
+          # safe diagnostics (no key material): marker present, line count
+          echo "key: begin marker=$(printf '%s' "$key" | grep -c 'BEGIN .*PRIVATE KEY' || true), end marker=$(printf '%s' "$key" | grep -c 'END .*PRIVATE KEY' || true), lines=$(printf '%s\n' "$key" | wc -l), public-key-pasted=$(printf '%s' "$key" | grep -c '^ssh-' || true)"
           if [ "$(printf '%s\n' "$key" | wc -l)" -le 1 ]; then
             body=$(printf '%s' "$key" | sed -E 's/-----(BEGIN|END) OPENSSH PRIVATE KEY-----//g' | tr -s ' ' '\n' | sed '/^$/d')
             key=$(printf -- '-----BEGIN OPENSSH PRIVATE KEY-----\n%s\n-----END OPENSSH PRIVATE KEY-----' "$body")
