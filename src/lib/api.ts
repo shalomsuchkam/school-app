@@ -5,8 +5,8 @@ import { Platform } from 'react-native';
 import { getLang, t } from './i18n';
 
 // Client for the `app` edge function (multi-family backend of the mobile app).
-// EXPO_PUBLIC_API_URL (build secret) points builds at the self-hosted server in Kazakhstan once it runs.
-export const API_BASE = process.env.EXPO_PUBLIC_API_URL || 'https://cmranrfjvvmhktntbnpg.supabase.co/functions/v1/app';
+// Self-hosted server in Kazakhstan (deploy/lite); EXPO_PUBLIC_API_URL (build secret) can override it.
+export const API_BASE = process.env.EXPO_PUBLIC_API_URL || 'https://api.urokiapp.kz/functions/v1/app';
 
 export type Role = 'parent' | 'child' | 'viewer';
 // Who may be invited (and the role a session holds).
