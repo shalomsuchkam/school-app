@@ -91,6 +91,9 @@ jobs:
 
       - name: Type-check and test the function
         if: steps.secrets.outputs.ok == 'true' && (env.ACTION == 'install' || env.ACTION == 'deploy')
+        env:
+          # the repo-root package.json (the Expo app) would make deno look for npm packages in node_modules
+          DENO_NO_PACKAGE_JSON: '1'
         run: |
           deno check supabase/functions/app/index.ts
           deno test --allow-env --allow-net supabase/functions/app/logic_test.ts
