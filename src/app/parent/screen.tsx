@@ -19,7 +19,7 @@ type Target = 'limit' | 'blocked' | 'allowed' | 'bedtime' | 'school';
 const SELF = 'kz.uroki.app';
 
 // Parent: screen time for one child (docs/SCREEN_TIME.md). Every change is a partial PUT; the child's phone
-// picks it up within minutes (or at once when «Уроки» is open there).
+// picks it up within minutes (or at once when «Контроль ДЗ» is open there).
 export default function ScreenTime() {
   const p = usePalette();
   const t = useT();

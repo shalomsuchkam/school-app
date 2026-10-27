@@ -6,7 +6,7 @@ describe('invite links', () => {
     expect(codeFromLink('uroki://join?lang=ru&code=k7qmzp')).toBe('K7QMZP');
     expect(codeFromLink('https://abc.supabase.co/functions/v1/app/i/K7QMZP')).toBe('K7QMZP');
     expect(codeFromLink('https://abc.supabase.co/functions/v1/app/i/K7QMZP?lang=kk')).toBe('K7QMZP');
-    expect(codeFromLink('Приглашение в «Уроки»: https://x.kz/app/i/AB12CD\nКод: AB12CD')).toBe('AB12CD');
+    expect(codeFromLink('Приглашение в приложение «Контроль ДЗ»: https://x.kz/app/i/AB12CD\nКод: AB12CD')).toBe('AB12CD');
     expect(codeFromLink(' ab12cd ')).toBe('AB12CD');
   });
 

@@ -114,7 +114,7 @@ fun decide(rules: ScreenRules, input: DecisionInput): Decision {
   val pkg = input.pkg
   // 1. master switch (a lapsed subscription counts as switched off)
   if (!rules.enabled || input.suspended) return Decision.Allow
-  // 2. Уроки, launcher, system UI, phone, SMS, settings during setup, always_allowed
+  // 2. this app, launcher, system UI, phone, SMS, settings during setup, always_allowed
   if (isAlwaysAllowed(pkg, rules, input)) return Decision.Allow
   // 3. parent's temporary unlock
   val unlock = rules.unlockUntilMs

@@ -7,7 +7,7 @@ import type { ScreenState } from './api';
 // iOS screen time through Apple's Screen Time API (react-native-device-activity), docs/SCREEN_TIME.md "iOS".
 // Apple gives no package names and no usage numbers: on the child's iPhone the parent picks three selections with
 // Apple's picker (stored on the device), and this file turns the server rules into DeviceActivity schedules,
-// threshold events and shields. The extensions run the scheduled steps while «Уроки» is closed; everything is
+// threshold events and shields. The extensions run the scheduled steps while «Контроль ДЗ» is closed; everything is
 // also recomputed on every rules fetch and app foreground.
 //
 // Off unless the build has the iosScreenTime flag (app.config.ts): without it the native extensions and the
@@ -244,7 +244,7 @@ export function shieldText(reason: IosReason, lang: string, until?: string, limi
   const subtitle = {
     bedtime: until ? t(`Время сна. Телефон отдыхает до ${until}.`, `Ұйқы уақыты. Телефон ${until} дейін демалады.`, `Bedtime. The phone rests until ${until}.`) : t('Время сна.', 'Ұйқы уақыты.', 'Bedtime.'),
     school: until ? t(`Идут уроки (до ${until}).`, `Сабақ уақыты (${until} дейін).`, `School time (until ${until}).`) : t('Идут уроки.', 'Сабақ уақыты.', 'School time.'),
-    homework: t('Сначала сделай домашнее задание в «Уроках».', 'Алдымен «Уроки» қолданбасында үй тапсырмасын орында.', "Finish today's homework in «Уроки» first."),
+    homework: t('Сначала сделай домашнее задание в приложении «Контроль ДЗ».', 'Алдымен «Контроль ДЗ» қолданбасында үй тапсырмасын орында.', "Finish today's homework in «Контроль ДЗ» first."),
     app_limit: t(`Лимит на эти приложения на сегодня исчерпан (${limitMin ?? 0} мин).`, `Бұл қолданбалардың бүгінгі лимиті бітті (${limitMin ?? 0} мин).`, `Today's limit for these apps is used up (${limitMin ?? 0} min).`),
     daily_limit: t(`Дневной лимит экранного времени исчерпан (${limitMin ?? 0} мин).`, `Экран уақытының бүгінгі лимиті бітті (${limitMin ?? 0} мин).`, `Today's screen time limit is used up (${limitMin ?? 0} min).`),
   }[reason];
@@ -367,7 +367,7 @@ function runNow(l: Lib, actions: PlanAction[], by: string) {
   }
 }
 
-/** Removes every shield, schedule and setting «Уроки» made (rules off, 402, or the parent switched it off). */
+/** Removes every shield, schedule and setting «Контроль ДЗ» made (rules off, 402, or the parent switched it off). */
 export function clearIos() {
   const l = rnda();
   if (!l) return;

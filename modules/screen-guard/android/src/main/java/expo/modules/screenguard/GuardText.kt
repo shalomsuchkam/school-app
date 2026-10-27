@@ -12,12 +12,12 @@ class GuardText(lang: String?) {
     else -> ru
   }
 
-  val serviceTitle get() = t("Уроки: родительский контроль включён", "Уроки: ата-ана бақылауы қосулы", "Уроки: parental control is on")
+  val serviceTitle get() = t("Контроль ДЗ: родительский контроль включён", "Контроль ДЗ: ата-ана бақылауы қосулы", "Контроль ДЗ: parental control is on")
   val serviceText get() = t("Правила экранного времени от родителя", "Ата-ананың экран уақыты ережелері", "Screen-time rules set by a parent")
   val channelName get() = t("Родительский контроль", "Ата-ана бақылауы", "Parental control")
   val blockChannelName get() = t("Блокировка приложений", "Қолданбаларды бұғаттау", "App blocking")
   val blockTitle get() = t("Сейчас нельзя", "Қазір болмайды", "Not now")
-  val openUroki get() = t("Открыть Уроки", "Уроки-ді ашу", "Open Уроки")
+  val openUroki get() = t("Открыть «Контроль ДЗ»", "«Контроль ДЗ» қолданбасын ашу", "Open «Контроль ДЗ»")
   val home get() = t("Домой", "Басты экран", "Home")
   fun reason(code: String, untilMin: Int?, limitMin: Int?): String {
     val until = untilMin?.let { formatHhMm(it) }
@@ -39,9 +39,9 @@ class GuardText(lang: String?) {
         t("Идут уроки.", "Сабақ уақыты.", "School time.")
       }
       "homework" -> t(
-        "Сначала сделай домашнее задание в «Уроках».",
-        "Алдымен «Уроки» қолданбасында үй тапсырмасын орында.",
-        "Finish today's homework in «Уроки» first.",
+        "Сначала сделай домашнее задание в приложении «Контроль ДЗ».",
+        "Алдымен «Контроль ДЗ» қолданбасында үй тапсырмасын орында.",
+        "Finish today's homework in «Контроль ДЗ» first.",
       )
       "app_limit" -> t(
         "Лимит на это приложение на сегодня исчерпан (${limitMin ?: 0} мин).",

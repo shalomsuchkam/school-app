@@ -117,7 +117,7 @@ const b: Bundle = {
     'onboarding.item.phone': 'Телефон заряжен',
     'onboarding.item.readingLog': 'Читательский дневник',
     // welcome (brand hero)
-    'onboarding.welcome.brand': 'Уроки',
+    'onboarding.welcome.brand': 'Контроль ДЗ',
     'onboarding.welcome.value': 'Домашка сделана, портфель собран — без вечерних споров.',
     'onboarding.welcome.footnote': 'Ребёнок подключится по коду с родительского телефона.',
     // join (code boxes)
@@ -244,7 +244,7 @@ const b: Bundle = {
     'onboarding.item.shoes': 'Ауыстырмалы аяқ киім',
     'onboarding.item.phone': 'Телефон зарядталған',
     'onboarding.item.readingLog': 'Оқырман күнделігі',
-    'onboarding.welcome.brand': 'Уроки',
+    'onboarding.welcome.brand': 'Контроль ДЗ',
     'onboarding.welcome.value': 'Үй тапсырмасы орындалды, портфель жиналды — кешкі дау-дамайсыз.',
     'onboarding.welcome.footnote': 'Бала ата-ананың телефонындағы код арқылы қосылады.',
     'onboarding.join.codeLabel': 'Шақыру коды',
@@ -368,7 +368,7 @@ const b: Bundle = {
     'onboarding.item.shoes': 'Indoor shoes',
     'onboarding.item.phone': 'Phone charged',
     'onboarding.item.readingLog': 'Reading log',
-    'onboarding.welcome.brand': 'Uroki',
+    'onboarding.welcome.brand': 'Контроль ДЗ',
     'onboarding.welcome.value': 'Homework done, bag packed — without the evening arguments.',
     'onboarding.welcome.footnote': "Your child joins with a code from the parent's phone.",
     'onboarding.join.codeLabel': 'Invite code',

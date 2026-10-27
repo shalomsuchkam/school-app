@@ -325,7 +325,7 @@ async function notifyNewApps(kid: any, apps: { pkg: string; name: string | null 
   const names = apps.map((a) => a.name || a.pkg);
   const head = names.slice(0, 3).join(", ") + (names.length > 3 ? ` и ещё ${names.length - 3}` : "");
   await notifyParents(kid.id, { title: `Новое приложение: ${head}`, body: `${kid.child_name}: заблокировано, пока вы не разрешите` }, {
-    html: `📱 <b>${esc(kid.child_name)}: новое приложение</b>\n${names.map(esc).join("\n")}\n\nРазрешите или заблокируйте его в «Уроки» → Экранное время.`,
+    html: `📱 <b>${esc(kid.child_name)}: новое приложение</b>\n${names.map(esc).join("\n")}\n\nРазрешите или заблокируйте его в приложении «Контроль ДЗ» → Экранное время.`,
   });
 }
 

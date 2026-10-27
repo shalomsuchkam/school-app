@@ -9,7 +9,7 @@ public class UrokiAppLockModule: Module {
   public func definition() -> ModuleDefinition {
     Name("UrokiAppLock")
 
-    // denyInstall: the App Store cannot install apps; denyRemoval: no app (incl. «Уроки») can be deleted.
+    // denyInstall: the App Store cannot install apps; denyRemoval: no app (incl. «Контроль ДЗ») can be deleted.
     Function("set") { (denyInstall: Bool, denyRemoval: Bool) in
       if #available(iOS 16.0, *) {
         let store = ManagedSettingsStore(named: ManagedSettingsStore.Name("uroki.apps"))

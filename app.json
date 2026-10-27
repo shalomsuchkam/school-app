@@ -11,7 +11,7 @@
       "bundleIdentifier": "kz.uroki.app",
       "supportsTablet": true,
       "infoPlist": {
-        "CFBundleDisplayName": "Уроки",
+        "CFBundleDisplayName": "Контроль ДЗ",
         "CFBundleAllowMixedLocalizations": true,
         "ITSAppUsesNonExemptEncryption": false
       },
@@ -160,7 +160,7 @@
           "widgets": [
             {
               "name": "Tomorrow",
-              "label": "Уроки",
+              "label": "Контроль ДЗ",
               "minWidth": "180dp",
               "minHeight": "110dp",
               "targetCellWidth": 3,
@@ -175,7 +175,7 @@
       ],
       [
         "./plugins/withAndroidLabel",
-        "Уроки"
+        "Контроль ДЗ"
       ]
     ],
     "locales": {

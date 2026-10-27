@@ -14,7 +14,7 @@ import android.widget.LinearLayout
 import android.widget.TextView
 
 /**
- * Full-screen block screen («Тетрадь» colours): why the app is not available now, «Открыть Уроки» and «Домой».
+ * Full-screen block screen («Тетрадь» colours): why the app is not available now, «Открыть «Контроль ДЗ»» and «Домой».
  * Back goes home, never back into the blocked app.
  */
 class BlockActivity : Activity() {

@@ -10,17 +10,17 @@ const APP_STORE = Deno.env.get("APP_STORE_URL") || "https://apps.apple.com/searc
 
 const TEXT: Record<L, { title: string; lead: string; open: string; code: string; hint: string; get: string; ios: string; android: string }> = {
   ru: {
-    title: "Приглашение в «Уроки»", lead: "Вас пригласили в семью в приложении «Уроки».", open: "Открыть в «Уроки»",
+    title: "Приглашение в «Контроль ДЗ»", lead: "Вас пригласили в семью в приложении «Контроль ДЗ».", open: "Открыть в приложении «Контроль ДЗ»",
     code: "Код приглашения", hint: "Если кнопка не сработала, откройте приложение и введите этот код. Код действует 48 часов и только один раз.",
     get: "Ещё нет приложения?", ios: "App Store", android: "Google Play",
   },
   kk: {
-    title: "«Уроки» шақыруы", lead: "Сізді «Уроки» қосымшасындағы отбасына шақырды.", open: "«Уроки» қосымшасында ашу",
+    title: "«Контроль ДЗ» шақыруы", lead: "Сізді «Контроль ДЗ» қосымшасындағы отбасына шақырды.", open: "«Контроль ДЗ» қосымшасында ашу",
     code: "Шақыру коды", hint: "Батырма жұмыс істемесе, қосымшаны ашып, осы кодты енгізіңіз. Код 48 сағат және бір рет қана жарамды.",
     get: "Қосымша әлі жоқ па?", ios: "App Store", android: "Google Play",
   },
   en: {
-    title: "Invitation to Uroki", lead: "You have been invited to a family in the Uroki app.", open: "Open in Uroki",
+    title: "Invitation to Контроль ДЗ", lead: "You have been invited to a family in the Контроль ДЗ app.", open: "Open in Контроль ДЗ",
     code: "Invite code", hint: "If the button does not work, open the app and enter this code. It works once and for 48 hours.",
     get: "Don't have the app yet?", ios: "App Store", android: "Google Play",
   },

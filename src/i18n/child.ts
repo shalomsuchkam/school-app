@@ -184,7 +184,7 @@ const base: Bundle = {
     'child.widget.noTasks': 'Заданий нет',
     'child.widget.more': { one: 'и ещё {n} задание', few: 'и ещё {n} задания', many: 'и ещё {n} заданий', other: 'и ещё {n} задания' },
     'child.widget.stale': 'Откройте приложение, чтобы обновить',
-    'child.widget.empty': 'Откройте «Уроки», чтобы увидеть задания',
+    'child.widget.empty': 'Откройте «Контроль ДЗ», чтобы увидеть задания',
 
     // Local reminders
     'child.rem.channel': 'Напоминания об уроках',
@@ -357,7 +357,7 @@ const base: Bundle = {
     'child.widget.noTasks': 'Тапсырма жоқ',
     'child.widget.more': { one: 'тағы {n} тапсырма', other: 'тағы {n} тапсырма' },
     'child.widget.stale': 'Жаңарту үшін қолданбаны ашыңыз',
-    'child.widget.empty': 'Тапсырмаларды көру үшін «Уроки» қолданбасын ашыңыз',
+    'child.widget.empty': 'Тапсырмаларды көру үшін «Контроль ДЗ» қолданбасын ашыңыз',
 
     // Local reminders
     'child.rem.channel': 'Сабақ туралы еске салғыштар',
@@ -530,7 +530,7 @@ const base: Bundle = {
     'child.widget.noTasks': 'No tasks',
     'child.widget.more': { one: 'and {n} more task', other: 'and {n} more tasks' },
     'child.widget.stale': 'Open the app to refresh',
-    'child.widget.empty': 'Open Uroki to see your tasks',
+    'child.widget.empty': 'Open Контроль ДЗ to see your tasks',
 
     // Local reminders
     'child.rem.channel': 'Homework reminders',

@@ -46,7 +46,7 @@ export default function Welcome() {
         <View style={styles.column}>
           <Animated.View entering={FadeInDown.duration(420)}>
             <BrandMark size={markSize} />
-            <Txt v="display" accessibilityRole="header" style={[styles.brand, compact && { fontSize: 40, lineHeight: 44, marginTop: 16 }]}>
+            <Txt v="display" accessibilityRole="header" numberOfLines={1} adjustsFontSizeToFit style={[styles.brand, compact && { fontSize: 40, lineHeight: 44, marginTop: 16 }]}>
               {t('onboarding.welcome.brand')}
             </Txt>
             <Txt v="body" color={p.ink2} style={styles.value}>

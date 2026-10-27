@@ -8,9 +8,9 @@ export const LEGAL_VERSION = "2026-10-19.1";
 // so the owner can fill in the legal entity, БИН and address without a new deploy.
 type L = "ru" | "kk" | "en";
 const FALLBACK_OPERATOR: Record<L, string> = {
-  ru: "владелец приложения «Уроки» (реквизиты — в карточке приложения в App Store и Google Play)",
-  kk: "«Уроки» қосымшасының иесі (деректемелері — App Store және Google Play беттерінде)",
-  en: "the owner of the “Uroki” app (details are listed on the App Store and Google Play pages)",
+  ru: "владелец приложения «Контроль ДЗ» (реквизиты — в карточке приложения в App Store и Google Play)",
+  kk: "«Контроль ДЗ» қосымшасының иесі (деректемелері — App Store және Google Play беттерінде)",
+  en: "the owner of the “Контроль ДЗ” app (details are listed on the App Store and Google Play pages)",
 };
 const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
@@ -18,10 +18,10 @@ type Ctx = { op: string; mail: string };
 
 const ru = {
   terms: ({ op, mail }: Ctx) => `
-<h1>Пользовательское соглашение «Уроки»</h1>
+<h1>Пользовательское соглашение «Контроль ДЗ»</h1>
 <p>Редакция ${LEGAL_VERSION}. Оператор: ${op}. Связь: <a href="mailto:${mail}">${mail}</a>.</p>
 <h2>1. Что это за сервис</h2>
-<p>«Уроки» помогает семье следить за домашними заданиями и подготовкой к учебному дню: ученик отмечает задания и фотографирует выполненную работу, родитель видит прогресс, одобряет пропуски и получает напоминания.</p>
+<p>«Контроль ДЗ» помогает семье следить за домашними заданиями и подготовкой к учебному дню: ученик отмечает задания и фотографирует выполненную работу, родитель видит прогресс, одобряет пропуски и получает напоминания.</p>
 <h2>2. Кто может пользоваться</h2>
 <p>Учётную запись семьи создаёт совершеннолетний родитель или законный представитель. Он подключает ребёнка кодом приглашения и отвечает за использование сервиса ребёнком. Создавая семью, родитель подтверждает, что является законным представителем ребёнка и даёт согласие на обработку его персональных данных.</p>
 <h2>3. Подписка</h2>
@@ -41,7 +41,7 @@ const ru = {
 <p>К соглашению применяется право Республики Казахстан, если обязательные нормы страны пользователя не предусматривают иное.</p>
 <p>См. также <a href="privacy?lang=ru">Политику конфиденциальности</a>.</p>`,
   privacy: ({ op, mail }: Ctx) => `
-<h1>Политика конфиденциальности «Уроки»</h1>
+<h1>Политика конфиденциальности «Контроль ДЗ»</h1>
 <p>Редакция ${LEGAL_VERSION}. Оператор (собственник и оператор базы данных): ${op}. Связь: <a href="mailto:${mail}">${mail}</a>.</p>
 <h2>Какие данные мы обрабатываем</h2>
 <ul>
@@ -70,7 +70,7 @@ const ru = {
 <h2>Ваши права</h2>
 <p>Вы вправе знать, какие данные обрабатываются, получить их копию, исправить, отозвать согласие и потребовать удаления — в приложении (Настройки → Удалить семью и все данные) или по адресу ${mail}. Мы отвечаем в течение 30 дней. Жители Казахстана вправе обратиться в уполномоченный орган по защите персональных данных (Закон РК «О персональных данных и их защите»), жители ЕС — в надзорный орган своей страны (GDPR).</p>`,
   delete: ({ mail }: Ctx) => `
-<h1>Удаление аккаунта «Уроки»</h1>
+<h1>Удаление аккаунта «Контроль ДЗ»</h1>
 <p><b>В приложении:</b> родитель открывает Настройки → «Удалить семью и все данные» и подтверждает. Сразу и безвозвратно удаляются расписание, задания, история, все фото и все подключённые телефоны семьи.</p>
 <p><b>Без приложения:</b> напишите на ${mail} с темой «Удалить аккаунт» и укажите код семьи (Настройки → Подписка) или имя ученика и примерную дату регистрации. Мы удалим данные в течение 7 дней и ответим на письмо.</p>
 <p>Платную подписку отменяйте отдельно в настройках App Store или Google Play — удаление аккаунта её не отменяет. Данные о покупках хранятся у магазина по его правилам.</p>`,
@@ -78,10 +78,10 @@ const ru = {
 
 const kk = {
   terms: ({ op, mail }: Ctx) => `
-<h1>«Уроки» пайдаланушы келісімі</h1>
+<h1>«Контроль ДЗ» пайдаланушы келісімі</h1>
 <p>Редакция ${LEGAL_VERSION}. Оператор: ${op}. Байланыс: <a href="mailto:${mail}">${mail}</a>.</p>
 <h2>1. Сервис туралы</h2>
-<p>«Уроки» отбасына үй тапсырмасы мен оқу күніне дайындықты қадағалауға көмектеседі: оқушы тапсырмаларды белгілеп, орындалған жұмысты суретке түсіреді, ата-ана прогресті көреді, өткізуді мақұлдайды және еске салғыштар алады.</p>
+<p>«Контроль ДЗ» отбасына үй тапсырмасы мен оқу күніне дайындықты қадағалауға көмектеседі: оқушы тапсырмаларды белгілеп, орындалған жұмысты суретке түсіреді, ата-ана прогресті көреді, өткізуді мақұлдайды және еске салғыштар алады.</p>
 <h2>2. Кім пайдалана алады</h2>
 <p>Отбасы есептік жазбасын кәмелетке толған ата-ана немесе заңды өкіл ашады. Ол баланы шақыру кодымен қосады және баланың сервисті пайдалануына жауап береді. Отбасын ашу арқылы ата-ана баланың заңды өкілі екенін растайды және оның дербес деректерін өңдеуге келісім береді.</p>
 <h2>3. Жазылым</h2>
@@ -101,7 +101,7 @@ const kk = {
 <p>Егер пайдаланушы елінің міндетті нормаларында өзгеше көзделмесе, келісімге Қазақстан Республикасының құқығы қолданылады.</p>
 <p>Сондай-ақ <a href="privacy?lang=kk">Құпиялылық саясатын</a> қараңыз.</p>`,
   privacy: ({ op, mail }: Ctx) => `
-<h1>«Уроки» құпиялылық саясаты</h1>
+<h1>«Контроль ДЗ» құпиялылық саясаты</h1>
 <p>Редакция ${LEGAL_VERSION}. Оператор (дерекқордың меншік иесі және операторы): ${op}. Байланыс: <a href="mailto:${mail}">${mail}</a>.</p>
 <h2>Қандай деректерді өңдейміз</h2>
 <ul>
@@ -130,7 +130,7 @@ const kk = {
 <h2>Сіздің құқықтарыңыз</h2>
 <p>Қандай деректер өңделетінін білуге, көшірмесін алуға, түзетуге, келісімді кері қайтарып алуға және жоюды талап етуге құқығыңыз бар — қосымшада (Баптаулар → Отбасын және барлық деректерді жою) немесе ${mail} мекенжайы арқылы. 30 күн ішінде жауап береміз. Қазақстан тұрғындары дербес деректерді қорғау жөніндегі уәкілетті органға («Дербес деректер және оларды қорғау туралы» ҚР Заңы) жүгіне алады.</p>`,
   delete: ({ mail }: Ctx) => `
-<h1>«Уроки» аккаунтын жою</h1>
+<h1>«Контроль ДЗ» аккаунтын жою</h1>
 <p><b>Қосымшада:</b> ата-ана Баптаулар → «Отбасын және барлық деректерді жою» бөлімін ашып, растайды. Сабақ кестесі, тапсырмалар, тарих, барлық фотолар және отбасының барлық қосылған телефондары бірден әрі қайтарымсыз жойылады.</p>
 <p><b>Қосымшасыз:</b> ${mail} мекенжайына «Аккаунтты жою» тақырыбымен жазып, отбасы кодын (Баптаулар → Жазылым) немесе оқушының атын және шамамен тіркелу күнін көрсетіңіз. Деректерді 7 күн ішінде жойып, хатқа жауап береміз.</p>
 <p>Ақылы жазылымнан App Store немесе Google Play баптауларында бөлек бас тартыңыз — аккаунтты жою оны тоқтатпайды. Сатып алу деректерін дүкен өз ережесі бойынша сақтайды.</p>`,
@@ -138,10 +138,10 @@ const kk = {
 
 const en = {
   terms: ({ op, mail }: Ctx) => `
-<h1>“Uroki” Terms of Use</h1>
+<h1>“Контроль ДЗ” Terms of Use</h1>
 <p>Version ${LEGAL_VERSION}. Operator: ${op}. Contact: <a href="mailto:${mail}">${mail}</a>.</p>
 <h2>1. The service</h2>
-<p>Uroki helps a family keep track of homework and getting ready for the school day: the student ticks tasks and photographs finished work, the parent sees progress, approves skips and gets reminders.</p>
+<p>Контроль ДЗ helps a family keep track of homework and getting ready for the school day: the student ticks tasks and photographs finished work, the parent sees progress, approves skips and gets reminders.</p>
 <h2>2. Who may use it</h2>
 <p>A family account is created by an adult parent or legal guardian, who connects the child with an invite code and is responsible for the child's use. By creating a family the parent confirms they are the child's legal guardian and consent to the processing of the child's personal data.</p>
 <h2>3. Subscription</h2>
@@ -161,7 +161,7 @@ const en = {
 <p>These terms are governed by the law of the Republic of Kazakhstan unless mandatory rules of the user's country provide otherwise.</p>
 <p>See also the <a href="privacy?lang=en">Privacy Policy</a>.</p>`,
   privacy: ({ op, mail }: Ctx) => `
-<h1>“Uroki” Privacy Policy</h1>
+<h1>“Контроль ДЗ” Privacy Policy</h1>
 <p>Version ${LEGAL_VERSION}. Operator (controller): ${op}. Contact: <a href="mailto:${mail}">${mail}</a>.</p>
 <h2>Data we process</h2>
 <ul>
@@ -190,7 +190,7 @@ const en = {
 <h2>Your rights</h2>
 <p>You may access, export, correct or delete your data, withdraw consent and object to processing — in the app (Settings → Delete family and all data) or at ${mail}. We reply within 30 days. EU residents may complain to their data protection authority; Kazakhstan residents to the authorized personal data protection body.</p>`,
   delete: ({ mail }: Ctx) => `
-<h1>Delete your “Uroki” account</h1>
+<h1>Delete your “Контроль ДЗ” account</h1>
 <p><b>In the app:</b> a parent opens Settings → “Delete family and all data” and confirms. The timetable, tasks, history, all photos and all connected phones are deleted immediately and permanently.</p>
 <p><b>Without the app:</b> email ${mail} with the subject “Delete account” and include the family code (Settings → Subscription) or the student's name and approximate sign-up date. We delete the data within 7 days and reply to you.</p>
 <p>Cancel a paid subscription separately in App Store or Google Play settings — deleting the account does not cancel it. Purchase records are kept by the store under its own rules.</p>`,
@@ -198,9 +198,9 @@ const en = {
 
 const PAGES: Record<L, typeof ru> = { ru, kk, en };
 const TITLES: Record<L, Record<"terms" | "privacy" | "delete", string>> = {
-  ru: { terms: "Уроки — Соглашение", privacy: "Уроки — Конфиденциальность", delete: "Уроки — Удаление аккаунта" },
-  kk: { terms: "Уроки — Келісім", privacy: "Уроки — Құпиялылық", delete: "Уроки — Аккаунтты жою" },
-  en: { terms: "Uroki — Terms", privacy: "Uroki — Privacy", delete: "Uroki — Delete account" },
+  ru: { terms: "Контроль ДЗ — Соглашение", privacy: "Контроль ДЗ — Конфиденциальность", delete: "Контроль ДЗ — Удаление аккаунта" },
+  kk: { terms: "Контроль ДЗ — Келісім", privacy: "Контроль ДЗ — Құпиялылық", delete: "Контроль ДЗ — Аккаунтты жою" },
+  en: { terms: "Контроль ДЗ — Terms", privacy: "Контроль ДЗ — Privacy", delete: "Контроль ДЗ — Delete account" },
 };
 
 export async function legalPage(kind: "terms" | "privacy" | "delete", lang: string) {
