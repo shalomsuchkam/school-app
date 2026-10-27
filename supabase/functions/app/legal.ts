@@ -2,7 +2,7 @@
 // Bump LEGAL_VERSION whenever the text changes: families accept a specific version at sign-up.
 import { secret } from "./lib.ts";
 
-export const LEGAL_VERSION = "2026-10-19.1";
+export const LEGAL_VERSION = "2026-10-28.1";
 
 // Operator details come from app_secrets (app_operator_ru / app_operator_kk / app_operator_en, app_support_email),
 // so the owner can fill in the legal entity, БИН and address without a new deploy.
@@ -52,19 +52,21 @@ const ru = {
 <li><b>Технические данные:</b> случайный токен устройства (хранится у нас только в виде хэша), токен push-уведомлений, время последнего входа, IP-адрес для защиты от злоупотреблений.</li>
 <li><b>Подписка:</b> идентификатор покупателя (это идентификатор семьи), статус и срок подписки от App Store / Google Play через RevenueCat. Платёжные данные карты мы не получаем.</li>
 <li>Если родитель подключит Telegram — идентификатор чата для отправки уведомлений.</li>
+<li><b>Экранное время</b> (только если родитель его включил): на Android телефон ученика передаёт список установленных приложений (название и идентификатор), минуты использования за день и состояние разрешений защиты — чтобы родитель видел их и задавал лимиты. На iPhone выбор приложений и статистика остаются на устройстве (Экранное время Apple) и нам не передаются. Ссылки на учебники хранятся у нас; PDF-файлы учебников остаются только на телефоне ученика.</li>
 </ul>
 <p>Мы не собираем геолокацию, контакты, рекламные идентификаторы, не показываем рекламу и не передаём данные для рекламы, профилирования или аналитики третьим лицам.</p>
 <h2>Основание и цели</h2>
 <p>Данные обрабатываются на основании согласия родителя (законного представителя), данного при регистрации, и для исполнения соглашения — только чтобы показать задания и фото родителю, напомнить о сроках, проверить подписку и защитить сервис от злоупотреблений.</p>
 <h2>Где и сколько хранится</h2>
 <ul>
-<li>Данные хранятся на серверах Supabase (Европейский союз) в защищённом виде; доступ к ним имеет только серверная часть приложения. Регистрируясь, родитель соглашается на такую трансграничную передачу.</li>
+<li>Данные хранятся на сервере в Республике Казахстан (г. Алматы) в защищённом виде; доступ к ним имеет только серверная часть приложения.</li>
+<li>Резервные копии базы данных делаются ежедневно и хранятся 7 дней, поэтому удалённые данные окончательно исчезают из копий в течение 7 дней.</li>
 <li>Фото и голосовые заметки автоматически удаляются через срок, выбранный родителем (от 7 до 40 дней), заменённые пересъёмкой фото — через сутки.</li>
 <li>Остальные данные хранятся, пока существует семья. Устройства, не входившие 180 дней, отключаются.</li>
 <li>При удалении семьи все её данные и фото удаляются безвозвратно.</li>
 </ul>
 <h2>Кому передаются (обработчики)</h2>
-<p>Supabase (хранение и сервер), RevenueCat, Apple и Google (проверка подписки), Expo, Apple и Google (доставка push-уведомлений), Telegram (только если подключён родителем). Иным лицам — только по требованию закона.</p>
+<p>хостинг-провайдер ps.kz (аренда сервера в Алматы), RevenueCat, Apple и Google (проверка подписки), Expo, Apple и Google (доставка push-уведомлений), Telegram (только если подключён родителем). Иным лицам — только по требованию закона.</p>
 <h2>Дети</h2>
 <p>Ребёнок пользуется приложением только с согласия родителя, который создаёт семью и управляет ею. Ребёнок не может сам покупать подписку, у ребёнка нет рекламы и внешних ссылок. Родитель может в любой момент посмотреть данные ребёнка, запретить их дальнейший сбор (отключить устройство ребёнка) и удалить их. Для пользователей из США это соответствует требованиям COPPA о прямом уведомлении и согласии родителя.</p>
 <h2>Ваши права</h2>
@@ -112,19 +114,21 @@ const kk = {
 <li><b>Техникалық деректер:</b> құрылғының кездейсоқ токені (бізде тек хэш түрінде сақталады), push-хабарландыру токені, соңғы кіру уақыты, теріс пайдаланудан қорғау үшін IP-мекенжай.</li>
 <li><b>Жазылым:</b> сатып алушы идентификаторы (отбасы идентификаторы), App Store / Google Play-дан RevenueCat арқылы алынған жазылым мәртебесі мен мерзімі. Карта деректерін алмаймыз.</li>
 <li>Ата-ана Telegram қосса — хабарландыру жіберу үшін чат идентификаторы.</li>
+<li><b>Экран уақыты</b> (тек ата-ана қосса): Android-та оқушының телефоны орнатылған қолданбалар тізімін (атауы мен идентификаторы), күндік пайдалану минуттарын және қорғау рұқсаттарының күйін жібереді — ата-ана оларды көріп, лимит қоюы үшін. iPhone-да қолданбаларды таңдау мен статистика құрылғыда қалады (Apple Экран уақыты) және бізге берілмейді. Оқулық сілтемелері бізде сақталады; оқулықтардың PDF файлдары тек оқушының телефонында қалады.</li>
 </ul>
 <p>Геолокацияны, контактілерді, жарнама идентификаторларын жинамаймыз, жарнама көрсетпейміз және деректерді жарнама, профильдеу немесе аналитика үшін үшінші тұлғаларға бермейміз.</p>
 <h2>Негіз және мақсат</h2>
 <p>Деректер тіркелу кезінде ата-ана (заңды өкіл) берген келісім негізінде және келісімді орындау үшін — тек тапсырмалар мен фотоны ата-анаға көрсету, мерзімдерді еске салу, жазылымды тексеру және сервисті теріс пайдаланудан қорғау үшін өңделеді.</p>
 <h2>Қайда және қанша уақыт сақталады</h2>
 <ul>
-<li>Деректер Supabase серверлерінде (Еуропалық одақ) қорғалған түрде сақталады; оларға тек қосымшаның серверлік бөлігі қол жеткізеді. Тіркелу арқылы ата-ана осындай трансшекаралық беруге келісім береді.</li>
+<li>Деректер Қазақстан Республикасындағы (Алматы қ.) серверде қорғалған түрде сақталады; оларға тек қосымшаның серверлік бөлігі қол жеткізеді.</li>
+<li>Дерекқордың резервтік көшірмелері күн сайын жасалып, 7 күн сақталады, сондықтан жойылған деректер көшірмелерден 7 күн ішінде толық жойылады.</li>
 <li>Фотолар мен дауыстық жазбалар ата-ана таңдаған мерзімнен кейін (7-ден 40 күнге дейін) автоматты түрде жойылады, қайта түсірілген фотолар — бір тәуліктен кейін.</li>
 <li>Басқа деректер отбасы бар болғанша сақталады. 180 күн кірмеген құрылғылар ажыратылады.</li>
 <li>Отбасы жойылғанда оның барлық деректері мен фотолары қайтарымсыз жойылады.</li>
 </ul>
 <h2>Кімге беріледі (өңдеушілер)</h2>
-<p>Supabase (сақтау және сервер), RevenueCat, Apple және Google (жазылымды тексеру), Expo, Apple және Google (push-хабарландыру жеткізу), Telegram (тек ата-ана қосса). Басқа тұлғаларға — тек заң талабы бойынша.</p>
+<p>ps.kz хостинг-провайдері (Алматыдағы серверді жалға беру), RevenueCat, Apple және Google (жазылымды тексеру), Expo, Apple және Google (push-хабарландыру жеткізу), Telegram (тек ата-ана қосса). Басқа тұлғаларға — тек заң талабы бойынша.</p>
 <h2>Балалар</h2>
 <p>Бала қосымшаны тек отбасын ашып, оны басқаратын ата-ананың келісімімен пайдаланады. Бала жазылымды өзі сатып ала алмайды, балада жарнама мен сыртқы сілтемелер жоқ. Ата-ана кез келген уақытта баланың деректерін көре алады, оларды әрі қарай жинауға тыйым сала алады (бала құрылғысын ажырату) және жоя алады.</p>
 <h2>Сіздің құқықтарыңыз</h2>
@@ -172,19 +176,21 @@ const en = {
 <li><b>Technical data:</b> a random device token (we store only its hash), the push notification token, last sign-in time, IP address for abuse protection.</li>
 <li><b>Subscription:</b> the customer id (the family id), subscription status and expiry from the App Store / Google Play via RevenueCat. We never receive card details.</li>
 <li>If a parent connects Telegram — the chat id used to send notifications.</li>
+<li><b>Screen time</b> (only if the parent turns it on): on Android the student's phone sends the list of installed apps (name and package id), minutes of use per day and the state of the protection permissions, so the parent can see them and set limits. On iPhone the app selection and usage stay on the device (Apple Screen Time) and are not sent to us. Textbook links are stored on our server; textbook PDF files stay only on the student's phone.</li>
 </ul>
 <p>We do not collect location, contacts or advertising identifiers, show no ads and share no data for advertising, profiling or analytics.</p>
 <h2>Legal basis and purpose</h2>
 <p>We process data based on the consent of the parent (legal guardian) given at sign-up and to perform our terms (GDPR Art. 6(1)(a), 6(1)(b) and 8) — only to show tasks and photos to the parent, remind about deadlines, verify the subscription and protect the service from abuse.</p>
 <h2>Storage and retention</h2>
 <ul>
-<li>Data is stored on Supabase servers in the European Union; only the app's server side can access it. By signing up the parent agrees to this cross-border transfer.</li>
+<li>Data is stored on a server in the Republic of Kazakhstan (Almaty); only the app's server side can access it.</li>
+<li>Database backups are made daily and kept for 7 days, so deleted data disappears from backups within 7 days.</li>
 <li>Photos and voice notes are deleted automatically after the period chosen by the parent (7–40 days); photos replaced by a re-shoot after one day.</li>
 <li>Other data is kept while the family exists. Devices unused for 180 days are signed out.</li>
 <li>Deleting the family permanently deletes all its data and photos.</li>
 </ul>
 <h2>Processors</h2>
-<p>Supabase (storage and server), RevenueCat, Apple and Google (subscription verification), Expo, Apple and Google (push delivery), Telegram (only if connected by the parent). Others only where required by law.</p>
+<p>the hosting provider ps.kz (server in Almaty), RevenueCat, Apple and Google (subscription verification), Expo, Apple and Google (push delivery), Telegram (only if connected by the parent). Others only where required by law.</p>
 <h2>Children</h2>
 <p>A child uses the app only with the consent of the parent who creates and manages the family. A child cannot buy the subscription and sees no ads or external links. The parent can review the child's data, stop further collection (disconnect the child's device) and delete it at any time. For US users this is our direct notice to parents under COPPA; we collect only what is needed for the service.</p>
 <h2>Your rights</h2>
