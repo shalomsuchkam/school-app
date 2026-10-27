@@ -129,6 +129,34 @@ const ru: Bundle['ru'] = {
   'books.addPdf': 'Добавить PDF из «Файлов»',
   'books.hint': 'Свои PDF хранятся только на этом телефоне и никуда не отправляются.',
   'books.hintEmpty': 'Добавь PDF-учебник из «Файлов» или «Загрузок». Он хранится только на этом телефоне.',
+  'screen.guard.iosOn': 'Если у ребёнка iPhone, смотрите карточку «iPhone» ниже.',
+  'screen.ios.parentTitle': 'Если у ребёнка iPhone',
+  'screen.ios.parentHow':
+    'Приложения выбираются на самом iPhone ребёнка: откройте там «Уроки», подтвердите разрешение своим Apple ID и отметьте приложения в списке Apple. Списки приложений на этом экране — только для Android.',
+  'screen.ios.parentRules':
+    'На iPhone действуют: время сна и школы, замок до уроков, бонусное время, запрет установки приложений и один лимит минут на приложения «с лимитом» (дневной лимит, а если его нет — самый строгий из лимитов приложений).',
+  'screen.ios.parentNot':
+    'Не действуют на iPhone: «запрещённые» приложения и отдельный лимит для каждого приложения. Сколько минут потрачено, видно только на самом iPhone («Настройки» → «Экранное время»).',
+  'screen.ios.parentFamily': 'Ребёнок должен быть в вашей «Семье» (Семейный доступ Apple).',
+  'screen.ios.what': '«Экранное время» Apple будет закрывать приложения по правилам родителя. Настраивает родитель на этом iPhone.',
+  'screen.ios.family': 'Этот iPhone должен быть в «Семье» родителя: «Настройки» → имя → «Семья».',
+  'screen.ios.auth': 'Разрешение «Экранного времени»',
+  'screen.ios.authText': 'Родитель подтвердит своим Apple ID',
+  'screen.ios.authBtn': 'Разрешить',
+  'screen.ios.denied': 'Разрешение не выдано. Проверьте, что ребёнок в «Семье», и попробуйте ещё раз.',
+  'screen.ios.always': 'Всегда разрешены',
+  'screen.ios.alwaysText': 'Обязательно «Уроки», а ещё Телефон и Сообщения',
+  'screen.ios.limited': 'С лимитом',
+  'screen.ios.limitedText': 'Игры, видео, соцсети — на них действует лимит минут',
+  'screen.ios.window': 'Разрешены во время сна и школы',
+  'screen.ios.windowText': 'Например, будильник или музыка (можно пропустить)',
+  'screen.ios.pick': 'Выбрать',
+  'screen.ios.change': 'Изменить',
+  'screen.ios.count': 'Выбрано: приложений {apps}, категорий {cats}',
+  'screen.ios.removal': 'Запретить удалять приложения',
+  'screen.ios.removalSub': 'Ребёнок не сможет удалить «Уроки» и другие приложения',
+  'screen.ios.on': 'Экранное время включено',
+  'screen.ios.onText': 'Правила родителя действуют на этом iPhone. Сколько минут потрачено, показывает «Экранное время» в «Настройках».',
 };
 
 const kk: Bundle['kk'] = {
@@ -259,6 +287,34 @@ const kk: Bundle['kk'] = {
   'books.addPdf': '«Файлдардан» PDF қосу',
   'books.hint': 'Өз PDF файлдарың тек осы телефонда сақталады және ешқайда жіберілмейді.',
   'books.hintEmpty': '«Файлдардан» немесе «Жүктеулерден» PDF оқулық қос. Ол тек осы телефонда сақталады.',
+  'screen.guard.iosOn': 'Балада iPhone болса, төмендегі «iPhone» картасын қараңыз.',
+  'screen.ios.parentTitle': 'Балада iPhone болса',
+  'screen.ios.parentHow':
+    'Қолданбалар баланың iPhone-ында таңдалады: сонда «Уроки» қолданбасын ашып, рұқсатты өз Apple ID-іңізбен растаңыз және Apple тізімінен қолданбаларды белгілеңіз. Осы экрандағы қолданбалар тізімі тек Android үшін.',
+  'screen.ios.parentRules':
+    'iPhone-да жұмыс істейді: ұйқы және сабақ уақыты, сабаққа дейінгі құлып, бонус уақыт, қолданба орнатуға тыйым және «лимитті» қолданбаларға бір минут лимиті (күндік лимит, ол болмаса — қолданба лимиттерінің ең қатаңы).',
+  'screen.ios.parentNot':
+    'iPhone-да жұмыс істемейді: «тыйым салынған» қолданбалар және әр қолданбаның жеке лимиті. Қанша минут жұмсалғаны тек iPhone-да көрінеді («Параметрлер» → «Экран уақыты»).',
+  'screen.ios.parentFamily': 'Бала сіздің «Отбасыңызда» болуы керек (Apple Отбасылық қолжетімділік).',
+  'screen.ios.what': 'Apple «Экран уақыты» қолданбаларды ата-ана ережелері бойынша жабады. Оны ата-ана осы iPhone-да баптайды.',
+  'screen.ios.family': 'Бұл iPhone ата-ананың «Отбасында» болуы керек: «Параметрлер» → аты → «Отбасы».',
+  'screen.ios.auth': '«Экран уақыты» рұқсаты',
+  'screen.ios.authText': 'Ата-ана өз Apple ID-імен растайды',
+  'screen.ios.authBtn': 'Рұқсат беру',
+  'screen.ios.denied': 'Рұқсат берілмеді. Баланың «Отбасында» екенін тексеріп, қайталап көріңіз.',
+  'screen.ios.always': 'Әрқашан рұқсат',
+  'screen.ios.alwaysText': 'Міндетті түрде «Уроки», сондай-ақ Телефон мен Хабарлар',
+  'screen.ios.limited': 'Лимитпен',
+  'screen.ios.limitedText': 'Ойындар, бейне, әлеуметтік желілер — оларға минут лимиті қолданылады',
+  'screen.ios.window': 'Ұйқы мен сабақ кезінде рұқсат',
+  'screen.ios.windowText': 'Мысалы, оятқыш немесе музыка (өткізіп жіберуге болады)',
+  'screen.ios.pick': 'Таңдау',
+  'screen.ios.change': 'Өзгерту',
+  'screen.ios.count': 'Таңдалды: қолданба {apps}, санат {cats}',
+  'screen.ios.removal': 'Қолданбаларды жоюға тыйым салу',
+  'screen.ios.removalSub': 'Бала «Уроки» мен басқа қолданбаларды жоя алмайды',
+  'screen.ios.on': 'Экран уақыты қосулы',
+  'screen.ios.onText': 'Ата-ана ережелері осы iPhone-да жұмыс істейді. Қанша минут жұмсалғанын «Параметрлердегі» «Экран уақыты» көрсетеді.',
 };
 
 const en: Bundle['en'] = {
@@ -389,6 +445,34 @@ const en: Bundle['en'] = {
   'books.addPdf': 'Add a PDF from Files',
   'books.hint': 'Your own PDFs stay on this phone only and are never sent anywhere.',
   'books.hintEmpty': 'Add a PDF textbook from Files or Downloads. It stays on this phone only.',
+  'screen.guard.iosOn': 'If your child has an iPhone, see the «iPhone» card below.',
+  'screen.ios.parentTitle': 'If your child has an iPhone',
+  'screen.ios.parentHow':
+    "Apps are chosen on the child's iPhone itself: open «Уроки» there, confirm the permission with your Apple ID and tick the apps in Apple's list. The app lists on this screen are for Android only.",
+  'screen.ios.parentRules':
+    'On iPhone these apply: bedtime and school time, the homework lock, bonus time, no new app installs and one minutes limit for the «limited» apps (the daily limit, or else the strictest app limit).',
+  'screen.ios.parentNot':
+    "Not on iPhone: «blocked» apps and a separate limit per app. Minutes used are shown only on the iPhone itself (Settings → Screen Time).",
+  'screen.ios.parentFamily': "Your child must be in your Apple Family Sharing group.",
+  'screen.ios.what': "Apple's Screen Time will close apps by the parent's rules. A parent sets it up on this iPhone.",
+  'screen.ios.family': "This iPhone must be in the parent's Family: Settings → your name → Family.",
+  'screen.ios.auth': 'Screen Time permission',
+  'screen.ios.authText': 'A parent confirms with their Apple ID',
+  'screen.ios.authBtn': 'Allow',
+  'screen.ios.denied': 'Permission was not given. Check that the child is in the Family and try again.',
+  'screen.ios.always': 'Always allowed',
+  'screen.ios.alwaysText': 'Make sure to include «Уроки», plus Phone and Messages',
+  'screen.ios.limited': 'With a limit',
+  'screen.ios.limitedText': 'Games, video, social apps — the minutes limit applies to them',
+  'screen.ios.window': 'Allowed at bedtime and school',
+  'screen.ios.windowText': 'For example an alarm or music (optional)',
+  'screen.ios.pick': 'Choose',
+  'screen.ios.change': 'Change',
+  'screen.ios.count': 'Chosen: {apps} apps, {cats} categories',
+  'screen.ios.removal': 'Block deleting apps',
+  'screen.ios.removalSub': 'The child cannot delete «Уроки» or other apps',
+  'screen.ios.on': 'Screen time is on',
+  'screen.ios.onText': "The parent's rules apply on this iPhone. Settings → Screen Time shows the minutes used.",
 };
 
 const b: Bundle = { ru, kk, en };

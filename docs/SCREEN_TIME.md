@@ -4,8 +4,9 @@ Parental controls for the child's phone, configured by the parent in «Урок�
 native module `modules/screen-guard` (UsageStats + foreground service with a visible notification + full-screen block screen). There is no
 anti-uninstall (no device admin): if the child removes «Уроки» or turns a permission off, the reports stop or show it and
 the parent sees «Защита выключена» in the app.
-iOS will use Apple's Screen Time API (FamilyControls/ManagedSettings/DeviceActivity) once Apple grants the
-Family Controls entitlement; until then iOS shows the rules but does not enforce them.
+iOS uses Apple's Screen Time API (FamilyControls/ManagedSettings/DeviceActivity, see "iOS" below), behind the
+`iosScreenTime` build flag that stays off until Apple grants the Family Controls (Distribution) entitlement; until
+then iOS shows the rules but does not enforce them.
 
 ## Rules object (per child) — `ScreenRules`
 
@@ -143,3 +144,54 @@ installedApps(): Promise<{ pkg, name }[]>; usageToday(): Promise<{ total_min, ap
 The service keeps working when the app is closed (foreground service with a persistent notification
 «Уроки: родительский контроль включён»), restarts after reboot, re-evaluates the foreground app every ~1 s and
 shows a full-screen block screen with the reason and buttons «Открыть Уроки» / «Домой».
+
+## iOS (Apple Screen Time, behind the `iosScreenTime` flag)
+
+Library: `react-native-device-activity` 0.6.1 (Expo module, new architecture). Logic: `src/lib/screenGuardIos.ts`
+(pure `planIos()` is unit-tested in `__tests__/screenGuardIos.test.ts`); UI: `src/components/screen/IosScreenTime.tsx`.
+
+**Flag.** `expo.extra.iosScreenTime` in app.json (default `false`) or `EXPO_PUBLIC_IOS_SCREEN_TIME=1`. When on,
+`app.config.ts` adds the library's config plugin: Family Controls + App Group `group.kz.uroki.app` entitlements for the
+app, and three app extensions built from `./targets` (copies of the package's sources; deployment target 16.4):
+
+| Extension | Bundle ID |
+|---|---|
+| DeviceActivityMonitor (runs the schedules and thresholds while «Уроки» is closed) | `kz.uroki.app.ActivityMonitorExtension` |
+| ShieldConfiguration (the «Сейчас нельзя» screen, texts written by the app) | `kz.uroki.app.ShieldConfiguration` |
+| ShieldAction (shield button: closes the shield) | `kz.uroki.app.ShieldAction` |
+
+When off: no plugin, no extensions, no entitlement; the child sees the old «скоро на iPhone» card. The
+`react-native-device-activity` pod and the local `modules/app-lock-ios` pod are autolinked in every iOS build (Expo
+autolinking cannot be switched by app config) but stay inert: nothing calls them while the flag is off.
+
+**Model.** Apple gives no package names and no usage numbers. The child's iPhone asks
+`AuthorizationCenter.requestAuthorization(for: .child)` (the child must be in the parent's Family Sharing; the parent
+confirms with their Apple ID). The parent, holding the child's phone, picks three selections with Apple's
+FamilyActivityPicker; they are stored on the device only:
+- `uroki_always` «Всегда разрешены» (must include «Уроки» itself, else a shield could lock the child out of homework);
+- `uroki_limited` «С лимитом»;
+- `uroki_window` «Разрешены во время сна/школы» (one selection for both windows).
+
+Usage is visible only on the device (Settings → Screen Time). The parent screen shows an «iPhone» card while no
+Android report exists.
+
+**Rules → device** (recomputed on every rules fetch, app foreground and the 5-minute poll; the extension runs the
+transitions in between):
+
+| Rule | iOS |
+|---|---|
+| `enabled:false` or 402 | everything cleared (schedules stopped, shields off, ManagedSettings stores cleared) |
+| `bedtime` | daily DeviceActivity schedule; start = shield everything except `always` + `window` ("block-all mode" + whitelist), end = shield off |
+| `school` | one weekly schedule per listed weekday, same shield; on a non-school day (`school_day:false`) today's run is skipped (`neverTriggerBefore` = tomorrow). Future holidays are not known in advance: a holiday is skipped only if «Уроки» refreshed that day |
+| homework lock | when `homework_lock && homework_due_today && !homework_done`: a dated one-off schedule from `homework_lock_from` to 23:59 (or to bedtime start if bedtime begins later that evening), shield everything except `always`; applied at once if already past the time. It lifts when the app fetches `homework_done:true` |
+| `daily_limit_min` / `app_limits` | v1: one DeviceActivityEvent threshold over `uroki_limited`, minutes = `daily_limit_min`, else the smallest `app_limits[].minutes`; reaching it shields that selection until midnight. No per-app limits |
+| `unlock_until` | shields off now; every scheduled block gets `neverTriggerBefore = unlock_until`; a one-off schedule at `unlock_until` restores the bedtime/school/homework block that holds then. An exhausted limit comes back at the next app start |
+| `block_new_apps` | `ManagedSettings application.denyAppInstallation` (no installs at all, not "until approved") |
+| — | option on the child's phone «Запретить удалять приложения»: `application.denyAppRemoval` (stored on the device, not on the server) |
+| `blocked_apps`, `new_apps`, `approved`, window `allowed` package lists | not used on iOS |
+
+Order matches the Android decision: bedtime, then school, then homework. Times are converted from the family `tz` to
+the phone's zone. DeviceActivity rejects intervals under 15 minutes; such windows are not scheduled.
+
+Shield texts (ru/kk/en by `lang`): title «Сейчас нельзя», subtitle as Android `GuardText` (bedtime, school, homework,
+app_limit, daily_limit), button «Понятно» closes the shield.

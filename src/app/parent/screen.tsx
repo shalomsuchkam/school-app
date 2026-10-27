@@ -4,6 +4,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 
 import { AppPicker, MinutesPicker } from '@/components/screen/AppPicker';
 import { GuardCard } from '@/components/screen/GuardCard';
+import { IosParentCard, iosScreenTimeReleased } from '@/components/screen/IosScreenTime';
 import { TextbookLinks } from '@/components/screen/TextbookLinks';
 import { Banner, Btn, Card, Chip, ErrorBanner, Group, IconBtn, Loading, Row, Screen, SectionLabel, Sheet, TimeStepper, ToggleRow, Txt, useToast, WeekdayPicker } from '@/components/ui';
 import { api, isPaywall, type Child, type ScreenPatch, type ScreenRules, type ScreenState } from '@/lib/api';
@@ -168,6 +169,8 @@ export default function ScreenTime() {
       <ErrorBanner error={error} onRetry={load} />
 
       <GuardCard device={st.device} enabled={r.enabled} usedToday={countedUsage(usage.total, usage.apps, r.always_allowed)} />
+      {/* an iPhone never reports (Apple gives no usage data), so no Android report = maybe an iPhone */}
+      {iosScreenTimeReleased && !st.device ? <IosParentCard /> : null}
 
       <Group style={{ marginTop: space.s }}>
         <ToggleRow icon="hourglass" tint="blue" title={t('screen.enabled')} subtitle={t(r.enabled ? 'screen.enabledOn' : 'screen.enabledOff')} value={r.enabled} onChange={(v) => save({ enabled: v })} />

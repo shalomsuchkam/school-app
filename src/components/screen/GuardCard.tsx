@@ -5,6 +5,8 @@ import type { DeviceReport } from '@/lib/api';
 import { duration, relativeAgo } from '@/lib/format';
 import { tn, useT } from '@/lib/i18n';
 import { guardHealth } from '@/lib/screenTime';
+
+import { iosScreenTimeReleased } from './IosScreenTime';
 import { space, usePalette } from '@/lib/theme';
 
 /**
@@ -29,7 +31,7 @@ export function GuardCard({ device, enabled, usedToday }: { device: DeviceReport
           {t('screen.guard.noneText')}
         </Txt>
         <Txt v="sub" color={p.muted}>
-          {t('screen.guard.ios')}
+          {t(iosScreenTimeReleased ? 'screen.guard.iosOn' : 'screen.guard.ios')}
         </Txt>
       </Card>
     );

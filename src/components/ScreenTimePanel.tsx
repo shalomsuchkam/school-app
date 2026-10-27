@@ -2,6 +2,7 @@ import { useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import { AppState, Platform, StyleSheet, View } from 'react-native';
 
+import { IosSetupCard } from '@/components/screen/IosScreenTime';
 import { Btn, Card, Icon, IconTile, ProgressBar, Txt } from '@/components/ui';
 import { api, API_BASE, getToken, isPaywall, type ScreenState } from '@/lib/api';
 import { duration } from '@/lib/format';
@@ -19,14 +20,15 @@ import {
   type GuardStatus,
   type UsageToday,
 } from '@/lib/screenGuard';
+import { applyIos, iosScreenTimeOn } from '@/lib/screenGuardIos';
 import { appName, countedUsage, hmIn, remaining, unlockActive } from '@/lib/screenTime';
 import { space, usePalette } from '@/lib/theme';
 
 const POLL_MS = 5 * 60_000;
 
-// Child home: screen time. Fetches the parent's rules, hands them to the Android guard, turns the guard off when
-// the rules are off (or the subscription lapsed: a lapsed payment must never lock the phone), and shows either the
-// setup steps or today's usage.
+// Child home: screen time. Fetches the parent's rules, hands them to the Android guard (or, in iOS builds with the
+// iosScreenTime flag, to Apple's Screen Time: lib/screenGuardIos), turns the guard off when the rules are off (or the
+// subscription lapsed: a lapsed payment must never lock the phone), and shows either the setup steps or today's usage.
 export function ScreenTimePanel() {
   const p = usePalette();
   const t = useT();
@@ -54,6 +56,7 @@ export function ScreenTimePanel() {
     } catch (e) {
       if (isPaywall(e)) {
         setSt(null);
+        if (iosScreenTimeOn) await applyIos(null);
         if (status.running) {
           await stopGuard();
           setG(await guardStatus());
@@ -62,6 +65,8 @@ export function ScreenTimePanel() {
       return; // offline: the guard keeps its last rules and polls by itself
     }
     setSt(s);
+    // iOS: recompute shields and schedules on every fetch and foreground (clears everything when the rules are off)
+    if (iosScreenTimeOn) await applyIos(s);
     if (!status.supported) return;
     await setGuardRules(s as unknown as Record<string, unknown>);
     if (!s.rules.enabled) {
@@ -96,6 +101,7 @@ export function ScreenTimePanel() {
 
   if (!g.supported) {
     if (Platform.OS !== 'ios') return null;
+    if (iosScreenTimeOn) return <IosSetupCard onChange={refresh} />;
     return (
       <Card style={styles.card}>
         <View style={styles.head}>
