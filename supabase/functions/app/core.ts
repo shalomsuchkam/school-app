@@ -27,10 +27,14 @@ export async function kidOf(fam: any, childId?: number | null, strict = true) {
   return { ...fam, child_id: c.id, child_name: c.name };
 }
 
-async function offSet(familyId: string) {
-  const { data } = await db.from("app_days_off").select("date").eq("family_id", familyId);
+// Days off between two dates. Always a bounded window: PostgREST returns at most 1000 rows, and vacation ranges
+// make a family's rows pile up over the years (an unbounded read could silently drop the ones that matter).
+async function offSet(familyId: string, from: string, to: string) {
+  const { data } = await db.from("app_days_off").select("date").eq("family_id", familyId).gte("date", from).lte("date", to).order("date").limit(1000);
   return new Set<string>((data ?? []).map((r: any) => r.date));
 }
+// The window around today that the next school day (up to SCAN_DAYS ahead) and the streak (90 days back) look at.
+const offAround = (familyId: string, today: string) => offSet(familyId, addDays(today, -100), addDays(today, SCAN_DAYS + 1));
 
 // A school day = one of the family's school weekdays that is not a day off or (optionally) a public holiday.
 export function schoolDays(weekdays: number[] | null, off: Set<string>, holidays?: (d: string) => boolean) {
@@ -46,8 +50,12 @@ export function weekParity(iso: string) {
   return Math.floor(days / 7) % 2 === 0 ? 1 : 2;
 }
 
+// How far ahead the next school day is looked for: a summer break (up to 120 days per range, ranges may follow
+// each other) must not end the search inside the break.
+export const SCAN_DAYS = 430;
 export function nextSchoolDay(after: string, isSchool: (d: string) => boolean) {
-  for (let i = 1; i < 40; i++) {
+  for (let i = 1; i <= SCAN_DAYS; i++) {
+
     const d = addDays(after, i);
     if (isSchool(d)) return d;
   }
@@ -56,7 +64,7 @@ export function nextSchoolDay(after: string, isSchool: (d: string) => boolean) {
 
 export async function activeDay(fam: any) {
   const now = localParts(fam.tz);
-  const isSchool = schoolDays(fam.school_weekdays, await offSet(fam.id), holidaysOf(fam));
+  const isSchool = schoolDays(fam.school_weekdays, await offAround(fam.id, now.date), holidaysOf(fam));
   const S = nextSchoolDay(now.date, isSchool);
   return { now, S, due: addDays(S, -1), isSchool };
 }
@@ -291,7 +299,7 @@ export async function weeklyReport(fam: any, days = 7) {
     child_id: fam.child_id, child_name: fam.child_name, from, to: now.date, days: perDay,
     subjects: list.sort((a, b) => b.missed + b.late - (a.missed + a.late)),
     totals: perDay.reduce((a, d) => ({ total: a.total + d.total, on_time: a.on_time + d.on_time, late: a.late + d.late, skipped: a.skipped + d.skipped, missed: a.missed + d.missed }), { total: 0, on_time: 0, late: 0, skipped: 0, missed: 0 }),
-    ...(await streakStats(fam, now.date, now.date, schoolDays(fam.school_weekdays, await offSet(fam.id), holidaysOf(fam)))),
+    ...(await streakStats(fam, now.date, now.date, schoolDays(fam.school_weekdays, await offAround(fam.id, now.date), holidaysOf(fam)))),
   };
 }
 
@@ -377,12 +385,23 @@ export function calendarStatus(o: { date: string; today: string; school: boolean
   return { date: o.date, status, total, done };
 }
 
+// Why a date is not a school day: a day off the parent set (with the vacation's name), a public holiday, or a
+// weekday the family doesn't study on.
+export function offReason(date: string, dayOff: Map<string, string | null>, holiday?: (d: string) => boolean) {
+  if (dayOff.has(date)) return { off: "day_off" as const, note: dayOff.get(date) ?? null };
+  if (holiday?.(date)) return { off: "holiday" as const, note: null };
+  return { off: "weekend" as const, note: null };
+}
+
 // GET /parent/calendar: every day of `month` (YYYY-MM) for one child, from a single query over the month's tasks.
 export async function monthCalendar(fam: any, month: string) {
   const from = `${month}-01`;
   const to = addDays(addDays(from, 32).slice(0, 8) + "01", -1); // last day of the month
   const today = localParts(fam.tz).date;
-  const isSchool = schoolDays(fam.school_weekdays, await offSet(fam.id), holidaysOf(fam));
+  const { data: offRows } = await db.from("app_days_off").select("date, note").eq("family_id", fam.id).gte("date", from).lte("date", to);
+  const noteOf = new Map<string, string | null>((offRows ?? []).map((r: any) => [r.date, r.note ?? null]));
+  const holiday = holidaysOf(fam);
+  const isSchool = schoolDays(fam.school_weekdays, new Set(noteOf.keys()), holiday);
   // ~30 tasks a day stays below PostgREST's 1000-row cap for a whole month
   const { data } = await db.from("app_tasks").select("school_date, status, done_at")
     .eq("family_id", fam.id).eq("child_id", fam.child_id).eq("required", true).gte("school_date", from).lte("school_date", to)
@@ -394,7 +413,10 @@ export async function monthCalendar(fam: any, month: string) {
   }
   const days = [];
   for (let d = from; d <= to; d = addDays(d, 1)) {
-    days.push(calendarStatus({ date: d, today, school: isSchool(d), tasks: byDay.get(d) ?? [], tz: fam.tz, soft: fam.soft_deadline }));
+    const school = isSchool(d);
+    const cell: any = calendarStatus({ date: d, today, school, tasks: byDay.get(d) ?? [], tz: fam.tz, soft: fam.soft_deadline });
+    if (!school) Object.assign(cell, offReason(d, noteOf, holiday));
+    days.push(cell);
   }
   return { month, child_id: fam.child_id, days };
 }

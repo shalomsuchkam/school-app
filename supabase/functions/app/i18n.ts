@@ -79,6 +79,17 @@ const T: Record<string, { kk: string; en: string }> = {
   },
   "Ссылка длиннее 500 символов": { kk: "Сілтеме 500 таңбадан ұзын", en: "The link is longer than 500 characters" },
   "Не больше 100 учебников": { kk: "100 оқулықтан артық емес", en: "At most 100 textbooks" },
+  // vacations (POST /parent/days-off)
+  "Дата «по» раньше даты «с»": { kk: "«Дейін» күні «бастап» күнінен ерте", en: "The “to” date is before the “from” date" },
+  "Не больше 120 дней за раз": { kk: "Бір ретте 120 күннен артық емес", en: "At most 120 days at a time" },
+  "Даты: от 30 дней назад до 400 дней вперёд": {
+    kk: "Күндер: 30 күн бұрыннан бастап 400 күн алға дейін",
+    en: "Dates: from 30 days ago to 400 days ahead",
+  },
+  // promo codes (POST /parent/promo)
+  "Промокод не найден": { kk: "Промокод табылмады", en: "Promo code not found" },
+  "Промокод уже использован": { kk: "Промокод қолданылып қойған", en: "This promo code has already been used" },
+  "Срок действия промокода истёк": { kk: "Промокодтың мерзімі өтті", en: "This promo code has expired" },
   // action results (prefix before ": ")
   "↩️ Выполнение отменено": { kk: "↩️ Орындау болдырылмады", en: "↩️ Completion undone" },
   "↩️ Отменено": { kk: "↩️ Болдырылмады", en: "↩️ Undone" },

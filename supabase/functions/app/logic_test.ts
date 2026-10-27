@@ -3,7 +3,10 @@
 Deno.env.set("SUPABASE_URL", Deno.env.get("SUPABASE_URL") ?? "http://localhost:54321");
 Deno.env.set("SUPABASE_SERVICE_ROLE_KEY", Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "test");
 
-const { accessOf, calendarStatus, nextSchoolDay, pickLessons, schoolDays, weekParity } = await import("./core.ts");
+const { accessOf, calendarStatus, nextSchoolDay, offReason, pickLessons, SCAN_DAYS, schoolDays, weekParity } = await import("./core.ts");
+const { groupRanges, MAX_RANGE_DAYS, parseRange } = await import("./daysoff.ts");
+const { normPromo, parsePromoCreate, promoOutcome, PROMO_ERRORS } = await import("./promo.ts");
+
 const { isHoliday, holidaysBetween } = await import("./holidays.ts");
 const { tr } = await import("./i18n.ts");
 const { addDays, audioType, dow, imageType, inQuiet, safeEq, validTz } = await import("./lib.ts");
@@ -351,4 +354,116 @@ Deno.test("screen: textbook links and texts", () => {
   eq([minutesRu(1), minutesRu(3), minutesRu(5), minutesRu(11), minutesRu(21), minutesRu(22), minutesRu(240)], ["1 минуту", "3 минуты", "5 минут", "11 минут", "21 минуту", "22 минуты", "240 минут"]);
   eq(tr("en", "Минуты: от 0 до 240"), "Minutes: 0 to 240");
   eq(tr("kk", "Неверное имя приложения"), "Қолданба атауы қате");
+});
+
+// ---------- vacations (POST /parent/days-off) ----------
+const TODAY = "2026-10-27";
+Deno.test("vacations: range validation and expansion", () => {
+  const r = parseRange({ from: "2026-12-29", to: "2027-01-11", off: true, note: "  Зимние   каникулы " }, TODAY);
+  eq([r.from, r.to, r.off, r.note, r.dates.length], ["2026-12-29", "2027-01-11", true, "Зимние каникулы", 14]);
+  eq([r.dates[0], r.dates[3], r.dates[13]], ["2026-12-29", "2027-01-01", "2027-01-11"], "across the new year, weekends included");
+  eq(parseRange({ from: "2026-11-02", off: false }, TODAY).dates, ["2026-11-02"], "to defaults to from");
+  eq(parseRange({ from: "2026-11-02", to: "2026-11-02", off: true, note: "  " }, TODAY).note, null);
+  eq(parseRange({ from: "2026-11-02", to: "2026-11-02", off: true, note: "x".repeat(80) }, TODAY).note?.length, 40);
+  eq(parseRange({ from: "2027-06-01", to: addDays("2027-06-01", MAX_RANGE_DAYS - 1), off: true }, TODAY).dates.length, 120, "120 days is fine");
+  throws(() => parseRange({ from: "2027-06-01", to: addDays("2027-06-01", MAX_RANGE_DAYS), off: true }, TODAY), "Не больше 120 дней за раз");
+  throws(() => parseRange({ from: "2026-12-10", to: "2026-12-01", off: true }, TODAY), "Дата «по» раньше даты «с»");
+  throws(() => parseRange({ from: "2026-02-30", to: "2026-03-02", off: true }, TODAY), "Неверная дата");
+  throws(() => parseRange({ from: "27.12.2026", off: true }, TODAY), "Неверная дата");
+  throws(() => parseRange({}, TODAY), "Неверная дата");
+  throws(() => parseRange({ from: "2026-12-29", to: "2027-01-11" }, TODAY), "Неизвестное действие");
+  throws(() => parseRange({ from: "2026-12-29", to: "2027-01-11", off: "yes" }, TODAY), "Неизвестное действие");
+  // window: today - 30 .. today + 400
+  eq(parseRange({ from: "2026-09-27", to: "2026-09-30", off: true }, TODAY).dates.length, 4, "30 days back is allowed");
+  throws(() => parseRange({ from: "2026-09-26", to: "2026-09-30", off: true }, TODAY), "Даты: от 30 дней назад до 400 дней вперёд");
+  eq(parseRange({ from: "2027-12-01", to: "2027-12-01", off: true }, TODAY).dates.length, 1, "day 400");
+  throws(() => parseRange({ from: "2027-12-01", to: "2027-12-02", off: true }, TODAY), "Даты: от 30 дней назад до 400 дней вперёд");
+  eq(tr("en", "Не больше 120 дней за раз"), "At most 120 days at a time");
+  eq(tr("kk", "Дата «по» раньше даты «с»"), "«Дейін» күні «бастап» күнінен ерте");
+});
+
+Deno.test("vacations: consecutive days with one name are one range", () => {
+  const rows = [
+    { date: "2027-01-02", note: "Зимние" }, { date: "2026-12-29", note: "Зимние" }, { date: "2026-12-30", note: "Зимние" },
+    { date: "2026-12-31", note: "Зимние" }, { date: "2027-01-01", note: "Зимние" },
+    { date: "2026-11-06", note: null }, { date: "2026-11-09" }, { date: "2026-11-10", note: null },
+    { date: "2027-01-03", note: "Другое" }, { date: "2027-01-03", note: "Другое" },
+  ];
+  eq(groupRanges(rows), [
+    { from: "2026-11-06", to: "2026-11-06", note: null, days: 1 },
+    { from: "2026-11-09", to: "2026-11-10", note: null, days: 2 },
+    { from: "2026-12-29", to: "2027-01-02", note: "Зимние", days: 5 },
+    { from: "2027-01-03", to: "2027-01-03", note: "Другое", days: 1 },
+  ]);
+  eq(groupRanges([]), []);
+});
+
+Deno.test("vacations: school days, the next school day and calendar reasons follow app_days_off", () => {
+  // a 92-day summer break written as rows: the next school day is found after it, not "tomorrow"
+  const off = new Set<string>();
+  for (let d = "2027-05-26"; d <= "2027-08-31"; d = addDays(d, 1)) off.add(d);
+  const isSchool = schoolDays([1, 2, 3, 4, 5], off, (d) => isHoliday("KZ", d));
+  eq(nextSchoolDay("2027-05-25", isSchool), "2027-09-01", "Tue before the break -> Wed 1 September");
+  eq(isSchool("2027-06-15"), false);
+  // winter break: Monday after it is the next school day
+  const winter = new Set<string>();
+  for (let d = "2026-12-29"; d <= "2027-01-11"; d = addDays(d, 1)) winter.add(d);
+  eq(nextSchoolDay("2026-12-28", schoolDays([1, 2, 3, 4, 5], winter)), "2027-01-12");
+  eq(SCAN_DAYS >= 400, true, "the search reaches past the furthest allowed day off");
+  const notes = new Map<string, string | null>([["2026-12-30", "Зимние"], ["2026-11-06", null]]);
+  const kz = (d: string) => isHoliday("KZ", d);
+  eq(offReason("2026-12-30", notes, kz), { off: "day_off", note: "Зимние" });
+  eq(offReason("2026-11-06", notes, kz), { off: "day_off", note: null });
+  eq(offReason("2026-12-16", notes, kz), { off: "holiday", note: null });
+  eq(offReason("2026-12-16", notes), { off: "weekend", note: null }, "auto holidays off");
+  eq(offReason("2026-10-31", notes, kz), { off: "weekend", note: null });
+});
+
+// ---------- promo codes ----------
+Deno.test("promo: code normalisation", () => {
+  eq(normPromo("  sneg-2k26 "), "SNEG2K26");
+  eq(normPromo("ab cd_ef.gh"), "ABCDEFGH");
+  eq(normPromo("ZIMA2026"), null, "I and 0 are not in the alphabet");
+  eq(normPromo("ABC12"), null, "1 is ambiguous");
+  eq(normPromo("ABCDE"), null, "too short");
+  eq(normPromo("A".repeat(17)), null, "too long");
+  eq(normPromo("A".repeat(16)), "A".repeat(16));
+  eq(normPromo("ПРОМО2K26"), null);
+  eq(normPromo(123456), null);
+  eq(normPromo(undefined), null);
+});
+
+Deno.test("promo: redemption outcomes are translated server errors", () => {
+  eq(promoOutcome("ok"), undefined);
+  const status = (s: string) => {
+    try {
+      promoOutcome(s);
+    } catch (e) {
+      return [(e as { status: number }).status, (e as Error).message];
+    }
+    return null;
+  };
+  eq(status("not_found"), [404, "Промокод не найден"]);
+  eq(status("used"), [409, "Промокод уже использован"]);
+  eq(status("expired"), [410, "Срок действия промокода истёк"]);
+  eq(status("weird")?.[0], 500);
+  for (const [, msg] of Object.values(PROMO_ERRORS)) {
+    eq(tr("en", msg) !== msg && tr("kk", msg) !== msg, true, `translated: ${msg}`);
+  }
+  eq(tr("en", "Промокод уже использован"), "This promo code has already been used");
+});
+
+Deno.test("promo: owner's create request", () => {
+  eq(parsePromoCreate({}), { p_days: null, p_max_uses: 1, p_expires: null, p_note: null, p_code: null }, "forever, one use, random code");
+  eq(parsePromoCreate({ days: 365, max_uses: 10, note: " Школа 5 ", code: "shk-5kz" }), {
+    p_days: 365, p_max_uses: 10, p_expires: null, p_note: "Школа 5", p_code: "SHK5KZ",
+  });
+  eq(parsePromoCreate({ days: null }).p_days, null, "null = forever");
+  eq(parsePromoCreate({ expires_at: "2099-01-01" }).p_expires, "2099-01-01T00:00:00.000Z");
+  throws(() => parsePromoCreate({ days: 0 }), "days: 1–3650 (or null = forever)");
+  throws(() => parsePromoCreate({ days: 1.5 }), "days: 1–3650 (or null = forever)");
+  throws(() => parsePromoCreate({ max_uses: 0 }), "max_uses: 1–100000");
+  throws(() => parsePromoCreate({ expires_at: "2020-01-01" }), "expires_at: a future date/time");
+  throws(() => parsePromoCreate({ expires_at: "soon" }), "expires_at: a future date/time");
+  throws(() => parsePromoCreate({ code: "ONE1" }), "code: 6–16 of A–Z, 2–9 (no 0, O, 1, I)");
 });

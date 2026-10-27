@@ -4,6 +4,7 @@ import {
   MAX_PHOTO, MAX_VOICE, monthCalendar, overview, children, kidOf, postMessage, purgePhotos, requestSkip, setNote, setOverride, startSession, uploadPhoto,
   uploadVoice, weeklyReport,
 } from "./core.ts";
+import { applyRange, groupRanges, parseRange } from "./daysoff.ts";
 import { holidaysBetween } from "./holidays.ts";
 import { langOf, tr } from "./i18n.ts";
 import { inviteLang, invitePage } from "./invite.ts";
@@ -13,6 +14,7 @@ import {
   validTz,
 } from "./lib.ts";
 import { notifyChild, notifyParents, tg, tgEnabled } from "./notify.ts";
+import { createPromo, normPromo, redeemPromo } from "./promo.ts";
 import { screenRoute } from "./screen.ts";
 
 // viewer = a tutor or teacher the family let in (allow_viewers): reads the parent's dashboards, changes nothing
@@ -45,6 +47,8 @@ const VIEWER_GET = new Set(["/me", "/setup", "/parent/overview", "/parent/report
 const viewerAllowed = (M: string, path: string, seg: string[]) =>
   (M === "GET" && (VIEWER_GET.has(path) || (seg[0] === "tasks" && seg[2] === "messages" && seg.length === 3))) ||
   (M === "DELETE" && path === "/members/me"); // leaving the family is always possible
+// under /parent/ but family setup, not daily use: works without a subscription (like /dayoff)
+const SETUP_PATHS = new Set(["/parent/days-off"]);
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const validDate = (s: string) => DATE.test(s) && !isNaN(Date.parse(s + "T00:00:00Z")) && new Date(s + "T00:00:00Z").toISOString().slice(0, 10) === s;
 async function body(req: Request) {
@@ -104,7 +108,9 @@ async function setup(fam: any) {
     db.from("app_subjects").select("id, name, emoji, light").eq("family_id", familyId).order("name"),
     db.from("app_lessons").select("weekday, week_parity, pos, subject_id").eq("child_id", childId).order("weekday").order("pos"),
     db.from("app_items").select("id, title, emoji, required, needs_photo, weekdays, pos, child_id, category, duration_min").eq("family_id", familyId).order("pos").order("id"),
-    db.from("app_days_off").select("date").eq("family_id", familyId).order("date"),
+    // from a month back: the rows of past vacations pile up and the app only shows what is coming
+    db.from("app_days_off").select("date, note").eq("family_id", familyId).gte("date", addDays(today, -30)).order("date").limit(1000),
+
     // one-day lesson overrides of this child for the next 30 days
     db.from("app_day_overrides").select("date, subject_ids, note").eq("child_id", childId).gte("date", today).lte("date", addDays(today, 30)).order("date"),
   ]);
@@ -118,6 +124,8 @@ async function setup(fam: any) {
   const end = new Date(Date.now() + 120 * 86400_000).toISOString().slice(0, 10);
   return {
     child_id: childId, subjects: subjects ?? [], lessons: byDay, lessons_alt: alt, items: items ?? [], days_off: (off ?? []).map((o: any) => o.date),
+    // consecutive days off with the same name, the ones not over yet: {from, to, note, days}
+    vacations: groupRanges(off ?? []).filter((r) => r.to >= today),
     holidays: fam.auto_holidays === false ? [] : holidaysBetween(fam.country ?? "KZ", today, end),
     overrides: (ovs ?? []).map((o: any) => ({ date: o.date, subject_ids: (o.subject_ids ?? []).map(Number), note: o.note ?? null })),
   };
@@ -366,6 +374,12 @@ async function route(req: Request, path: string): Promise<Response> {
     if (!data?.length) throw new HttpError(404, "Семья с таким кодом не найдена");
     return json(data[0]);
   }
+  // Owner-only: a promo code for free access {days? (null = forever), max_uses?, expires_at?, note?, code?}.
+  // Without `code` a random one is made. Returns {code, ...}. The same from the server shell: deploy/lite/promo.sh.
+  if (path === "/admin/promo" && M === "POST") {
+    if (!safeEq(req.headers.get("x-admin-key"), await secret("app_admin_key"))) return json({ error: "forbidden" }, 403);
+    return json(await createPromo(await body(req)));
+  }
   if (path === "/setup-bot") {
     if (!safeEq(req.headers.get("x-cron-key"), await secret("app_cron_key"))) return json({ error: "forbidden" }, 403);
     const me = await tg("getMe", {});
@@ -430,12 +444,28 @@ async function route(req: Request, path: string): Promise<Response> {
     await deleteFamily(famId);
     return json({ ok: true });
   }
+  // a promo code from the owner: exactly when the subscription has ended it must still work (answers like /billing/refresh)
+  if (path === "/parent/promo" && M === "POST") {
+    parentOnly(d);
+    // guessing stays hopeless: per family, per address, and a service-wide cap on wrong codes
+    await limit(`promo:${famId}`, 10, 3600, true);
+    await limit(`promo-ip:${clientIp(req)}`, 20, 3600, true);
+    const code = normPromo((await body(req)).code);
+    try {
+      if (!code) throw new HttpError(404, "Промокод не найден");
+      await redeemPromo(famId, code);
+    } catch (e) {
+      if (e instanceof HttpError && e.status === 404) await limit("promo-fail", 300, 3600, true);
+      throw e;
+    }
+    return json(accessOf(await getFamily(famId), await billingOn()));
+  }
 
   // Daily use (the child's tasks and actions, the parent's dashboard and approvals) needs an active subscription
   // or the owner's free access. Setting the family up (schedule, lists, invites, settings, textbook links) is always
   // possible, so a new family can finish onboarding and then start the store trial. Screen time is a daily feature.
   const fam0 = await getFamily(famId);
-  const daily = seg[0] === "child" || seg[0] === "parent" || seg[0] === "tasks" || seg[0] === "screen";
+  const daily = (seg[0] === "child" || seg[0] === "parent" || seg[0] === "tasks" || seg[0] === "screen") && !SETUP_PATHS.has(path);
   if (daily && !accessOf(fam0, await billingOn()).active) {
     throw new HttpError(402, d.role !== "child" ? "Подписка закончилась" : "Попроси родителя продлить подписку");
   }
@@ -718,6 +748,11 @@ async function route(req: Request, path: string): Promise<Response> {
       await dropOpenTasks(famId, b.date, b.date, () => true);
     } else await db.from("app_days_off").delete().eq("family_id", famId).eq("date", b.date);
     return json({ ok: true });
+  }
+  // vacations: close (off: true) or reopen a range of dates at once {from, to, off, note?}; /dayoff stays for one day
+  if (path === "/parent/days-off" && M === "POST") {
+    await limit(`doff:${famId}`, 60, 3600);
+    return json(await applyRange(famId, parseRange(await body(req), localParts(fam.tz).date)));
   }
   // one-day lesson override: PUT /overrides/2026-10-21 {child_id?, subject_ids:[…], note?}; DELETE /overrides/2026-10-21?child=…
   if (seg[0] === "overrides" && seg.length === 2 && (M === "PUT" || M === "DELETE")) {
