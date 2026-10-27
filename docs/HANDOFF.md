@@ -94,6 +94,7 @@ claude
 | `ANDROID_KEYSTORE_B64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD` | неизвестно; значения в файле `github-secrets.txt`, который передан владельцу |
 | `SUPABASE_ACCESS_TOKEN` | **не нужен**: переезжаем на свой сервер |
 | `EXPO_PUBLIC_API_URL` | добавить после запуска сервера: `https://api.urokiapp.kz/functions/v1/app` |
+| `ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_KEY_P8`, `APPLE_TEAM_ID` | ключ App Store Connect API (Admin) и Team ID; добавляются владельцем, см. `docs/APPLE_SETUP.md` |
 
 Перезалить SSH-ключ (PowerShell на ПК владельца):
 
@@ -128,9 +129,20 @@ Get-Content $HOME\uroki_deploy -Raw | Set-Clipboard   # затем GitHub → SE
 
 ## Открытые вопросы и задачи
 
-- **iOS:** экранное время через Apple FamilyControls / ManagedSettings / DeviceActivity (react-native-device-activity).
-  - Нужен Apple Developer (99 $/год, D-U-N-S для ИП) и разрешение Family Controls (Distribution); его одобряют 1–4 недели.
-  - Ребёнок должен быть в «Семейном доступе». Виджет iOS тоже ждёт аккаунт разработчика.
+- **iOS: экранное время и TestFlight** (подробно: `docs/SCREEN_TIME.md` → «iOS», `docs/APPLE_SETUP.md`).
+  - Сделано через `react-native-device-activity` 0.6.1 и включается флагом `expo.extra.iosScreenTime` в `app.json`.
+    Сейчас `false`: ждём одобрения Family Controls (Distribution); запрос подан на аккаунт.
+  - После одобрения владелец включает Family Controls (Distribution) на четырёх App ID: `kz.uroki.app`,
+    `kz.uroki.app.ActivityMonitorExtension`, `kz.uroki.app.ShieldConfiguration`, `kz.uroki.app.ShieldAction`.
+    Затем поставить флаг в `true` и запушить.
+  - **Сборка:** `build.yml`, job `ios`.
+    - Если заданы все четыре секрета `ASC_*` и `APPLE_TEAM_ID`: `xcodebuild archive` с автоматической (облачной)
+      подписью через API-ключ, `-exportArchive` (app-store-connect), загрузка в TestFlight через `altool --upload-app`.
+      Если `altool` нет, загружает сам `xcodebuild` (destination upload). Номер сборки = `github.run_number`.
+    - Без секретов: неподписанный IPA, как раньше.
+    - Ключ `.p8` пишется во временный файл (600) и удаляется шагом `always()`.
+  - Имя в App Store — «Контроль ДЗ» («Уроки» занято). Переименование в приложении — отдельной задачей.
+  - Ребёнок должен быть в «Семейном доступе». Виджет iOS ещё не сделан.
 - **Google Play:** Console 25 $. Нужно 12 тестировщиков на 14 дней. Декларация child monitoring. RevenueCat.
 - **BilimClass:** официального API нет. Сделан импорт через WebView на устройстве и вставку текста.
   Есть черновик письма о партнёрстве; телефон +7 (707) 944 95 94.
@@ -147,7 +159,7 @@ Get-Content $HOME\uroki_deploy -Raw | Set-Clipboard   # затем GitHub → SE
 - `docs/API.md`: API сервера.
 - `deploy/lite/README.md`: сервер.
 - `.github/workflows/`:
-  - `build.yml`: APK + IPA, релиз build-N;
+  - `build.yml`: APK + IPA (или TestFlight при Apple-секретах), релиз build-N;
   - `server.yml`: свой сервер;
   - `backup.yml`;
   - `android-smoke.yml`: ручной;
