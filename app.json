@@ -186,6 +186,9 @@
     "experiments": {
       "typedRoutes": false,
       "reactCompiler": true
+    },
+    "extra": {
+      "iosScreenTime": false
     }
   }
 }

@@ -43,3 +43,7 @@ example
 /ios
 /android
 google-services.json
+
+# iOS screen-time extensions: written by prebuild when the iosScreenTime flag is on
+/targets/*/generated.entitlements
+/targets/*/pods.rb

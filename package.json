@@ -33,6 +33,7 @@
     "react-dom": "^19.2.3",
     "react-native": "0.86.3",
     "react-native-android-widget": "0.22.1",
+    "react-native-device-activity": "0.6.1",
     "react-native-gesture-handler": "~2.32.0",
     "react-native-keyboard-controller": "^1.21.9",
     "react-native-purchases": "10.10.2",
