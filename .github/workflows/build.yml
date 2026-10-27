@@ -107,6 +107,10 @@ jobs:
           name: android
           path: out/Uroki*
 
+  # iOS: with the four Apple secrets (ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_P8, APPLE_TEAM_ID) a signed build goes to
+  # TestFlight (cloud-managed signing: Xcode creates certificates and profiles through the App Store Connect API key);
+  # without them an unsigned IPA for Sideloadly/AltStore, as before. The screen-time extensions are in the app only
+  # when app.json has expo.extra.iosScreenTime = true (app.config.ts).
   ios:
     needs: test
     runs-on: macos-latest
@@ -119,6 +123,8 @@ jobs:
       EXPO_PUBLIC_RC_ANDROID_KEY: ${{ secrets.RC_ANDROID_KEY }}
       # Expo push service project (server push); empty = push off, local reminders still work
       EAS_PROJECT_ID: ${{ secrets.EAS_PROJECT_ID }}
+    outputs:
+      testflight: ${{ steps.mode.outputs.signed }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
@@ -129,9 +135,40 @@ jobs:
         run: |
           sudo xcode-select -s "$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)/Contents/Developer"
           xcodebuild -version
+      - name: Signed TestFlight build or unsigned IPA
+        id: mode
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set_count=0
+          for v in "$ASC_KEY_ID" "$ASC_ISSUER_ID" "$ASC_KEY_P8" "$APPLE_TEAM_ID"; do
+            if [ -n "$v" ]; then set_count=$((set_count + 1)); fi
+          done
+          if [ "$set_count" -ne 0 ] && [ "$set_count" -ne 4 ]; then
+            echo "::error title=Apple secrets::Set all four secrets ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_P8, APPLE_TEAM_ID (or none for the unsigned IPA)."
+            exit 1
+          fi
+          if [ "$set_count" -eq 4 ]; then
+            echo "signed=true" >> "$GITHUB_OUTPUT"
+            echo "Signed build, upload to TestFlight"
+          else
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            echo "No Apple secrets: unsigned IPA"
+          fi
+          node -e "const c=require('./app.json').expo.extra||{};console.log('iOS screen time (extensions):', c.iosScreenTime===true?'on':'off')"
       - run: npm ci
-      - run: npx expo prebuild --platform ios
+      - name: Prebuild
+        env:
+          # ios.appleTeamId for the app and the extensions (signed build only)
+          APPLE_TEAM_ID: ${{ steps.mode.outputs.signed == 'true' && secrets.APPLE_TEAM_ID || '' }}
+        run: npx expo prebuild --platform ios
+
+      # ---------- no Apple secrets: unsigned IPA ----------
       - name: Build unsigned app
+        if: steps.mode.outputs.signed != 'true'
         run: |
           xcodebuild -workspace ios/Uroki.xcworkspace -scheme Uroki -configuration Release \
             -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build \
@@ -139,14 +176,93 @@ jobs:
             || (tail -n 250 xcodebuild.log; exit 1)
           tail -n 5 xcodebuild.log
       - name: Package IPA (unsigned, for re-signing with Sideloadly/AltStore)
+        if: steps.mode.outputs.signed != 'true'
         run: |
           mkdir -p out/Payload
           cp -R build/Build/Products/Release-iphoneos/Uroki.app out/Payload/
           cd out && zip -qry Uroki-unsigned.ipa Payload && rm -rf Payload
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: steps.mode.outputs.signed != 'true'
         with:
           name: ios
           path: out/Uroki-unsigned.ipa
+
+      # ---------- Apple secrets: signed archive -> TestFlight ----------
+      - name: App Store Connect API key (temporary file)
+        if: steps.mode.outputs.signed == 'true'
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+        run: |
+          dir="$RUNNER_TEMP/asc-keys"
+          (umask 077 && mkdir -p "$dir" && printf '%s\n' "$ASC_KEY_P8" > "$dir/AuthKey_${ASC_KEY_ID}.p8")
+          chmod 600 "$dir/AuthKey_${ASC_KEY_ID}.p8"
+          # altool looks for AuthKey_<id>.p8 in API_PRIVATE_KEYS_DIR
+          echo "API_PRIVATE_KEYS_DIR=$dir" >> "$GITHUB_ENV"
+          echo "ASC_KEY_PATH=$dir/AuthKey_${ASC_KEY_ID}.p8" >> "$GITHUB_ENV"
+      - name: Archive (automatic, cloud-managed signing)
+        if: steps.mode.outputs.signed == 'true'
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        run: |
+          xcodebuild -workspace ios/Uroki.xcworkspace -scheme Uroki -configuration Release \
+            -destination 'generic/platform=iOS' -archivePath "$RUNNER_TEMP/Uroki.xcarchive" \
+            -allowProvisioningUpdates -authenticationKeyPath "$ASC_KEY_PATH" \
+            -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
+            archive > xcodebuild.log 2>&1 \
+            || (tail -n 250 xcodebuild.log; exit 1)
+          tail -n 5 xcodebuild.log
+      - name: Export for App Store Connect
+        if: steps.mode.outputs.signed == 'true'
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          opts="$RUNNER_TEMP/ExportOptions.plist"
+          /usr/libexec/PlistBuddy -c "Add :method string app-store-connect" \
+            -c "Add :destination string export" \
+            -c "Add :signingStyle string automatic" \
+            -c "Add :teamID string $APPLE_TEAM_ID" \
+            -c "Add :uploadSymbols bool true" \
+            -c "Add :manageAppVersionAndBuildNumber bool false" "$opts" > /dev/null
+          xcodebuild -exportArchive -archivePath "$RUNNER_TEMP/Uroki.xcarchive" \
+            -exportPath "$RUNNER_TEMP/export" -exportOptionsPlist "$opts" \
+            -allowProvisioningUpdates -authenticationKeyPath "$ASC_KEY_PATH" \
+            -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID" > export.log 2>&1 \
+            || (tail -n 150 export.log; exit 1)
+          ls "$RUNNER_TEMP/export"
+      - name: Upload to TestFlight
+        if: steps.mode.outputs.signed == 'true'
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          ipa="$(ls "$RUNNER_TEMP"/export/*.ipa | head -1)"
+          # altool --upload-app with the API key where this Xcode still ships it; otherwise Xcode's own upload
+          if xcrun --find altool > /dev/null 2>&1 && xcrun altool --help 2>&1 | grep -q -- '--upload-app'; then
+            echo "Uploading with altool"
+            xcrun altool --upload-app --type ios --file "$ipa" --apiKey "$ASC_KEY_ID" --apiIssuer "$ASC_ISSUER_ID" --output-format normal
+          else
+            echo "altool --upload-app is not available: uploading with xcodebuild -exportArchive (destination upload)"
+            opts="$RUNNER_TEMP/UploadOptions.plist"
+            /usr/libexec/PlistBuddy -c "Add :method string app-store-connect" \
+              -c "Add :destination string upload" \
+              -c "Add :signingStyle string automatic" \
+              -c "Add :teamID string $APPLE_TEAM_ID" \
+              -c "Add :uploadSymbols bool true" \
+              -c "Add :manageAppVersionAndBuildNumber bool false" "$opts" > /dev/null
+            xcodebuild -exportArchive -archivePath "$RUNNER_TEMP/Uroki.xcarchive" \
+              -exportPath "$RUNNER_TEMP/upload" -exportOptionsPlist "$opts" \
+              -allowProvisioningUpdates -authenticationKeyPath "$ASC_KEY_PATH" \
+              -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID"
+          fi
+          echo "Build ${BUILD_NUMBER} uploaded; it appears in TestFlight after Apple's processing (usually 5-30 min)."
+      - name: Remove the API key
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/asc-keys" "$RUNNER_TEMP/ExportOptions.plist" "$RUNNER_TEMP/UploadOptions.plist"
 
   release:
     needs: [android, ios]
@@ -166,5 +282,5 @@ jobs:
           files: out/*
           body: |
             **Android:** скачайте `Uroki.apk` на телефон и откройте (разрешите установку из этого источника). Для 32-битных телефонов (Samsung Galaxy A11 и подобные) есть облегчённый `Uroki-32bit.apk`.
-            **iPhone:** `Uroki-unsigned.ipa` нужно подписать своим Apple ID через Sideloadly или AltStore (бесплатный Apple ID — приложение работает 7 дней, потом переподписать).
+            **iPhone:** ${{ needs.ios.outputs.testflight == 'true' && format('сборка {0} загружена в TestFlight (появится там после обработки Apple, обычно 5–30 минут).', github.run_number) || '`Uroki-unsigned.ipa` нужно подписать своим Apple ID через Sideloadly или AltStore (бесплатный Apple ID — приложение работает 7 дней, потом переподписать).' }}
             ${{ needs.android.outputs.signing == 'release' && 'APK подписан закрытым ключом проекта, поэтому новые версии ставятся поверх старых. Если стояла тестовая версия и установка не проходит, удалите её один раз.' || 'Это тестовая сборка: APK подписан общедоступным тестовым ключом. Версии для магазина приложений будут подписаны закрытым ключом, и тестовую версию перед их установкой нужно будет один раз удалить.' }}
