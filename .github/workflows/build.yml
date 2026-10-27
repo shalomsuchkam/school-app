@@ -8,9 +8,11 @@ on:
 permissions:
   contents: write
 
+# A running build always finishes (several pushes in a row used to cancel every build);
+# GitHub keeps only the newest waiting run, so at most one more build follows.
 concurrency:
   group: build-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   # UI and unit tests (jest); both builds wait for them, so a failing test fails the run before any build starts
