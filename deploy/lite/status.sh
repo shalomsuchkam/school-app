@@ -10,7 +10,7 @@ d=$(api_domain)
 bad=0
 h() { printf '\n===== %s\n' "$*"; }
 
-h "Mode: $(app_mode)   API: https://$d/functions/v1/app/"
+h "Mode: $(app_mode)   API: https://$d/functions/v1/app/   website: https://$(site_domain)/"
 
 h "Containers"
 compose ps --format 'table {{.Service}}\t{{.Status}}\t{{.Image}}'
@@ -42,6 +42,10 @@ code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 --noproxy '*' --res
 echo "https://$d/functions/v1/app/ via this host's Caddy -> HTTP $code"
 end=$(echo | timeout 10 openssl s_client -connect 127.0.0.1:443 -servername "$d" 2>/dev/null | openssl x509 -noout -enddate 2>/dev/null | cut -d= -f2)
 echo "TLS certificate valid until: ${end:-unknown}"
+sd=$(site_domain)
+site_health || true
+send=$(echo | timeout 10 openssl s_client -connect 127.0.0.1:443 -servername "$sd" 2>/dev/null | openssl x509 -noout -enddate 2>/dev/null | cut -d= -f2)
+echo "website TLS certificate ($sd) valid until: ${send:-unknown}"
 
 h "Backups ($BACKUP_DIR)"
 for b in "$BACKUP_DIR"/20*; do [ -d "$b" ] && echo "  $(basename "$b")  $(du -sh "$b" | cut -f1)"; done

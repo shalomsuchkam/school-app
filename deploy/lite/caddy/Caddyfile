@@ -1,4 +1,4 @@
-# «Уроки» lite gateway. Env (docker-compose.yml): API_DOMAIN, ACME_EMAIL, APP_MODE (local | maintenance).
+# «Уроки» lite gateway. Env (docker-compose.yml): API_DOMAIN, SITE_DOMAIN, ACME_EMAIL, APP_MODE (local | maintenance).
 # Switch modes with the `maintenance-on` / `maintenance-off` actions (or: sudo /opt/uroki/kit/mode.sh local|maintenance).
 # Optional Let's Encrypt e-mail: ACME_EMAIL_ON=on only when ACME_EMAIL is set (an empty `email` is a parse error).
 (acme-email-) {
@@ -78,4 +78,70 @@
 			respond `{"error":"not found"}` 404
 		}
 	}
+}
+
+# ---------------------------------------------------------------------------------------------------------------
+# Public website https://SITE_DOMAIN (urokiapp.kz): static pages from deploy/lite/site, synced by lib.sh sync_site to
+# /opt/uroki/site (mounted at /srv/site). The store listings link here: /, /support, /privacy, /terms, /delete-account.
+# Certificates for SITE_DOMAIN and www.SITE_DOMAIN are issued automatically (both A records point to this server).
+# Independent of APP_MODE: the website stays up during maintenance.
+(site-headers) {
+	header {
+		-Server
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		Permissions-Policy "camera=(), microphone=(), geolocation=(), interest-cohort=()"
+		X-Frame-Options DENY
+	}
+}
+
+{$SITE_DOMAIN} {
+	encode zstd gzip
+	import site-headers
+
+	log {
+		output stdout
+		format json
+	}
+
+	route {
+		# Legal pages are rendered by the function (supabase/functions/app/legal.ts, ?lang=ru|kk|en, else
+		# Accept-Language). Proxied instead of redirected, so the store URL stays https://urokiapp.kz/privacy and the
+		# page's relative links (privacy?lang=…, ?lang=kk) keep working. Served in both APP_MODEs.
+		@legal path /privacy /terms
+		handle @legal {
+			rewrite * /functions/v1/app/legal{path}?{query}
+			header Vary Accept-Language
+			import app-local
+		}
+		# one address per page: /support/ -> /support (canonical links have no trailing slash)
+		@slash path_regexp slash ^(/.+)/$
+		redir @slash {re.slash.1}{?query} 301
+
+		handle {
+			root * /srv/site
+			# no inline scripts or styles on these pages: a strict policy costs nothing
+			header Content-Security-Policy "default-src 'none'; img-src 'self'; style-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+			@assets path /assets/*
+			header @assets Cache-Control "public, max-age=604800"
+			@pages not path /assets/*
+			header @pages Cache-Control "public, max-age=600"
+			try_files {path} {path}.html {path}/index.html
+			file_server
+		}
+	}
+
+	handle_errors 404 {
+		root * /srv/site
+		rewrite * /404.html
+		file_server {
+			status 404
+		}
+	}
+}
+
+www.{$SITE_DOMAIN} {
+	import site-headers
+	redir https://{$SITE_DOMAIN}{uri} permanent
 }

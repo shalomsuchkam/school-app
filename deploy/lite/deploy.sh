@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # New function code / migrations / pinned images. Run by the `deploy` action of server.yml (and on push to main):
 #   sudo <bundle>/kit/deploy.sh
-# Steps: install the kit + app code, deno cache, pull/recreate changed containers, apply pending migrations,
+# Steps: install the kit + app code + website (site/ -> /opt/uroki/site), deno cache, pull/recreate changed containers, apply pending migrations,
 # restart the function, health check (fails the job when not OK).
 set -Eeuo pipefail
 SRC_KIT=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -15,6 +15,7 @@ command -v docker >/dev/null || die "docker missing: run the 'install' action fi
 caddy_sum() { sha256sum < "$KIT_DIR/caddy/Caddyfile" 2>/dev/null | cut -d' ' -f1; }
 before=$(caddy_sum)
 install_kit "$SRC_KIT"
+sync_site
 sync_app "$BUNDLE"
 compose config -q || die "docker compose config failed"
 
@@ -48,4 +49,5 @@ if [ "$mode" = local ]; then
 else
   warn "mode is '$mode': the public URL answers 503 by design; only the function container was checked"
 fi
+site_health || true
 log "deployed. memory: $(free -m | awk '/^Mem:/ { print $3 " / " $2 " MB" }')"

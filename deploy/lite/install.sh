@@ -213,9 +213,11 @@ EOF
 install_docker
 layout
 install_kit "$SRC_KIT"
+sync_site
 sync_app "$BUNDLE"
 start_stack
 install_timers
+site_health || true
 log "memory now: $(free -m | awk '/^Mem:/ { print $3 " MB used of " $2 }'), swap: $(free -m | awk '/^Swap:/ { print $2 " MB" }')"
 cat >&2 <<EOF
 

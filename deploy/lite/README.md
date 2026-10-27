@@ -27,9 +27,15 @@ IP `194.110.54.193`, адрес API **`https://api.urokiapp.kz/functions/v1/app`
 Наружу видно только `https://api.urokiapp.kz/functions/v1/app…` и короткие ссылки на фото (15 минут). Всё остальное
 отвечает 404. База, пароли и ключи с сервера никуда не уходят.
 
+Сайт **`https://urokiapp.kz`** (и `www` → редирект на него) — статические страницы из `deploy/lite/site/`: главная
+(ru, `/kk`, `/en`), `/support`, `/delete-account` и `/privacy`, `/terms` (их показывает функция, Caddy проксирует
+`/functions/v1/app/legal/*`). Эти адреса указаны в App Store и Google Play. Сайт работает и в режиме
+`maintenance`. Тексты меняются правкой HTML и действием `deploy` (сайт обновляется без перезапуска Caddy).
+
 ### Перед первой установкой
 
-1. DNS: запись **`A`** `api.urokiapp.kz` → `194.110.54.193`. Запись `AAAA` не создавать.
+1. DNS: записи **`A`** `api.urokiapp.kz`, `urokiapp.kz` и `www.urokiapp.kz` → `194.110.54.193`. Записи `AAAA` не создавать.
+   Сертификаты для всех трёх Caddy получает сам.
 2. На ps.kz сделайте **снимок (snapshot)** сервера.
 3. В GitHub: **Settings → Secrets and variables → Actions → New repository secret**:
 
@@ -117,6 +123,8 @@ IP `194.110.54.193`, адрес API **`https://api.urokiapp.kz/functions/v1/app`
                     ├─ /storage/v1/object/sign/app-photos/*  → storage:5000   (подписанные ссылки, 15 мин)
                     ├─ /rest/v1/*, /storage/v1/*  → rest:3000 / storage:5000   только remote_ip private_ranges
                     └─ остальное → 404
+         urokiapp.kz ─► /privacy, /terms → functions:8000/functions/v1/app/legal/* ; остальное → /srv/site (= /opt/uroki/site)
+     www.urokiapp.kz ─► 301 на https://urokiapp.kz{uri}
 functions ── SUPABASE_URL=https://api.urokiapp.kz ──► (сетевой alias = Caddy, без hairpin NAT) ─► rest / storage
 db: pg_cron 'app-tick' */5 ─► pg_net ─► http://functions:8000/functions/v1/app/tick  (x-cron-key из app_secrets)
 Сети: backend (internal, без интернета): db, rest, storage, functions;  edge: caddy, rest, storage, functions.
@@ -150,7 +158,8 @@ db: pg_cron 'app-tick' */5 ─► pg_net ─► http://functions:8000/functions/
 |---|---|
 | `docker-compose.yml` | 5 сервисов, лимиты памяти, сети, alias домена на Caddy |
 | `versions.env` | закреплённые образы |
-| `caddy/Caddyfile` | маршруты, режимы `local`/`maintenance`, перезапись `Cf-Connecting-Ip`/`X-Real-IP` |
+| `caddy/Caddyfile` | маршруты, режимы `local`/`maintenance`, перезапись `Cf-Connecting-Ip`/`X-Real-IP`; сайт `SITE_DOMAIN` (по умолчанию `urokiapp.kz`) и `www` |
+| `site/` | статический сайт; `sync_site` (lib.sh) копирует его в `/opt/uroki/site` на месте, Caddy монтирует эту папку только для чтения |
 | `lib.sh` | общие функции (compose, psql без паролей в argv, миграции, проверки здоровья) |
 | `install.sh` | установка: проверка 80/443, пакеты, swap, ufw, docker, секреты, запуск, схема, таймер бэкапа |
 | `deploy.sh` | код + миграции + перезапуск + проверка |

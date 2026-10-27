@@ -7,9 +7,11 @@ KIT_DIR=$UROKI_DIR/kit                     # installed copy of deploy/lite (root
 APP_DIR=$UROKI_DIR/app                     # functions/app + migrations + lock/deno.lock
 DATA_DIR=$UROKI_DIR/data                   # storage files, caddy certs, deno cache
 BACKUP_DIR=$UROKI_DIR/backups
-CONFIG_FILE=$UROKI_DIR/config.env          # non-secret: API_DOMAIN, ACME_EMAIL, APP_MODE
+SITE_DIR=$UROKI_DIR/site                   # the public website, mounted read-only into Caddy at /srv/site
+CONFIG_FILE=$UROKI_DIR/config.env          # non-secret: API_DOMAIN, SITE_DOMAIN (optional), ACME_EMAIL, APP_MODE
 SECRETS_FILE=$UROKI_DIR/secrets.env        # generated on the server, chmod 600, never printed
 DEFAULT_DOMAIN=api.urokiapp.kz
+DEFAULT_SITE_DOMAIN=urokiapp.kz
 export UROKI_DIR
 
 log() { printf '\033[1;34m[%s]\033[0m %s\n' "$(date +%H:%M:%S)" "$*" >&2; }
@@ -43,6 +45,7 @@ env_set() {
 cfg() { env_get "$CONFIG_FILE" "$1"; }
 sec() { env_get "$SECRETS_FILE" "$1"; }
 api_domain() { local d; d=$(cfg API_DOMAIN); printf '%s' "${d:-$DEFAULT_DOMAIN}"; }
+site_domain() { local d; d=$(cfg SITE_DOMAIN); printf '%s' "${d:-$DEFAULT_SITE_DOMAIN}"; }
 app_mode() { local m; m=$(cfg APP_MODE); printf '%s' "${m:-maintenance}"; }
 
 # Optional server-local overrides (e.g. bigger mem_limit after an upgrade to 2 GB) survive deploys:
@@ -120,6 +123,23 @@ sync_app() { # bundle dir
   mv "$APP_DIR/migrations.new" "$APP_DIR/migrations"
 }
 
+# Copy kit/site (deploy/lite/site) into SITE_DIR in place: Caddy bind-mounts that directory, so it must keep its
+# inode (install_kit swaps the whole kit directory, a mount of kit/site would keep serving the old copy).
+sync_site() {
+  local src=$KIT_DIR/site p
+  [ -f "$src/index.html" ] || { warn "kit has no site/index.html: website not updated"; return 0; }
+  mkdir -p "$SITE_DIR"
+  cp -R "$src/." "$SITE_DIR/"
+  # drop what the new version no longer has
+  (cd "$SITE_DIR" && find . -mindepth 1 -depth -print) | while IFS= read -r p; do
+    [ -e "$src/$p" ] || rm -rf -- "${SITE_DIR:?}/$p"
+  done
+  chown -R root:root "$SITE_DIR"
+  find "$SITE_DIR" -type d -exec chmod 755 {} +
+  find "$SITE_DIR" -type f -exec chmod 644 {} +
+  log "website: $(find "$SITE_DIR" -type f | wc -l) files in $SITE_DIR"
+}
+
 # Fetch the function's npm/jsr dependencies into data/deno and pin them in app/deno.lock.
 # The running container uses --cached-only --frozen: it never downloads anything itself.
 deno_cache() {
@@ -191,6 +211,14 @@ local_https_health() {
   local d
   d=$(api_domain)
   health_check "https://$d" --noproxy '*' --resolve "$d:443:127.0.0.1"
+}
+
+# The website through Caddy + TLS on this host (warn only: a missing certificate must not fail a deploy of the API).
+site_health() {
+  local d code
+  d=$(site_domain)
+  code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 --noproxy '*' --resolve "$d:443:127.0.0.1" "https://$d/" 2>/dev/null || true)
+  if [ "$code" = 200 ]; then log "website OK: https://$d/ -> 200"; else warn "website: https://$d/ -> HTTP ${code:-none} (certificate not issued yet? DNS A $d and www.$d must point here)"; return 1; fi
 }
 
 # Health of the function container itself (inside docker, no Caddy): used in maintenance mode.

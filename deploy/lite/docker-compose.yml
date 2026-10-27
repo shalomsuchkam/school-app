@@ -1,6 +1,7 @@
 # «Уроки» lite backend: only what supabase/functions/app needs, for a 1 vCPU / 1 GB VPS.
 # Run through lib.sh (`compose ...`), which passes the env files:
-#   kit/versions.env (images) + /opt/uroki/config.env (API_DOMAIN, ACME_EMAIL, APP_MODE) + /opt/uroki/secrets.env (600)
+#   kit/versions.env (images) + /opt/uroki/config.env (API_DOMAIN, SITE_DOMAIN, ACME_EMAIL, APP_MODE)
+#   + /opt/uroki/secrets.env (600)
 #
 # Memory limits (hard, per container):  db 256M + storage 128M + functions 128M + caddy 64M + rest 48M = 624M.
 # Exposure: only Caddy publishes ports (80/443, IPv4). Docker-published ports bypass ufw, so nothing else is published.
@@ -193,11 +194,15 @@ services:
       - "0.0.0.0:443:443/tcp"
     environment:
       API_DOMAIN: ${API_DOMAIN:?config.env}
+      # the public website (deploy/lite/site) and its www redirect; optional in config.env
+      SITE_DOMAIN: ${SITE_DOMAIN:-urokiapp.kz}
       ACME_EMAIL: ${ACME_EMAIL:-}
       ACME_EMAIL_ON: ${ACME_EMAIL:+on}
       APP_MODE: ${APP_MODE:-maintenance}
     volumes:
       - ${UROKI_DIR:-/opt/uroki}/kit/caddy:/etc/caddy:ro
+      # a stable directory updated in place by lib.sh sync_site: new pages show up without a restart
+      - ${UROKI_DIR:-/opt/uroki}/site:/srv/site:ro
       - ${UROKI_DIR:-/opt/uroki}/data/caddy/data:/data
       - ${UROKI_DIR:-/opt/uroki}/data/caddy/config:/config
     networks:
