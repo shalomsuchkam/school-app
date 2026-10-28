@@ -118,6 +118,9 @@ export const fmtShort = (iso: string) => `${WDS[dow(iso) - 1]}, ${+iso.slice(8)}
 export const fmtLong = (iso: string) => `${WDL[dow(iso) - 1]}, ${+iso.slice(8)} ${MON[+iso.slice(5, 7) - 1]}`;
 export const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 export const HM = /^([01]\d|2[0-3]):[0-5]\d$/;
+// A device's platform as the app reports it (join body, x-platform header); anything else is unknown.
+export type Platform = "android" | "ios" | "web";
+export const platformOf = (v: unknown): Platform | null => (v === "android" || v === "ios" || v === "web" ? v : null);
 // Quiet hours [from, to): the window may cross midnight (22:00–07:00). Unset or empty windows are never quiet.
 export function inQuiet(hm: string, from?: string | null, to?: string | null) {
   if (!from || !to || !HM.test(from) || !HM.test(to) || from === to) return false;

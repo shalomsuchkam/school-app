@@ -10,8 +10,8 @@ import { langOf, tr } from "./i18n.ts";
 import { inviteLang, invitePage } from "./invite.ts";
 import { LEGAL_VERSION, legalPage } from "./legal.ts";
 import {
-  addDays, clientIp, CORS, db, dow, esc, fmtLong, fmtShort, HM, HttpError, inQuiet, json, limit, localParts, randomCode, randomToken, safeEq, secret, sha256, toMin,
-  validTz,
+  addDays, clientIp, CORS, db, dow, esc, fmtLong, fmtShort, HM, HttpError, inQuiet, json, limit, localParts, platformOf, randomCode, randomToken, safeEq, secret, sha256,
+  toMin, validTz,
 } from "./lib.ts";
 import { notifyChild, notifyParents, tg, tgEnabled } from "./notify.ts";
 import { createPromo, normPromo, redeemPromo } from "./promo.ts";
@@ -32,7 +32,9 @@ async function auth(req: Request): Promise<Device> {
     await db.from("app_devices").delete().eq("id", data.id);
     throw new HttpError(401, "Вход устарел — подключите устройство заново кодом");
   }
-  db.from("app_devices").update({ last_seen: new Date().toISOString() }).eq("id", data.id).then(() => {});
+  // the app sends its platform with every call (x-platform): devices that joined before it was stored get it too
+  const platform = platformOf(req.headers.get("x-platform"));
+  db.from("app_devices").update({ last_seen: new Date().toISOString(), ...(platform ? { platform } : null) }).eq("id", data.id).then(() => {});
   return data;
 }
 const parentOnly = (d: Device) => {
@@ -58,10 +60,12 @@ const clean = (s: unknown, max = 40) => String(s ?? "").trim().slice(0, max);
 const weekdays = (v: unknown) =>
   Array.isArray(v) ? [...new Set(v.map(Number).filter((n) => Number.isInteger(n) && n >= 1 && n <= 7))].sort() : null;
 
-async function newDevice(familyId: string, role: Role, name: string, childId: number | null = null) {
+async function newDevice(familyId: string, role: Role, name: string, childId: number | null = null, platform: string | null = null) {
   const token = randomToken();
   const { data, error } = await db.from("app_devices")
-    .insert({ family_id: familyId, role, name: name || null, token_hash: await sha256(token), child_id: role === "child" ? childId : null }).select("id").single();
+    .insert({
+      family_id: familyId, role, name: name || null, token_hash: await sha256(token), child_id: role === "child" ? childId : null, ...(platform ? { platform } : null),
+    }).select("id").single();
   if (error) throw new HttpError(500, error.message);
   return { token, device_id: data.id };
 }
@@ -85,7 +89,7 @@ const publicFamily = (f: any) => ({
 
 async function me(d: Device) {
   const fam = await getFamily(d.family_id);
-  const { data: members } = await db.from("app_devices").select("id, role, name, tg_chat_id, created_at, child_id, last_seen").eq("family_id", d.family_id).order("created_at");
+  const { data: members } = await db.from("app_devices").select("id, role, name, tg_chat_id, created_at, child_id, last_seen, platform").eq("family_id", d.family_id).order("created_at");
   const kids = await children(d.family_id);
   return {
     device: { id: d.id, role: d.role, name: d.name, child_id: d.child_id },
@@ -94,7 +98,7 @@ async function me(d: Device) {
     access: accessOf(fam, await billingOn()),
     members: (members ?? []).map((m: any) => ({
       id: m.id, role: m.role, name: m.name, telegram: !!m.tg_chat_id, me: m.id === d.id, child_id: m.child_id,
-      last_seen: m.last_seen ? new Date(m.last_seen).toISOString() : null,
+      last_seen: m.last_seen ? new Date(m.last_seen).toISOString() : null, platform: m.platform ?? null,
     })),
     telegram: { enabled: await tgEnabled(), bot: (await secret("app_bot_username")) || null, linked: !!d.tg_chat_id },
   };
@@ -403,7 +407,7 @@ async function route(req: Request, path: string): Promise<Response> {
     }).select("*").single();
     if (error) throw new HttpError(500, error.message);
     await db.from("app_children").insert({ family_id: fam.id, name: fam.child_name });
-    return json({ ...(await newDevice(fam.id, "parent", clean(b.parent_name, 30))), role: "parent" });
+    return json({ ...(await newDevice(fam.id, "parent", clean(b.parent_name, 30), null, platformOf(b.platform))), role: "parent" });
   }
   if (path === "/join" && M === "POST") {
     await limit(`join:${clientIp(req)}`, 10, 900, true); // makes guessing 6-character codes pointless
@@ -420,7 +424,11 @@ async function route(req: Request, path: string): Promise<Response> {
     // a viewer invite stops working once the family turns viewers off
     if (inv.role === "viewer" && !(await getFamily(inv.family_id)).allow_viewers) throw new HttpError(404, "Код не найден или устарел");
     const childId = inv.role === "child" ? inv.child_id ?? (await children(inv.family_id))[0]?.id ?? null : null;
-    return json({ ...(await newDevice(inv.family_id, inv.role, clean(b.name, 30), childId)), role: inv.role });
+    // a child may join from several devices (phone, tablet): each gets its own row with the same child_id. A child's
+    // device is named after its model ("Samsung SM-T220", "iPad") so the parent can tell them apart (the child's
+    // name is already known); a parent's typed name comes first. The parent can rename any device.
+    const name = inv.role === "child" ? clean(b.model, 30) || clean(b.name, 30) : clean(b.name, 30) || clean(b.model, 30);
+    return json({ ...(await newDevice(inv.family_id, inv.role, name, childId, platformOf(b.platform))), role: inv.role });
   }
 
   const d = await auth(req);
@@ -782,6 +790,14 @@ async function route(req: Request, path: string): Promise<Response> {
     // the link opens the public /i/<code> page (also encoded in the QR code)
     const base = await secret("app_fn_url");
     return json({ code, role, expires_at, url: base ? `${base}/i/${code}` : null });
+  }
+  // rename a device of the family ("Планшет", "Телефон Алии"): PATCH /members/:id {name}
+  if (seg[0] === "members" && M === "PATCH" && seg[1] && seg.length === 2) {
+    const name = clean((await body(req)).name, 30);
+    if (!name) throw new HttpError(400, "Название пустое");
+    const { data } = await db.from("app_devices").update({ name }).eq("id", seg[1]).eq("family_id", famId).select("id");
+    if (!data?.length) throw new HttpError(404, "Не найдено");
+    return json({ ok: true });
   }
   if (seg[0] === "members" && M === "DELETE" && seg[1]) {
     await keepLastParent(famId, seg[1]);

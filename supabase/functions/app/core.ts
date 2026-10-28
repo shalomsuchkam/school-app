@@ -645,12 +645,18 @@ export async function chatTask(fam: any, id: number, childId: number | null) {
   return t;
 }
 
+// A child may write from several devices (phone, tablet): the child's messages carry the child's name, not the device
+// name ("Samsung SM-T220"), and on any of the child's devices they are "mine". Parents' messages stay per device.
 export async function listMessages(fam: any, taskId: number, me: { id: string; child_id: number | null; role: string }) {
-  await chatTask(fam, taskId, me.role === "child" ? me.child_id ?? -1 : null);
-  const { data } = await db.from("app_messages").select("id, role, body, created_at, device_id, app_devices(name)")
-    .eq("family_id", fam.id).eq("task_id", taskId).order("id", { ascending: false }).limit(100);
+  const t = await chatTask(fam, taskId, me.role === "child" ? me.child_id ?? -1 : null);
+  const [{ data }, kid] = await Promise.all([
+    db.from("app_messages").select("id, role, body, created_at, device_id, app_devices(name)")
+      .eq("family_id", fam.id).eq("task_id", taskId).order("id", { ascending: false }).limit(100),
+    kidOf(fam, t.child_id, false),
+  ]);
   return (data ?? []).reverse().map((m: any) => ({
-    id: m.id, role: m.role, name: m.app_devices?.name ?? null, body: m.body, created_at: m.created_at, mine: m.device_id === me.id,
+    id: m.id, role: m.role, name: m.role === "child" ? kid.child_name : m.app_devices?.name ?? null, body: m.body, created_at: m.created_at,
+    mine: me.role === "child" ? m.role === "child" : m.device_id === me.id,
   }));
 }
 
@@ -662,15 +668,17 @@ export async function postMessage(fam: any, taskId: number, me: { id: string; ch
     .select("id, role, body, created_at").single();
   if (error) throw new HttpError(500, error.message);
   const title = `💬 ${t.title}`;
+  let name = me.name;
   if (me.role === "child") {
     const kid = await kidOf(fam, t.child_id);
+    name = kid.child_name;
     await notifyParents(fam.id, { title, body: `${kid.child_name}: ${text}` }, {
       html: `💬 <b>${esc(kid.child_name)} · ${esc(t.emoji)} ${esc(t.title)}</b>\n${esc(text)}`,
     });
   } else {
     await notifyChild(fam.id, t.child_id, title, me.name ? `${me.name}: ${text}` : text);
   }
-  return { id: data.id, role: data.role, name: me.name, body: data.body, created_at: data.created_at, mine: true };
+  return { id: data.id, role: data.role, name, body: data.body, created_at: data.created_at, mine: true };
 }
 
 export async function requestSkip(fam: any, taskId: number, reason: string) {

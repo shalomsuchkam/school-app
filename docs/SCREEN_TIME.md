@@ -52,7 +52,7 @@ Reference implementation: `screenDecision(rules, ctx)` in `supabase/functions/ap
 | `isSchoolDay` | today (family-local) is a school day: a school weekday, not a day off, not a public holiday — `school_day` from the server (step 7) |
 | `homeworkDone` | `homework_done` from the server |
 | `homeworkDueToday` | the next school day's homework is due this evening — `homework_due_today` from the server (step 8) |
-| `usageApp`, `usageTotal` | today's minutes of this app / of all apps except the step-2 apps (`countedTotal`) |
+| `usageApp`, `usageTotal` | today's minutes of this app / of all apps except the step-2 apps (`countedTotal`), **on all of the child's devices**: this phone's own minutes plus `usage_other_devices` (see "Several devices") |
 | `isNew`, `approved` | `isNew = !approved = pkg ∈ new_apps` from the server; an app installed since the last report: `isNew = true`, `approved = false` (report right away on PACKAGE_ADDED) |
 | `nowUtc` | current time (ISO string, ms or Date) |
 | `setupOpen?` | the guard's own setup screen is open (allows `com.android.settings`) |
@@ -73,17 +73,48 @@ contacts, SMS, emergency apps). Steps 6 and 7 are final: an app in the window's 
 8. `homework_lock` and now ≥ `homework_lock_from` on the evening the homework is due (`homework_due_today`: today is
    the day before the next school day — Sunday before Monday yes, Friday before Monday no) and that homework not done
    → block (`"homework"`).
-9. App has an `app_limits` entry and today's usage of it ≥ minutes → block (`"app_limit"`).
-10. `daily_limit_min` set and today's total usage (all apps except step-2 apps) ≥ limit → block (`"daily_limit"`).
+9. App has an `app_limits` entry and today's usage of it (all the child's devices) ≥ minutes → block (`"app_limit"`).
+10. `daily_limit_min` set and today's total usage (all apps except step-2 apps, all the child's devices) ≥ limit → block (`"daily_limit"`).
 11. Otherwise allow.
 
 Textbooks are opened inside «Уроки» (in-app viewer), so they stay available whenever «Уроки» is allowed.
+
+## Several devices of one child (phone + tablet)
+
+A child may use several devices: every child invite (`POST /invite {role:"child", child_id}`) that is redeemed adds an
+`app_devices` row with that `child_id` (parent UI: Settings → «Устройства ребёнка» → «Добавить устройство ребёнка»).
+Rules are per child, so every device gets the same rules; each Android device runs its own guard and sends its own
+report (`app_screen_reports` keeps one row per device).
+
+**Limits are shared across all of the child's devices.** The server answers a child device (`GET /screen/rules` and
+`POST /screen/report`) with
+
+```jsonc
+"usage_other_devices": { "date": "2026-10-27", "total_min": 35, "apps": { "com.zhiliaoapp.musically": 20 } }
+```
+
+today's usage summed from the latest reports of the child's **other** devices (`otherDevicesUsage()` in `screen.ts`):
+only reports whose `usage.date` is today's family-local date count; `apps` adds the minutes per package (step 9) and
+`total_min` adds each device's own `total_min` (step 10; every device leaves out its own step-2 apps, e.g. its launcher,
+before reporting); each value ≤ 1440. A device's own report stays its own usage only (never the sum), so nothing is
+counted twice. The guard uses it only while `date` is today (family tz) and adds it to its local usage: `usageApp` =
+own + `apps[pkg]`, `usageTotal` = own counted total + `total_min` (Kotlin: `DecisionInput.otherUsageMin` /
+`otherTotalMin`, `appMinutes()`, `countedMinutes()`). The child's «осталось сегодня» card adds it the same way.
+
+Usage from the other devices arrives with **up to ~5 minutes of delay** (each guard reports every 5 minutes and picks the
+others' minutes up with its own next report), so a limit can be overshot by a few minutes when the child switches devices.
+On iPhone/iPad Apple gives no usage numbers: an iOS device neither reports usage nor adds the others', so limits there
+count that device only (see "iOS"); bedtime, school, homework lock and blocks apply on every device.
+
+Everything else is per child, not per device: tasks, streaks, chat (a child's messages show the child's name and are
+"mine" on each of the child's devices), photos, voice notes and homework status; push notifications go to all the
+child's devices; the parent's "last seen" of a child is its most recently active device.
 
 ## Endpoints (edge function `app`)
 
 - `GET /screen/rules?child=ID` — parent/viewer (any child of the family) or the child device (own child).
   → `{ rules: ScreenRules, homework_done: boolean, homework_date: "YYYY-MM-DD", tz: "Asia/Almaty",
-       textbooks: Textbook[], device: DeviceReport | null,
+       textbooks: Textbook[], device: DeviceReport | null, devices: DeviceReport[],
        homework_due_today: boolean, today: "YYYY-MM-DD", school_day: boolean, approved: string[], new_apps: string[], lang: "ru" | "kk" | "en" }`
   Defaults when no row exists: `enabled:false`, everything else null/empty, `homework_lock_from:"15:00"`.
   `homework_date` is the child's next school day (the `school_date` of `/child/state`); `homework_done` = every
@@ -91,7 +122,9 @@ Textbooks are opened inside «Уроки» (in-app viewer), so they stay availab
   the evening that homework is due (`homework_date` − 1 day, as for the reminders; ctx `homeworkDueToday`). `today`/`school_day`: family-local date
   and whether it is a school day (ctx `isSchoolDay`). `new_apps`: packages blocked as new until a parent approves them;
   `approved`: this child's reported packages that are not new or were approved (same as `device.approved`);
-  `lang`: the family language (for the block screen texts).
+  `lang`: the family language (for the block screen texts). `devices`: every device of the child that has reported,
+  newest first (`device` = `devices[0]`, kept for older apps). A child device also gets `usage_other_devices` (see
+  "Several devices").
   A child device always gets its own child (`?child` is ignored); a parent's unknown `child` id is 404.
 - `PUT /screen/rules` — parent only. Body: partial `ScreenRules` + `child_id`. Validates HH:MM, minutes 1..1440,
   ≤ 200 package names (each ≤ 200 chars, `^[A-Za-z0-9._]+$`), app_limits ≤ 100. Returns the full rules.
@@ -103,7 +136,7 @@ Textbooks are opened inside «Уроки» (in-app viewer), so they stay availab
      guard: { usage_access, overlay, battery_ok, running } }`
   Stores the latest report per child device (≤ 500 apps, names ≤ 80 chars). If `block_new_apps` and the report has
   packages not seen before → notify parents «Новое приложение: <name>» (once per package).
-  → `{ ok: true, rules: ScreenRules, homework_done, homework_date, homework_due_today, tz, approved, lang, today, school_day, new_apps }`
+  → `{ ok: true, rules: ScreenRules, homework_done, homework_date, homework_due_today, tz, approved, lang, today, school_day, new_apps, usage_other_devices }`
   (so the guard refreshes fully from this one call; the fields mean the same as in `GET /screen/rules`). Stored even when the child has no rules yet. Bad entries (invalid package,
   duplicates) are dropped, names cut to 80 chars, minutes clamped to 0..1440; > 500 apps → 400. `installed_at` is an
   ISO string or epoch ms. A package is "new" when it was not reported before, `enabled` and `block_new_apps` are on,
@@ -114,8 +147,10 @@ Textbooks are opened inside «Уроки» (in-app viewer), so they stay availab
   adds to `always_allowed` / `blocked_apps` / `app_limits`, and marks the package approved (no longer "new").
   `allow` also removes it from `blocked_apps`; `block` from `always_allowed`; `limit` (minutes 1..1440) replaces its
   limit and removes it from both lists. Returns the full rules.
-- `DeviceReport` (in GET /screen/rules): `{ device_id, apps, usage, guard, reported_at, approved: string[] }` — the
-  most recent report of the child's devices; `approved` = reported packages that are not new (or were approved).
+- `DeviceReport` (in GET /screen/rules): `{ device_id, apps, usage, guard, reported_at, approved: string[], name, platform,
+  last_seen }` — one device's latest report; `approved` = reported packages that are not new (or were approved);
+  `name`/`platform` (`"android" | "ios" | "web" | null`)/`last_seen` describe the device, so the parent sees a guard card
+  per device («Защита выключена», «нет связи» each).
 - `GET /textbooks?child=ID` / `POST /textbooks { child_id|null, title, url }` / `DELETE /textbooks/:id` — parent
   manages links (http/https only, ≤ 500 chars, title ≤ 80). Child reads its own (child_id = own or null).
   `Textbook = { id, child_id: number | null, title, url, created_at }`. A parent/viewer without `?child` gets all of
@@ -164,7 +199,9 @@ When off: no plugin, no extensions, no entitlement; the child sees the old «с�
 `react-native-device-activity` pod and the local `modules/app-lock-ios` pod are autolinked in every iOS build (Expo
 autolinking cannot be switched by app config) but stay inert: nothing calls them while the flag is off.
 
-**Model.** Apple gives no package names and no usage numbers. The child's iPhone asks
+**Model.** Apple gives no package names and no usage numbers. With several devices, limits on an iPhone/iPad count
+that device only (its usage is never reported, and it does not add `usage_other_devices`); shields and schedules
+(bedtime, school, homework lock) still apply on every device. The child's iPhone asks
 `AuthorizationCenter.requestAuthorization(for: .child)` (the child must be in the parent's Family Sharing; the parent
 confirms with their Apple ID). The parent, holding the child's phone, picks three selections with Apple's
 FamilyActivityPicker; they are stored on the device only:

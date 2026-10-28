@@ -356,6 +356,29 @@ Deno.test("screen: textbook links and texts", () => {
   eq(tr("kk", "Неверное имя приложения"), "Қолданба атауы қате");
 });
 
+Deno.test("screen: limits shared across the child's devices (usage_other_devices)", () => {
+  const { otherDevicesUsage } = S;
+  const today = "2026-10-27";
+  const reports = [
+    { device_id: "phone", usage: { date: today, total_min: 40, apps: { "com.game": 30, "com.tiktok": 10 } } },
+    { device_id: "tablet", usage: { date: today, total_min: 25, apps: { "com.game": 20, "com.youtube": 5 } } },
+    { device_id: "old", usage: { date: "2026-10-26", total_min: 300, apps: { "com.game": 300 } } }, // yesterday: left out
+    { device_id: "nousage", usage: {} },
+    { device_id: "tv", usage: { date: today, total_min: 5, apps: { "bad pkg!": 9, "com.game": "x" } } },
+  ];
+  eq(otherDevicesUsage(reports, "phone", today), { date: today, total_min: 30, apps: { "com.game": 20, "com.youtube": 5 } }, "own report left out");
+  eq(otherDevicesUsage(reports, "tablet", today), { date: today, total_min: 45, apps: { "com.game": 30, "com.tiktok": 10 } });
+  eq(otherDevicesUsage(reports, "new-device", today).total_min, 70, "a device without a report gets all the others");
+  eq(otherDevicesUsage([], "phone", today), { date: today, total_min: 0, apps: {} }, "single device: nothing to add");
+  eq(otherDevicesUsage([{ device_id: "a", usage: { date: today, total_min: 1000 } }, { device_id: "b", usage: { date: today, total_min: 1000 } }], "c", today).total_min, 1440, "capped");
+  // the guard adds these minutes to its own before steps 9 and 10
+  const r = rules({ app_limits: [{ pkg: "com.game", name: "Game", minutes: 30 }], daily_limit_min: 60 });
+  const other = otherDevicesUsage(reports, "phone", today);
+  eq(why(r, { usageApp: 15, usageTotal: 15 }), null, "this phone alone is under both limits");
+  eq(why(r, { usageApp: 15 + other.apps["com.game"], usageTotal: 15 + other.total_min }), "app_limit", "with the tablet's 20 min the game is over 30");
+  eq(why(r, { pkg: "com.other", usageTotal: 35 + other.total_min }), "daily_limit", "35 here + 30 there = the 60-minute day");
+});
+
 // ---------- vacations (POST /parent/days-off) ----------
 const TODAY = "2026-10-27";
 Deno.test("vacations: range validation and expansion", () => {

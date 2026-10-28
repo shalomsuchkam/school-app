@@ -403,3 +403,15 @@ New error messages (ru → en; kk is translated as well):
 
 Existing messages reused: `Только для родителя`, `Только для ученика`, `Ученик не найден`, `Название пустое`,
 `День недели 1–7`, `Неизвестное действие`, `Слишком много попыток. Попробуйте позже.`
+
+---
+
+## Several devices of one child (phone + tablet)
+
+- Each redeemed child invite (`POST /invite {role:"child", child_id}`) adds a device with that `child_id`; a child may have any number.
+- `POST /join` and `POST /family` accept optional `platform` (`"android" | "ios" | "web"`); `POST /join` also `model` (e.g. `"Samsung SM-T220"`). A child's device is named after `model` (else the typed `name`); a parent's typed `name` comes first.
+- Every app call sends the header `x-platform`; the server stores it on the device (so devices that joined earlier get it too).
+- `GET /me`: each member also has `platform` (`string | null`).
+- `PATCH /members/:device_id {name}` (parent): renames a device of the family (≤ 30 characters). `DELETE /members/:device_id` disconnects it.
+- Chat: a child's messages carry the child's name and are `mine: true` on every device of that child.
+- Screen time across devices (`devices`, `usage_other_devices`): see `docs/SCREEN_TIME.md` → "Several devices of one child".

@@ -288,15 +288,39 @@ const snapshot = (fam: any, seen: { pkg: string; approved: boolean }[]) => ({
   tz: fam.tz, lang: fam.lang ?? "ru", approved: approvedOf(seen), new_apps: pendingOf(seen),
 });
 
-async function deviceReport(kid: any, seen: { pkg: string; approved: boolean }[]) {
-  const { data } = await db.from("app_screen_reports").select("device_id, apps, usage, guard, reported_at")
-    .eq("family_id", kid.id).eq("child_id", kid.child_id).order("reported_at", { ascending: false }).limit(1);
-  const r = data?.[0];
-  if (!r) return null;
-  return {
+// Every report of the child's devices, newest first (`device` in GET /screen/rules is the first one). The device's
+// name, platform and last API call come along so the parent sees which phone or tablet each card is about.
+async function deviceReports(kid: any, seen: { pkg: string; approved: boolean }[]) {
+  const { data } = await db.from("app_screen_reports").select("device_id, apps, usage, guard, reported_at, app_devices(name, platform, last_seen)")
+    .eq("family_id", kid.id).eq("child_id", kid.child_id).order("reported_at", { ascending: false }).limit(20);
+  const approved = approvedOf(seen);
+  return (data ?? []).map((r: any) => ({
     device_id: r.device_id, apps: r.apps ?? [], usage: r.usage ?? {}, guard: r.guard ?? {}, reported_at: iso(r.reported_at),
-    approved: approvedOf(seen),
-  };
+    approved, name: r.app_devices?.name ?? null, platform: r.app_devices?.platform ?? null, last_seen: iso(r.app_devices?.last_seen),
+  }));
+}
+
+// ---------- limits shared across the child's devices ----------
+export type OtherUsage = { date: string; total_min: number; apps: Record<string, number> };
+// Today's usage of the child's OTHER devices, from their latest reports: reports of another family-local day are left
+// out, minutes are summed per package (step 9) and as counted totals (step 10: each phone's own total_min, which
+// already leaves out that phone's step-2 apps such as its launcher). Each value is capped at 1440.
+export function otherDevicesUsage(reports: { device_id: string; usage: any }[], selfId: string, today: string): OtherUsage {
+  const out: OtherUsage = { date: today, total_min: 0, apps: {} };
+  for (const r of reports) {
+    const u = r?.usage;
+    if (!r || r.device_id === selfId || !u || u.date !== today) continue;
+    out.total_min = Math.min(1440, out.total_min + mins(u.total_min));
+    if (u.apps && typeof u.apps === "object" && !Array.isArray(u.apps)) {
+      for (const [pkg, m] of Object.entries(u.apps)) if (validPkg(pkg)) out.apps[pkg] = Math.min(1440, (out.apps[pkg] ?? 0) + mins(m));
+    }
+  }
+  return out;
+}
+async function otherUsageOf(kid: any, deviceId: string, today: string) {
+  const { data } = await db.from("app_screen_reports").select("device_id, usage")
+    .eq("family_id", kid.id).eq("child_id", kid.child_id).neq("device_id", deviceId).limit(20);
+  return otherDevicesUsage(data ?? [], deviceId, today);
 }
 
 export async function listTextbooks(familyId: string, childId: number | null) {
@@ -348,8 +372,11 @@ export async function screenRoute(req: Request, path: string, seg: string[], d: 
   if (path === "/screen/rules" && M === "GET") {
     const kid = await target(fam, d, qChild);
     const [row, hw, textbooks, seen] = await Promise.all([rulesRow(kid), homeworkOf(kid), listTextbooks(fam.id, kid.child_id), seenOf(kid)]);
+    const devices = await deviceReports(kid, seen);
     return json({
-      rules: toRules(row, kid.child_id), ...hw, textbooks, device: await deviceReport(kid, seen), ...snapshot(fam, seen),
+      rules: toRules(row, kid.child_id), ...hw, textbooks, device: devices[0] ?? null, devices, ...snapshot(fam, seen),
+      // a child device: what its siblings used today, so the limits hold across the phone and the tablet together
+      ...(d.role === "child" ? { usage_other_devices: otherDevicesUsage(devices, d.id, hw.today) } : null),
     });
   }
 
@@ -430,7 +457,8 @@ export async function screenRoute(req: Request, path: string, seg: string[], d: 
       await notifyNewApps(kid, (added ?? []).filter((a: any) => !a.approved));
       seen = await seenOf(kid);
     }
-    return json({ ok: true, rules, ...(await homeworkOf(kid)), ...snapshot(fam, seen) });
+    const hw = await homeworkOf(kid);
+    return json({ ok: true, rules, ...hw, ...snapshot(fam, seen), usage_other_devices: await otherUsageOf(kid, d.id, hw.today) });
   }
 
   if (seg[0] === "textbooks") {
