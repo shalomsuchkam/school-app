@@ -8,7 +8,7 @@ import { longDate, wdShort } from '@/lib/format';
 import { useT } from '@/lib/i18n';
 import { hairline, radius, space, usePalette, type Palette } from '@/lib/theme';
 
-import { haptic, IconBtn, Txt } from './ui';
+import { haptic, Icon, IconBtn, Txt } from './ui';
 
 // How each day status reads at a glance. Colour is never the only cue: the legend names each,
 // every cell announces its status, and finished days carry a tick / clock glyph colour family.
@@ -32,6 +32,18 @@ export function statusStyle(p: Palette, s: CalendarStatus | undefined) {
 }
 
 export const statusLabel = (s: CalendarStatus) => `parent.cal.st.${s}`;
+
+// What a cell announces and the detail card shows: a day off the parent set reads as the break ("Зимние каникулы"),
+// a public holiday as a holiday; a plain weekend and every school day keep their status name.
+export function dayLabel(t: (k: string) => string, d: Pick<CalendarDay, 'status' | 'off' | 'note'> | undefined) {
+  if (!d) return t('parent.cal.st.empty');
+  if (d.status === 'off' && d.off === 'day_off') return d.note ? `${t('parent.cal.offDay')}: ${d.note}` : t('parent.cal.offDay');
+  if (d.status === 'off' && d.off === 'holiday') return t('parent.cal.holiday');
+  return t(statusLabel(d.status));
+}
+// Off days the family did not just "not study" on get a small glyph: a bed for days off and breaks, a flag for holidays.
+export const offGlyph = (d: Pick<CalendarDay, 'status' | 'off'> | undefined) =>
+  d?.status !== 'off' ? null : d.off === 'day_off' ? ('bed-outline' as const) : d.off === 'holiday' ? ('flag-outline' as const) : null;
 
 /**
  * Month grid, Monday first. Swipe left / right (or the arrows) to change the month; tap a day to select it.
@@ -93,7 +105,7 @@ export function MonthCalendar({
                 const isToday = c.date === today;
                 const label = t('parent.cal.dayA11y', {
                   date: longDate(c.date),
-                  status: d ? t(statusLabel(d.status)) : t('parent.cal.st.empty'),
+                  status: dayLabel(t, d),
                   done: d?.done ?? 0,
                   total: d?.total ?? 0,
                 });
@@ -125,6 +137,7 @@ export function MonthCalendar({
                           <View style={{ width: `${Math.round((d.done / d.total) * 100)}%`, height: '100%', backgroundColor: p.warn }} />
                         </View>
                       ) : null}
+                      {offGlyph(d) ? <Icon name={offGlyph(d)!} size={10} color={p.muted} style={styles.glyph} /> : null}
                       {isToday ? <View style={[styles.todayDot, { backgroundColor: d?.status === 'done_on_time' ? '#FFFFFF' : p.brand }]} /> : null}
                     </View>
                   </Pressable>
@@ -155,6 +168,14 @@ export function Legend() {
           </View>
         );
       })}
+      {(['bed-outline', 'flag-outline'] as const).map((g) => (
+        <View key={g} style={styles.legendItem}>
+          <Icon name={g} size={13} color={p.muted} />
+          <Txt v="sub" color={p.ink2}>
+            {t(g === 'bed-outline' ? 'parent.cal.offDay' : 'parent.cal.holiday')}
+          </Txt>
+        </View>
+      ))}
     </View>
   );
 }
@@ -167,6 +188,7 @@ const styles = StyleSheet.create({
   cell: { flex: 1, aspectRatio: 1, maxHeight: 64 },
   dayBox: { flex: 1, borderRadius: radius.s, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
   mini: { position: 'absolute', left: 6, right: 6, bottom: 5, height: 3, borderRadius: 2, overflow: 'hidden' },
+  glyph: { position: 'absolute', bottom: 3 },
   todayDot: { position: 'absolute', top: 4, right: 4, width: 6, height: 6, borderRadius: 3 },
   legend: { flexDirection: 'row', flexWrap: 'wrap', columnGap: space.m, rowGap: space.xs, marginTop: space.s, paddingHorizontal: 4 },
   legendItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },

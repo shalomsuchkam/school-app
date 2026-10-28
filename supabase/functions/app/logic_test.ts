@@ -6,7 +6,6 @@ Deno.env.set("SUPABASE_SERVICE_ROLE_KEY", Deno.env.get("SUPABASE_SERVICE_ROLE_KE
 const { accessOf, calendarStatus, nextSchoolDay, offReason, pickLessons, SCAN_DAYS, schoolDays, weekParity } = await import("./core.ts");
 const { groupRanges, MAX_RANGE_DAYS, parseRange } = await import("./daysoff.ts");
 const { normPromo, parsePromoCreate, promoOutcome, PROMO_ERRORS } = await import("./promo.ts");
-
 const { isHoliday, holidaysBetween } = await import("./holidays.ts");
 const { tr } = await import("./i18n.ts");
 const { addDays, audioType, dow, imageType, inQuiet, safeEq, validTz } = await import("./lib.ts");

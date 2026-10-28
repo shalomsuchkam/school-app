@@ -3,14 +3,16 @@ import { useCallback, useState } from 'react';
 import { Alert, Pressable, StyleSheet, View } from 'react-native';
 
 import { OverrideSheet } from '@/components/OverrideSheet';
+import { VacationSheet } from '@/components/VacationSheet';
 import { Banner, Btn, Chip, EmojiPicker, Empty, ErrorBanner, Field, Group, Icon, Loading, Row, Screen, SectionLabel, Segmented, Sheet, ToggleRow, Txt, useToast } from '@/components/ui';
-import { api, type Child, type Family, type Override, type Setup, type Subject } from '@/lib/api';
+import { api, type Child, type Family, type Override, type Setup, type Subject, type Vacation } from '@/lib/api';
 import { useIsViewer } from '@/lib/auth';
 import { ChildSwitcher, currentChildReady, getCurrentChild, setCurrentChild, useCurrentChild } from '@/lib/currentChild';
 import { localIso, shortDate, wdLong, wdShort } from '@/lib/format';
 import { useT } from '@/lib/i18n';
 import { EMOJIS, SUBJECT_PRESETS } from '@/lib/presets';
 import { hairline, radius, space, usePalette } from '@/lib/theme';
+import { listedVacations, rangeLabel, vacationLine } from '@/lib/vacation';
 
 type Parity = 0 | 1 | 2;
 // ISO week number parity of a date: 1 = odd week, 2 = even week (matches the server's lessons_alt keys)
@@ -59,6 +61,8 @@ export default function Schedule() {
   const viewer = useIsViewer();
   // one-day override editor: open flag + the date it opens on (null = next day)
   const [ovr, setOvr] = useState<{ date: string | null } | null>(null);
+  // "add a school break" sheet
+  const [vac, setVac] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -220,6 +224,7 @@ export default function Schedule() {
     setSetup({ ...setup, days_off: off ? [...setup.days_off, date].sort() : setup.days_off.filter((x) => x !== date) });
     try {
       await api.dayOff(date, off);
+      load(); // a day next to a school break joins or splits it in the list
     } catch (e) {
       toast.show((e as Error).message);
       load(); // back to the saved days off
@@ -227,6 +232,25 @@ export default function Schedule() {
   };
 
   const today = todayIn(fam.tz);
+  const vacations = listedVacations(setup.vacations, today, upcoming);
+  const deleteVacation = (v: Vacation) => {
+    setSetup({ ...setup, vacations: (setup.vacations ?? []).filter((x) => x.from !== v.from), days_off: setup.days_off.filter((d) => d < v.from || d > v.to) });
+    api
+      .daysOffRange(v.from, v.to, false)
+      .then(
+        () =>
+          toast.show(t('parent.vac.deleted'), {
+            label: t('parent.restore'),
+            run: () =>
+              api
+                .daysOffRange(v.from, v.to, true, v.note)
+                .then(load)
+                .catch((e: Error) => toast.show(e.message)),
+          }),
+        (e: Error) => toast.show(e.message),
+      )
+      .finally(load);
+  };
   const overrides = (setup.overrides ?? []).filter((o) => o.date >= today);
   const ovrLine = (o: Override) => {
     const names = o.subject_ids.map((id) => byId.get(id)?.name).filter(Boolean);
@@ -439,7 +463,43 @@ export default function Schedule() {
           </View>
         )}
 
-        <SectionLabel>{t('parent.schedule.daysOff')}</SectionLabel>
+        <SectionLabel right={viewer ? undefined : <Btn small kind="secondary" title={t('parent.vac.add')} icon="＋" onPress={() => setVac(true)} />}>{t('parent.schedule.daysOff')}</SectionLabel>
+        {vacations.length ? (
+          <Group>
+            {vacations.map((v) => {
+              const line = vacationLine(v);
+              return (
+                <Row
+                  key={v.from}
+                  icon="airplane-outline"
+                  tint="orange"
+                  title={line.title}
+                  subtitle={line.subtitle}
+                  right={
+                    viewer ? undefined : (
+                      <Pressable
+                        hitSlop={8}
+                        onPress={() => deleteVacation(v)}
+                        accessibilityRole="button"
+                        accessibilityLabel={t('parent.vac.deleteA11y', { name: line.title, dates: rangeLabel(v.from, v.to) })}
+                        style={({ pressed }) => [styles.mini, { backgroundColor: pressed ? p.badSoft : p.fill }]}
+                      >
+                        <Icon name="trash-outline" size={17} color={p.bad} />
+                      </Pressable>
+                    )
+                  }
+                />
+              );
+            })}
+          </Group>
+        ) : (
+          <Txt v="sub" color={p.muted} style={{ marginLeft: 6 }}>
+            {viewer ? t('parent.vac.noneViewer') : t('parent.vac.none')}
+          </Txt>
+        )}
+        <Txt v="sub" color={p.ink2} style={{ marginTop: 16, marginBottom: 4, marginLeft: 6, fontWeight: '600' }}>
+          {t('parent.vac.single')}
+        </Txt>
         <Txt v="sub" color={p.muted} style={{ marginBottom: 8, marginLeft: 6 }}>
           {viewer ? t('parent.ovr.daysOffViewer') : t('parent.schedule.daysOffHint')}
         </Txt>
@@ -521,7 +581,19 @@ export default function Schedule() {
           }}
         />
       )}
-      {sheet || ovr ? null : toast.node}
+      {viewer ? null : (
+        <VacationSheet
+          visible={vac}
+          today={today}
+          onClose={() => setVac(false)}
+          onSaved={(msg) => {
+            setVac(false);
+            toast.show(msg);
+            load();
+          }}
+        />
+      )}
+      {sheet || ovr || vac ? null : toast.node}
     </>
   );
 }

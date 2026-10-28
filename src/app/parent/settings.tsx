@@ -6,6 +6,7 @@ import { AppearancePicker } from '@/components/AppearancePicker';
 import { ChildDevices } from '@/components/ChildDevices';
 import { InviteSheet } from '@/components/InviteSheet';
 import { Paywall } from '@/components/Paywall';
+import { PromoForm } from '@/components/PromoForm';
 import { PhoneLimitGuide } from '@/components/PhoneLimitGuide';
 import { Btn, Chip, Field, Group, Icon, Loading, Row, Screen, SectionLabel, Segmented, Sheet, TimeStepper, ToggleRow, Txt, useToast, WeekdayPicker } from '@/components/ui';
 import { billingAvailable, openManage } from '@/lib/billing';
@@ -30,6 +31,7 @@ export default function Settings() {
   const [rewardEdit, setRewardEdit] = useState<string | null>(null);
   const [guide, setGuide] = useState(false);
   const [paywall, setPaywall] = useState(false);
+  const [promo, setPromo] = useState(false);
   const toast = useToast();
   const viewer = useIsViewer();
 
@@ -442,6 +444,7 @@ export default function Settings() {
             onPress={a.store ? () => openManage() : undefined}
           />
           {canSubscribe ? <Row icon="card" tint="green" title={t('parent.settings.subscribe')} chevron onPress={() => setPaywall(true)} /> : null}
+          {a.free_forever ? null : <Row icon="pricetag" tint="violet" title={t('parent.promo.link')} chevron onPress={() => setPromo(true)} />}
         </Group>
 
         <SectionLabel>{t('parent.settings.docs')}</SectionLabel>
@@ -494,6 +497,16 @@ export default function Settings() {
           }}
         />
       </Sheet>
+      <Sheet visible={promo} title={t('parent.promo.title')} onClose={() => setPromo(false)} overlay={promo ? toast.node : null}>
+        <PromoForm
+          autoFocus
+          onRedeemed={(_, message) => {
+            setPromo(false);
+            toast.show(message);
+            load();
+          }}
+        />
+      </Sheet>
       <Modal visible={paywall} animationType="slide" onRequestClose={() => setPaywall(false)}>
         <Paywall
           role="parent"
@@ -506,7 +519,7 @@ export default function Settings() {
       </Modal>
       <PhoneLimitGuide visible={guide} onClose={() => setGuide(false)} />
       <InviteSheet role={invite} onClose={() => setInvite(null)} />
-      {childEdit !== null || newChild !== null ? null : toast.node}
+      {childEdit !== null || newChild !== null || promo ? null : toast.node}
     </>
   );
 }

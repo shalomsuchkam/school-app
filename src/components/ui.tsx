@@ -9,7 +9,7 @@
  *  Surfaces       Card (hairline page, optional status tone) · Banner (info/warn/bad + action) · Badge ·
  *                 IconTile · Stat · ProgressBar · SegmentBar · NotebookRule · BrandMark
  *  Controls       Btn (primary | secondary | plain | ghost | ok | bad, small) · IconBtn · Chip · Segmented ·
- *                 Field · TimeStepper · WeekdayPicker · EmojiPicker · PressableScale
+ *                 Field · TimeStepper · DateField · WeekdayPicker · EmojiPicker · PressableScale
  *  Overlays       Sheet (spring in, drag/flick to dismiss, Reduce Motion = fade) · useToast (with undo)
  *  States         Skeleton · Loading (skeleton or error + retry) · ErrorBanner · Empty
  *  Motion         motion tokens + EASE_OUT (./ui/motion)
@@ -45,7 +45,7 @@ import Animated, { cancelAnimation, Easing, interpolate, useAnimatedStyle, useRe
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { scheduleOnRN } from 'react-native-worklets';
 
-import { fromMin, toMin, wdShort } from '@/lib/format';
+import { fromMin, shortDate, toMin, wdShort } from '@/lib/format';
 import { getLang, useT } from '@/lib/i18n';
 import { elevation, hairline, radius, space, type as typeScale, usePalette, type TileColor } from '@/lib/theme';
 
@@ -544,6 +544,85 @@ export function TimeStepper(props: { value: string; onChange: (v: string) => voi
         </Sheet>
       ) : null}
     </>
+  );
+}
+
+// A calendar date ('YYYY-MM-DD') as a tappable value, the TimeStepper pattern in date mode: Android opens the system
+// date dialog; iOS shows the compact system picker in place (its own popover, so it works inside a Sheet without a
+// second Modal); the web preview steps ±1 day. `min` / `max` bound the choice.
+const isoOf = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const dateOf = (iso: string) => {
+  const [y, m, d] = iso.split('-').map(Number);
+  return new Date(y, m - 1, d, 12); // midday: no time zone or DST shift can move it to another day
+};
+export function DateField({ value, onChange, min, max, label }: { value: string; onChange: (v: string) => void; min?: string; max?: string; label: string }) {
+  const p = usePalette();
+  const t = useT();
+  const commit = (v: string) => {
+    const next = min && v < min ? min : max && v > max ? max : v;
+    if (next === value) return;
+    haptic.tap();
+    onChange(next);
+  };
+  const a11y = `${label}: ${shortDate(value)}`;
+  if (Platform.OS === 'web') {
+    const step = (d: -1 | 1) => {
+      const x = dateOf(value);
+      x.setDate(x.getDate() + d);
+      const v = isoOf(x);
+      if ((min && v < min) || (max && v > max)) return haptic.warn();
+      commit(v);
+    };
+    return (
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }} accessibilityLabel={a11y}>
+        <PressableScale accessibilityRole="button" accessibilityLabel={t('ui.earlier')} onPress={() => step(-1)} hitSlop={6} scaleTo={0.9} style={[styles.step, { backgroundColor: p.fill }]}>
+          <Icon name="chevron-back" size={18} color={p.ink2} />
+        </PressableScale>
+        <Txt v="headline" style={{ minWidth: 92, textAlign: 'center' }}>
+          {shortDate(value)}
+        </Txt>
+        <PressableScale accessibilityRole="button" accessibilityLabel={t('ui.later')} onPress={() => step(1)} hitSlop={6} scaleTo={0.9} style={[styles.step, { backgroundColor: p.fill }]}>
+          <Icon name="chevron-forward" size={18} color={p.ink2} />
+        </PressableScale>
+      </View>
+    );
+  }
+  if (Platform.OS === 'ios') {
+    return (
+      <DateTimePicker
+        testID={`date-${label}`}
+        accessibilityLabel={a11y}
+        value={dateOf(value)}
+        mode="date"
+        display="compact"
+        locale={getLang()}
+        minimumDate={min ? dateOf(min) : undefined}
+        maximumDate={max ? dateOf(max) : undefined}
+        accentColor={p.brand}
+        onChange={(_, d) => d && commit(isoOf(d))}
+      />
+    );
+  }
+  return (
+    <PressableScale
+      accessibilityRole="button"
+      accessibilityLabel={a11y}
+      onPress={() =>
+        DateTimePickerAndroid.open({
+          value: dateOf(value),
+          mode: 'date',
+          minimumDate: min ? dateOf(min) : undefined,
+          maximumDate: max ? dateOf(max) : undefined,
+          onChange: (e, d) => e.type === 'set' && d && commit(isoOf(d)),
+        })
+      }
+      hitSlop={6}
+      scaleTo={0.95}
+      style={[styles.timeChip, { backgroundColor: p.fill }]}
+    >
+      <Icon name="calendar-outline" size={16} color={p.ink2} />
+      <Txt v="headline">{shortDate(value)}</Txt>
+    </PressableScale>
   );
 }
 

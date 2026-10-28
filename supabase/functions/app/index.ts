@@ -114,7 +114,6 @@ async function setup(fam: any) {
     db.from("app_items").select("id, title, emoji, required, needs_photo, weekdays, pos, child_id, category, duration_min").eq("family_id", familyId).order("pos").order("id"),
     // from a month back: the rows of past vacations pile up and the app only shows what is coming
     db.from("app_days_off").select("date, note").eq("family_id", familyId).gte("date", addDays(today, -30)).order("date").limit(1000),
-
     // one-day lesson overrides of this child for the next 30 days
     db.from("app_day_overrides").select("date, subject_ids, note").eq("child_id", childId).gte("date", today).lte("date", addDays(today, 30)).order("date"),
   ]);

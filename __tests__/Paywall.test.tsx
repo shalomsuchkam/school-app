@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 
 import { Paywall } from '@/components/Paywall';
-import { api } from '@/lib/api';
+import { api, ApiError } from '@/lib/api';
 import { loadPlan } from '@/lib/billing';
 import { t, tn } from '@/lib/i18n';
 
@@ -17,7 +17,7 @@ jest.mock('@/lib/billing', () => ({
 }));
 jest.mock('@/lib/api', () => ({
   ...jest.requireActual('@/lib/api'),
-  api: { me: jest.fn(), billingRefresh: jest.fn() },
+  api: { me: jest.fn(), billingRefresh: jest.fn(), redeemPromo: jest.fn() },
 }));
 
 const me = (paid: string | null) => ({ family: { id: 'fam-1' }, access: { paid_until: paid, granted_until: null } });
@@ -90,5 +90,26 @@ describe('Paywall behaviour', () => {
     expect(await screen.findByText(t('parent.paywall.billedLine', { price: PRICE }))).toBeOnTheScreen();
     expect(screen.getByText(t('parent.paywall.titleParent'))).toBeOnTheScreen();
     expect(screen.getByRole('button', { name: t('parent.paywall.subscribeNoTrial') })).toBeEnabled();
+  });
+
+  it('«Есть промокод?» opens an input; a redeemed code says until when and leads on', async () => {
+    jest.mocked(api.redeemPromo).mockRejectedValueOnce(new ApiError('Промокод не найден', 404));
+    jest.mocked(api.redeemPromo).mockResolvedValueOnce({ active: true, billing: true, free_forever: true, paid_until: null, granted_until: null, trial: false, store: null });
+    const onActive = jest.fn();
+    await render(<Paywall role="parent" onActive={onActive} />);
+    await fireEvent.press(await screen.findByText(t('parent.promo.link')));
+    const input = screen.getByLabelText(t('parent.promo.title'));
+    await fireEvent.changeText(input, 'abc');
+    await fireEvent.press(screen.getByRole('button', { name: t('parent.promo.apply') }));
+    expect(screen.getByText(t('parent.promo.invalid'))).toBeOnTheScreen();
+    expect(api.redeemPromo).not.toHaveBeenCalled();
+    await fireEvent.changeText(input, ' k7m2-qx9r ');
+    await fireEvent.press(screen.getByRole('button', { name: t('parent.promo.apply') }));
+    expect(await screen.findByText('Промокод не найден')).toBeOnTheScreen();
+    await fireEvent.press(screen.getByRole('button', { name: t('parent.promo.apply') }));
+    expect(await screen.findByText(t('parent.promo.forever'))).toBeOnTheScreen();
+    expect(api.redeemPromo).toHaveBeenLastCalledWith('K7M2QX9R');
+    await fireEvent.press(screen.getByRole('button', { name: t('parent.promo.continue') }));
+    expect(onActive).toHaveBeenCalledTimes(1);
   });
 });

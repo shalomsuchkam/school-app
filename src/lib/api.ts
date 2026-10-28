@@ -142,12 +142,17 @@ export type Setup = {
   lessons_alt: Record<'1' | '2', Record<string, number[]>>;
   items: Item[];
   days_off: string[];
+  // days off grouped: consecutive dates with the same name, not over yet (older servers: absent)
+  vacations?: Vacation[];
   holidays: string[];
   // this child's overrides from today to today + 30 days, by date
   overrides?: Override[];
 };
 export type CalendarStatus = 'done_on_time' | 'done_late' | 'partial' | 'missed' | 'off' | 'future' | 'empty';
-export type CalendarDay = { date: string; status: CalendarStatus; total: number; done: number };
+// A vacation (or any run of days off): consecutive dates with one optional name, both ends included.
+export type Vacation = { from: string; to: string; note: string | null; days: number };
+// off: why a non-school day is off (a day off the parent set, a public holiday, a weekday without school); note: the vacation's name
+export type CalendarDay = { date: string; status: CalendarStatus; total: number; done: number; off?: 'day_off' | 'holiday' | 'weekend'; note?: string | null };
 export type Calendar = { month: string; child_id: number; days: CalendarDay[] };
 export type Message = { id: number; role: 'parent' | 'child'; name: string | null; body: string; created_at: string; mine: boolean };
 export type Invite = { code: string; role: Role; expires_at: string; url: string | null };
@@ -333,6 +338,11 @@ export const api = {
   deleteItem: (id: number) => call('DELETE', `/items/${id}`),
 
   dayOff: (date: string, off: boolean) => call('POST', '/dayoff', { date, off }),
+  // a whole range at once (≤ 120 days): off = true closes it (with an optional name), false reopens it
+  daysOffRange: (from: string, to: string, off: boolean, note?: string | null) =>
+    call<{ ok: true; from: string; to: string; off: boolean; days: number; note: string | null }>('POST', '/parent/days-off', { from, to, off, note: note || undefined }),
+  // a promo code from the owner; answers with the new access state (like billingRefresh)
+  redeemPromo: (code: string) => call<Access>('POST', '/parent/promo', { code }),
   invite: (role: Role, child_id?: number) => call<Invite>('POST', '/invite', { role, child_id }),
   removeMember: (id: string) => call('DELETE', `/members/${id}`),
   renameMember: (id: string, name: string) => call<{ ok: true }>('PATCH', `/members/${id}`, { name }),

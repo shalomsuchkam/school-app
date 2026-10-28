@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Linking, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { PromoForm } from '@/components/PromoForm';
 import { BrandMark, Btn, IconBtn, NotebookRule, Txt } from '@/components/ui';
 import { api, ApiError, legalUrl, type Role } from '@/lib/api';
 import { billingAvailable, buy, loadPlan, openManage, restore, type Plan } from '@/lib/billing';
@@ -24,6 +25,9 @@ export function Paywall({ role, onActive, onClose }: { role: Role; onActive: () 
   const [attempt, setAttempt] = useState(0);
   // a family that has never had a subscription sees the trial offer instead of "your subscription has ended"
   const [fresh, setFresh] = useState(false);
+  // «Есть промокод?»: the input opens in place; after a redeemed code the line it opened and a way on
+  const [promo, setPromo] = useState(false);
+  const [promoDone, setPromoDone] = useState<{ message: string; active: boolean } | null>(null);
   const parent = role === 'parent';
   const canPay = parent && billingAvailable();
 
@@ -167,6 +171,24 @@ export function Paywall({ role, onActive, onClose }: { role: Role; onActive: () 
             <Txt v="sub" color={p.muted} style={{ marginTop: 8, lineHeight: 18 }}>
               {Platform.OS === 'ios' ? t('parent.paywall.legalIos') : t('parent.paywall.legalAndroid')}
             </Txt>
+            {promoDone ? (
+              <View style={{ gap: 10, marginTop: 8 }}>
+                <Txt v="headline" color={p.ok} style={{ textAlign: 'center' }} accessibilityLiveRegion="polite">
+                  {promoDone.message}
+                </Txt>
+                {promoDone.active ? <Btn title={t('parent.promo.continue')} onPress={onActive} /> : null}
+              </View>
+            ) : promo ? (
+              <View style={{ marginTop: 8 }}>
+                <PromoForm autoFocus onRedeemed={(a, message) => setPromoDone({ message, active: a.active })} />
+              </View>
+            ) : (
+              <Pressable accessibilityRole="button" hitSlop={8} style={[styles.link, { alignSelf: 'center' }]} onPress={() => setPromo(true)}>
+                <Txt v="callout" color={p.brand}>
+                  {t('parent.promo.link')}
+                </Txt>
+              </Pressable>
+            )}
             <View style={styles.links}>
               <Pressable accessibilityRole="link" hitSlop={8} style={styles.link} onPress={() => Linking.openURL(legalUrl('terms', lang))}>
                 <Txt v="sub" color={p.brand}>

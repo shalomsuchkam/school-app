@@ -55,7 +55,6 @@ export function weekParity(iso: string) {
 export const SCAN_DAYS = 430;
 export function nextSchoolDay(after: string, isSchool: (d: string) => boolean) {
   for (let i = 1; i <= SCAN_DAYS; i++) {
-
     const d = addDays(after, i);
     if (isSchool(d)) return d;
   }

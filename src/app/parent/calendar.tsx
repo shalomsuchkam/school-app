@@ -2,7 +2,7 @@ import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
-import { MonthCalendar, statusLabel, statusStyle } from '@/components/MonthCalendar';
+import { dayLabel, MonthCalendar, offGlyph, statusStyle } from '@/components/MonthCalendar';
 import { Paywall } from '@/components/Paywall';
 import { Badge, Card, ErrorBanner, Group, Icon, IconBtn, Loading, Row, Screen, SectionLabel, Stat, Txt } from '@/components/ui';
 import { api, isDone, isPaywall, type Calendar, type Child, type Overview, type Task } from '@/lib/api';
@@ -105,8 +105,9 @@ export default function MonthScreen() {
           <Card style={{ gap: space.s }}>
             <View style={styles.dayHead}>
               <View style={[styles.swatch, { backgroundColor: statusStyle(p, day?.status).bg, borderColor: statusStyle(p, day?.status).border }]} />
+              {offGlyph(day) ? <Icon name={offGlyph(day)!} size={16} color={p.muted} /> : null}
               <Txt v="headline" style={{ flex: 1 }}>
-                {t(statusLabel(day?.status ?? 'empty'))}
+                {dayLabel(t, day)}
               </Txt>
               {day && day.total ? <Badge label={t('parent.cal.counts', { done: day.done, total: day.total })} tone={day.done === day.total ? 'ok' : day.done ? 'warn' : 'bad'} /> : null}
             </View>
