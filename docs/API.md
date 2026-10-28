@@ -415,3 +415,30 @@ Existing messages reused: `Только для родителя`, `Только 
 - `PATCH /members/:device_id {name}` (parent): renames a device of the family (≤ 30 characters). `DELETE /members/:device_id` disconnects it.
 - Chat: a child's messages carry the child's name and are `mine: true` on every device of that child.
 - Screen time across devices (`devices`, `usage_other_devices`): see `docs/SCREEN_TIME.md` → "Several devices of one child".
+
+## School breaks: days off by range (migration `20261027_days_off_note.sql`)
+
+### `POST /parent/days-off` (parent), new
+Body `{ "from": "2026-12-29", "to": "2027-01-11", "off": true, "note": "Зимние каникулы" }` (`to` defaults to `from`,
+`note` optional, ≤ 40 chars). `off: true` writes one `app_days_off` row per date (the note overwrites the name of
+dates already off), `off: false` deletes the range. Limits: ≤ 120 days, dates from today − 30 to today + 400 (family
+time); 60 calls/hour per family. Works without an active subscription (setup, like `POST /dayoff`, which is
+unchanged). Answer `{ ok, from, to, off, days, note }`. Errors: «Неверная дата», «Дата «по» раньше даты «с»»,
+«Не больше 120 дней за раз», «Даты: от 30 дней назад до 400 дней вперёд».
+
+- `GET /setup` → `vacations: [{ from, to, note, days }]`: consecutive days off with the same name that are not over yet;
+  `days_off` now lists dates from today − 30 on.
+- `GET /parent/calendar` → each `off` day gains `off: "day_off" | "holiday" | "weekend"` and `note` (the break's name).
+
+## Promo codes (migration `20261027_promo_codes.sql`)
+
+### `POST /parent/promo` (parent), new
+Body `{ "code": "K7M2QX9R" }` (case, spaces and dashes ignored). Works also when the subscription has ended. Applies
+`free_forever` (code without days) or `granted_until = max(now, granted_until) + days`, atomically, once per family.
+Answers the access object (as `POST /billing/refresh`). Errors: 404 «Промокод не найден», 409 «Промокод уже
+использован», 410 «Срок действия промокода истёк», 429 after 10 tries/hour per family (20 per IP).
+
+### `POST /admin/promo` (owner, `x-admin-key`), new
+Body `{ days?: 1–3650 | null (forever), max_uses?: 1, expires_at?: ISO, note?, code? }`; without `code` a random
+10-character one is made. Answer `{ code, days, max_uses, expires_at, note }`; 409 when the given code exists.
+On the server: `sudo /opt/uroki/kit/promo.sh --days 365` (deploy/lite/README.md → «Промокоды»).

@@ -84,6 +84,20 @@ claude
     - ED25519 `SHA256:PmkG4fDtXtwALr0NpJw/Q+LpRHJV1coqaY6ACrBeSG0`;
     - ECDSA `SHA256:ZT6Psu5moXMGFhXJZMn/h6Q+EQ5tjqG/G5V+7iWJYnw`.
 
+## Каникулы и промокоды (28.10.2026)
+
+- **Каникулы:** родитель задаёт диапазон дат в «Расписание → Каникулы и выходные» (`POST /parent/days-off`,
+  ≤ 120 дней, от −30 до +400 дней). Каждая дата — строка `app_days_off` (+ необязательное `note`), поэтому
+  напоминания, серии, календарь и экранное время учитывают их сами. Даты каникул не зашиты: их каждый год меняет Министерство.
+- **Промокоды:** таблицы `app_promo_codes` / `app_promo_redemptions` (миграция `20261027_promo_codes.sql`),
+  родитель вводит код на экране оплаты или в настройках (`POST /parent/promo`). Владелец создаёт код одной командой:
+
+  ```powershell
+  ssh -i $HOME\uroki_deploy ubuntu@194.110.54.193 "sudo /opt/uroki/kit/promo.sh --days 365"
+  ```
+
+  `--forever` — навсегда, `--uses N`, `--until ГГГГ-ММ-ДД`, `--list`. Подробно: `deploy/lite/README.md` → «Промокоды».
+
 ## Секреты GitHub (Settings → Secrets → Actions)
 
 | Секрет | Статус |
