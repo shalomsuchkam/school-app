@@ -46,9 +46,9 @@ fi
 if [ "$forever" -eq 1 ] && [ -n "$days" ]; then die "--days and --forever: choose one"; fi
 if [ "$forever" -eq 0 ] && [ -z "$days" ]; then warn "say how long: --days N or --forever"; usage 1; fi
 if [ -n "$days" ]; then
-  [[ $days =~ ^[0-9]{1,4}$ ]] && [ "$days" -ge 1 ] && [ "$days" -le 3650 ] || die "--days: 1..3650"
+  if ! { [[ $days =~ ^[0-9]{1,4}$ ]] && [ "$days" -ge 1 ] && [ "$days" -le 3650 ]; }; then die "--days: 1..3650"; fi
 fi
-[[ $uses =~ ^[0-9]{1,6}$ ]] && [ "$uses" -ge 1 ] && [ "$uses" -le 100000 ] || die "--uses: 1..100000"
+if ! { [[ $uses =~ ^[0-9]{1,6}$ ]] && [ "$uses" -ge 1 ] && [ "$uses" -le 100000 ]; }; then die "--uses: 1..100000"; fi
 expires=""
 if [ -n "$until_day" ]; then
   [[ $until_day =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || die "--until: YYYY-MM-DD"
