@@ -52,5 +52,6 @@ object GuardState {
 
   private val MERGED_KEYS = listOf(
     "rules", "homework_done", "homework_date", "tz", "approved", "lang", "school_day", "homework_due_today",
+    "usage_other_devices",
   )
 }

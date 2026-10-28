@@ -54,8 +54,15 @@ data class DecisionInput(
   val nowMs: Long,
   val tz: TimeZone,
   val homeworkDone: Boolean,
-  /** Today's foreground minutes per package (family time zone day). */
+  /** Today's foreground minutes per package on this phone (family time zone day). */
   val usageMin: Map<String, Int> = emptyMap(),
+  /**
+   * Today's minutes per package on the child's other devices (server's `usage_other_devices.apps`, already
+   * filtered to today): added to [usageMin] for step 9, so a per-app limit is shared by the phone and the tablet.
+   */
+  val otherUsageMin: Map<String, Int> = emptyMap(),
+  /** Today's counted minutes on the child's other devices (`usage_other_devices.total_min`): added for step 10. */
+  val otherTotalMin: Int = 0,
   /** Step-2 packages resolved on the device: default launcher, dialer, SMS app, … (BUILT_IN_ALLOWED is added). */
   val systemAllowed: Set<String> = emptySet(),
   /** `com.android.settings` is allowed until this moment (guard setup flow); null = not allowed by step 2. */
@@ -103,12 +110,18 @@ fun isAlwaysAllowed(pkg: String, rules: ScreenRules, input: DecisionInput): Bool
   return false
 }
 
-/** Today's usage that counts toward `daily_limit_min`: every app except the step-2 ones. */
+/**
+ * Today's usage that counts toward `daily_limit_min`: every app on this phone except the step-2 ones, plus the
+ * other devices' counted total (each device leaves out its own step-2 apps, e.g. its launcher, before reporting).
+ */
 fun countedMinutes(rules: ScreenRules, input: DecisionInput): Int =
   input.usageMin.entries.sumOf { (pkg, min) ->
     val stepTwo = pkg in BUILT_IN_ALLOWED || pkg in input.systemAllowed || pkg in rules.alwaysAllowed
     if (stepTwo) 0 else min
-  }
+  } + maxOf(0, input.otherTotalMin)
+
+/** Today's minutes of [pkg] on every device of the child (this phone + the others' latest reports). */
+fun appMinutes(pkg: String, input: DecisionInput): Int = (input.usageMin[pkg] ?: 0) + (input.otherUsageMin[pkg] ?: 0)
 
 fun decide(rules: ScreenRules, input: DecisionInput): Decision {
   val pkg = input.pkg
@@ -143,11 +156,11 @@ fun decide(rules: ScreenRules, input: DecisionInput): Decision {
   if (rules.homeworkLock && homeworkDue && !input.homeworkDone && local.minute >= rules.homeworkLockFromMin) {
     return Decision.Block(BlockReason.HOMEWORK)
   }
-  // 9. per-app limit
+  // 9. per-app limit (minutes of all the child's devices)
   rules.appLimits[pkg]?.let { limit ->
-    if ((input.usageMin[pkg] ?: 0) >= limit) return Decision.Block(BlockReason.APP_LIMIT, limitMin = limit)
+    if (appMinutes(pkg, input) >= limit) return Decision.Block(BlockReason.APP_LIMIT, limitMin = limit)
   }
-  // 10. overall daily limit
+  // 10. overall daily limit (all the child's devices)
   rules.dailyLimitMin?.let { limit ->
     if (countedMinutes(rules, input) >= limit) return Decision.Block(BlockReason.DAILY_LIMIT, limitMin = limit)
   }

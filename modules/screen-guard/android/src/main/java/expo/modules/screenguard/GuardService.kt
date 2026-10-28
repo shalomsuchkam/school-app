@@ -127,12 +127,16 @@ class GuardService : Service() {
     if (!rules.enabled || store.suspended) return
     val pkg = acc.foreground ?: return
     if (pkg == OWN_PACKAGE) return
+    // limits are shared by all the child's devices: the others' minutes (from the server, ≤ ~5 min old) are added
+    val other = snap.otherUsageAt(now)
     val input = DecisionInput(
       pkg = pkg,
       nowMs = now,
       tz = snap.tz,
       homeworkDone = snap.homeworkDoneAt(now),
       usageMin = acc.minutes(now),
+      otherUsageMin = other?.apps ?: emptyMap(),
+      otherTotalMin = other?.totalMin ?: 0,
       systemAllowed = SystemApps.allowed(this),
       settingsGraceUntilMs = store.settingsGraceUntilMs.takeIf { it > 0L },
       installedAtMs = Reporter.installedAt(this, store, pkg),

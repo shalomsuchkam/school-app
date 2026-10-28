@@ -16,6 +16,8 @@ data class Snapshot(
   val lang: String?,
   val schoolDay: Boolean? = null,
   val homeworkDueToday: Boolean? = null,
+  /** `usage_other_devices`: today's usage on the child's other devices (limits are shared across devices). */
+  val otherUsage: OtherUsage? = null,
 ) {
   /** The day-specific flags only count for the day they were sent for (the phone may be offline after midnight). */
   private fun isForToday(nowMs: Long) = homeworkDate == null || homeworkDate == localDate(nowMs, tz)
@@ -24,10 +26,16 @@ data class Snapshot(
   fun schoolDayAt(nowMs: Long): Boolean? = if (isForToday(nowMs)) schoolDay else null
   fun homeworkDueTodayAt(nowMs: Long): Boolean? = if (isForToday(nowMs)) homeworkDueToday else null
 
+  /** The other devices' usage only counts on the family-local day it was summed for (none after midnight). */
+  fun otherUsageAt(nowMs: Long): OtherUsage? = otherUsage?.takeIf { it.date == localDate(nowMs, tz) }
+
   companion object {
     val EMPTY = Snapshot(ScreenRules(), false, null, TimeZone.getDefault(), emptySet(), null)
   }
 }
+
+/** Today's minutes on the child's other devices, from their latest reports (server: `usage_other_devices`). */
+data class OtherUsage(val date: String, val totalMin: Int, val apps: Map<String, Int>)
 
 object RulesJson {
   fun parseSnapshot(json: JSONObject): Snapshot {
@@ -45,7 +53,23 @@ object RulesJson {
       lang = json.optStringOrNull("lang"),
       schoolDay = json.optBoolOrNull("school_day"),
       homeworkDueToday = json.optBoolOrNull("homework_due_today"),
+      otherUsage = json.optJSONObject("usage_other_devices")?.let { parseOtherUsage(it) },
     )
+  }
+
+  /** `{ date, total_min, apps: {pkg: min} }`; null without a date. Minutes are clamped to 0..1440. */
+  fun parseOtherUsage(o: JSONObject): OtherUsage? {
+    val date = o.optStringOrNull("date") ?: return null
+    val apps = LinkedHashMap<String, Int>()
+    o.optJSONObject("apps")?.let { a ->
+      val keys = a.keys()
+      while (keys.hasNext()) {
+        val pkg = keys.next()
+        val min = a.optInt(pkg, 0).coerceIn(0, 1440)
+        if (pkg.isNotEmpty() && min > 0) apps[pkg] = min
+      }
+    }
+    return OtherUsage(date, o.optInt("total_min", 0).coerceIn(0, 1440), apps)
   }
 
   fun parseRules(o: JSONObject): ScreenRules {
