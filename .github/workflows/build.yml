@@ -209,12 +209,12 @@ jobs:
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
-          # sign the archive for distribution directly: a development identity would need a registered device
+          # Archive unsigned and let the export step sign it for the App Store (cloud-managed distribution
+          # certificate + App Store profile). Automatic signing of the archive itself would need an
+          # "Apple Development" profile, which Apple only issues when the team has a registered device.
           xcodebuild -workspace ios/Uroki.xcworkspace -scheme Uroki -configuration Release \
             -destination 'generic/platform=iOS' -archivePath "$RUNNER_TEMP/Uroki.xcarchive" \
-            -allowProvisioningUpdates -authenticationKeyPath "$ASC_KEY_PATH" \
-            -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
-            CODE_SIGN_STYLE=Automatic CODE_SIGN_IDENTITY="Apple Distribution" DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
+            DEVELOPMENT_TEAM="$APPLE_TEAM_ID" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
             archive > xcodebuild.log 2>&1 \
             || (tail -n 250 xcodebuild.log; exit 1)
           tail -n 5 xcodebuild.log
@@ -287,5 +287,5 @@ jobs:
           files: out/*
           body: |
             **Android:** скачайте `Uroki.apk` на телефон и откройте (разрешите установку из этого источника). Для 32-битных телефонов (Samsung Galaxy A11 и подобные) есть облегчённый `Uroki-32bit.apk`.
-            **iPhone:** ${{ needs.ios.outputs.testflight == 'true' && format('сборка {0} загружена в TestFlight (появится там после обработки Apple, обычно 5–30 минут).', github.run_number) || '`Uroki-unsigned.ipa` нужно подписать своим Apple ID через Sideloadly или AltStore (бесплатный Apple ID — приложение работает 7 дней, потом переподписать).' }}
+            **iPhone:** ${{ needs.ios.result == 'success' && needs.ios.outputs.testflight == 'true' && format('сборка {0} загружена в TestFlight (появится там после обработки Apple, обычно 5–30 минут).', github.run_number) || needs.ios.outputs.testflight == 'true' && 'сборка для TestFlight в этот раз не удалась, см. журнал задачи ios.' || '`Uroki-unsigned.ipa` нужно подписать своим Apple ID через Sideloadly или AltStore (бесплатный Apple ID — приложение работает 7 дней, потом переподписать).' }}
             ${{ needs.android.outputs.signing == 'release' && 'APK подписан закрытым ключом проекта, поэтому новые версии ставятся поверх старых. Если стояла тестовая версия и установка не проходит, удалите её один раз.' || 'Это тестовая сборка: APK подписан общедоступным тестовым ключом. Версии для магазина приложений будут подписаны закрытым ключом, и тестовую версию перед их установкой нужно будет один раз удалить.' }}
