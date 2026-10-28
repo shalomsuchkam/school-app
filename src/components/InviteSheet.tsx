@@ -16,9 +16,12 @@ const TITLE: Record<Role, string> = { child: 'parent.settings.inviteChild', pare
 const TEXT: Record<Role, string> = { child: 'parent.invite.textChild', parent: 'parent.invite.textParent', viewer: 'parent.invite.textViewer' };
 
 // childId (with its name) ties a child's code to one of several children; without it the server uses the first child.
+// title/text (i18n keys) replace the role's defaults, e.g. for another device of a child who already has one.
 // The QR code holds the invite link (a small web page that opens the app at the join screen with the code filled in);
 // the 6-character code below works on its own too.
-export function InviteSheet({ role, childId, childName, onClose }: { role: Role | null; childId?: number; childName?: string; onClose: () => void }) {
+export function InviteSheet({
+  role, childId, childName, title, text, onClose,
+}: { role: Role | null; childId?: number; childName?: string; title?: string; text?: string; onClose: () => void }) {
   const p = usePalette();
   const t = useT();
   const [invite, setInvite] = useState<Invite | null>(null);
@@ -69,9 +72,9 @@ export function InviteSheet({ role, childId, childName, onClose }: { role: Role 
   const qrInk = palettes.light.ink;
   const qrPaper = palettes.light.card;
   return (
-    <Sheet visible={!!role} title={t(TITLE[shownRole])} onClose={onClose}>
+    <Sheet visible={!!role} title={t(title ?? TITLE[shownRole])} onClose={onClose}>
       <Txt v="callout" color={p.muted}>
-        {t(TEXT[shownRole])}
+        {t(text ?? TEXT[shownRole])}
       </Txt>
       {url ? (
         <View style={styles.qrWrap}>

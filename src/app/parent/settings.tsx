@@ -3,6 +3,7 @@ import { useCallback, useState } from 'react';
 import { Alert, Linking, Modal, Pressable, StyleSheet, View } from 'react-native';
 
 import { AppearancePicker } from '@/components/AppearancePicker';
+import { ChildDevices } from '@/components/ChildDevices';
 import { InviteSheet } from '@/components/InviteSheet';
 import { Paywall } from '@/components/Paywall';
 import { PhoneLimitGuide } from '@/components/PhoneLimitGuide';
@@ -23,9 +24,6 @@ export default function Settings() {
   const [childEdit, setChildEdit] = useState<{ id: number; name: string } | null>(null);
   const [newChild, setNewChild] = useState<string | null>(null);
   const [childBusy, setChildBusy] = useState(false);
-  // several children: first ask which child the invite code is for
-  const [invitePick, setInvitePick] = useState(false);
-  const [inviteChild, setInviteChild] = useState<Child | null>(null);
   const [newTime, setNewTime] = useState<string | null>(null);
   const [invite, setInvite] = useState<Role | null>(null);
   const [tgBusy, setTgBusy] = useState(false);
@@ -144,7 +142,7 @@ export default function Settings() {
   const countryName = t(countryKey) === countryKey ? f.country : t(countryKey);
 
   const parents = me.members.filter((m) => m.role === 'parent');
-  const children = me.members.filter((m) => m.role === 'child');
+  // the children's devices (phone, tablet…) are listed per child in ChildDevices
   const viewers = me.members.filter((m) => m.role === 'viewer');
   const roleName = (r: Role) => t(r === 'parent' ? 'parent.settings.parent' : r === 'viewer' ? 'parent.settings.viewer' : 'parent.settings.student');
 
@@ -159,7 +157,6 @@ export default function Settings() {
     ]);
   };
   const kids = me.children;
-  const kidName = (id: number | null) => (id ? kids.find((c) => c.id === id)?.name : undefined);
 
   const renameChild = async () => {
     if (!childEdit?.name.trim()) return;
@@ -206,22 +203,6 @@ export default function Settings() {
             .finally(load),
       },
     ]);
-  const openInviteChild = () => {
-    if (kids.length < 2) {
-      setInviteChild(null);
-      return setInvite('child');
-    }
-    setInvitePick(true);
-  };
-  const pickInviteChild = (c: Child) => {
-    setInvitePick(false);
-    // two Modals swapped in one update never present the second on iOS: open the code sheet once this one has slid away
-    setTimeout(() => {
-      setInviteChild(c);
-      setInvite('child');
-    }, 350);
-  };
-
   // Without a parent device nobody could invite, approve skips or edit the schedule again.
   const offerInvite = (title: string, msg: string) =>
     Alert.alert(title, msg, [
@@ -285,6 +266,8 @@ export default function Settings() {
           ))}
           <Row icon="add" tint="green" title={t('parent.settings.addChild')} chevron onPress={() => setNewChild('')} />
         </Group>
+
+        <ChildDevices me={me} onChanged={load} onToast={toast.show} />
 
         <SectionLabel>{t('parent.settings.schoolDays')}</SectionLabel>
         <WeekdayPicker value={f.school_weekdays} onChange={(w) => (w.length ? patch({ school_weekdays: w }) : toast.show(t('parent.needSchoolDay')))} />
@@ -354,7 +337,7 @@ export default function Settings() {
 
         <SectionLabel>{t('parent.settings.family')}</SectionLabel>
         <Group>
-          {[...parents, ...children, ...viewers].map((m) => {
+          {[...parents, ...viewers].map((m) => {
             const seen = m.me ? null : lastSeen(m.last_seen);
             return (
             <Row
@@ -362,7 +345,7 @@ export default function Settings() {
               icon={m.role === 'parent' ? 'person-circle' : m.role === 'viewer' ? 'eye' : 'school'}
               tint={m.role === 'parent' ? 'gray' : m.role === 'viewer' ? 'teal' : 'blue'}
               title={`${m.name || roleName(m.role)}${m.me ? t('parent.settings.you') : ''}`}
-              subtitle={`${roleName(m.role)}${m.role === 'child' && kids.length > 1 && kidName(m.child_id) ? ` · ${kidName(m.child_id)}` : ''}${m.telegram ? ' · Telegram' : ''}${seen ? ` · ${seen.text}` : ''}`}
+              subtitle={`${roleName(m.role)}${m.telegram ? ' · Telegram' : ''}${seen ? ` · ${seen.text}` : ''}`}
               right={
                 !m.me ? (
                   <Pressable hitSlop={12} accessibilityRole="button" onPress={() => removeMember(m.id, m.name || t('parent.settings.device'))}>
@@ -375,7 +358,6 @@ export default function Settings() {
             />
             );
           })}
-          <Row icon="person-add" tint="green" title={t('parent.settings.inviteChild')} chevron onPress={openInviteChild} />
           <Row icon="people" tint="green" title={t('parent.settings.inviteParent')} chevron onPress={() => setInvite('parent')} />
         </Group>
 
@@ -486,16 +468,6 @@ export default function Settings() {
         <Field value={newChild ?? ''} onChangeText={setNewChild} placeholder={t('parent.settings.childNamePh')} maxLength={30} autoFocus onSubmitEditing={addChild} />
         <Btn title={t('common.add')} disabled={!newChild?.trim()} loading={childBusy} onPress={addChild} />
       </Sheet>
-      <Sheet visible={invitePick} title={t('parent.settings.inviteChild')} onClose={() => setInvitePick(false)}>
-        <Txt v="callout" color={p.muted} style={{ marginBottom: 12 }}>
-          {t('parent.settings.inviteWho')}
-        </Txt>
-        <View style={styles.wrap}>
-          {kids.map((c) => (
-            <Chip key={c.id} label={c.name} onPress={() => pickInviteChild(c)} />
-          ))}
-        </View>
-      </Sheet>
       <Sheet visible={newTime !== null} title={t('parent.settings.newReminder')} onClose={() => setNewTime(null)}>
         <View style={{ alignItems: 'center', marginVertical: 10 }}>
           <TimeStepper value={newTime ?? '16:00'} onChange={setNewTime} />
@@ -533,12 +505,7 @@ export default function Settings() {
         />
       </Modal>
       <PhoneLimitGuide visible={guide} onClose={() => setGuide(false)} />
-      <InviteSheet
-        role={invite}
-        childId={invite === 'child' ? inviteChild?.id : undefined}
-        childName={invite === 'child' ? inviteChild?.name : undefined}
-        onClose={() => setInvite(null)}
-      />
+      <InviteSheet role={invite} onClose={() => setInvite(null)} />
       {childEdit !== null || newChild !== null ? null : toast.node}
     </>
   );

@@ -1,4 +1,4 @@
-import type { DeviceReport, ScreenState } from './api';
+import type { DeviceReport, OtherUsage, ScreenState } from './api';
 
 // Pure helpers for the screen-time screens (docs/SCREEN_TIME.md); no React, so they are unit-tested.
 
@@ -24,16 +24,57 @@ export function guardHealth(device: DeviceReport | null, now = Date.now()): Guar
   return { kind: 'ok', minutes: ageMin, battery_ok: g.battery_ok !== false };
 }
 
-/** Today's usage from the report, or empty when the report is from another day. */
-export function usageOf(state: Pick<ScreenState, 'device' | 'today'>): { total: number; apps: Record<string, number> } {
-  const u = state.device?.usage;
-  if (!u || (u.date && state.today && u.date !== state.today)) return { total: 0, apps: {} };
+/** Every reporting device of the child, newest first (older servers send only `device`). */
+export function devicesOf(state: Pick<ScreenState, 'device'> & { devices?: DeviceReport[] }): DeviceReport[] {
+  return state.devices ?? (state.device ? [state.device] : []);
+}
+
+/** One report's usage for today, or empty when the report is from another day. */
+export function deviceUsage(device: DeviceReport | null | undefined, today?: string): { total: number; apps: Record<string, number> } {
+  const u = device?.usage;
+  if (!u || (u.date && today && u.date !== today)) return { total: 0, apps: {} };
   return { total: Math.max(0, Math.round(u.total_min ?? 0)), apps: u.apps ?? {} };
 }
 
+/** Adds per-app minutes. */
+export function addUsage(a: Record<string, number>, b: Record<string, number>): Record<string, number> {
+  const out = { ...a };
+  for (const [pkg, m] of Object.entries(b)) out[pkg] = (out[pkg] ?? 0) + (Number(m) || 0);
+  return out;
+}
+
+/** Today's usage of all the child's devices together (limits are shared across devices). */
+export function usageOf(state: Pick<ScreenState, 'device' | 'today'> & { devices?: DeviceReport[] }): { total: number; apps: Record<string, number> } {
+  return devicesOf(state).reduce(
+    (acc, d) => {
+      const u = deviceUsage(d, state.today);
+      return { total: acc.total + u.total, apps: addUsage(acc.apps, u.apps) };
+    },
+    { total: 0, apps: {} as Record<string, number> },
+  );
+}
+
+/** A child device: today's usage on the child's other devices, as the server summed it (none from another day). */
+export function otherUsageOf(state: Pick<ScreenState, 'today'> & { usage_other_devices?: OtherUsage }): { total: number; apps: Record<string, number> } {
+  const o = state.usage_other_devices;
+  if (!o || (state.today && o.date !== state.today)) return { total: 0, apps: {} };
+  return { total: Math.max(0, Math.round(o.total_min ?? 0)), apps: o.apps ?? {} };
+}
+
+/** Apps reported by any of the child's devices, once per package. */
+export function allApps(state: Pick<ScreenState, 'device'> & { devices?: DeviceReport[] }): { pkg: string; name: string }[] {
+  const seen = new Map<string, { pkg: string; name: string }>();
+  for (const d of devicesOf(state)) for (const a of d.apps ?? []) if (!seen.has(a.pkg)) seen.set(a.pkg, { pkg: a.pkg, name: a.name });
+  return [...seen.values()];
+}
+
 /** The app's name as the child's phone reported it (falls back to the limit's saved name, then the package). */
-export function appName(state: Pick<ScreenState, 'device' | 'rules'>, pkg: string): string {
-  return state.device?.apps.find((a) => a.pkg === pkg)?.name || state.rules.app_limits.find((l) => l.pkg === pkg)?.name || pkg;
+export function appName(state: Pick<ScreenState, 'device' | 'rules'> & { devices?: DeviceReport[] }, pkg: string): string {
+  for (const d of devicesOf(state)) {
+    const n = d.apps?.find((a) => a.pkg === pkg)?.name;
+    if (n) return n;
+  }
+  return state.rules.app_limits.find((l) => l.pkg === pkg)?.name || pkg;
 }
 
 /** Search over reported apps by name or package; sorted by today's usage, then by name. */

@@ -1,5 +1,5 @@
 import type { DeviceReport } from '@/lib/api';
-import { countedUsage, filterApps, guardHealth, httpHost, remaining, sameSite, unlockActive, usageOf, validLink, withPkg } from '@/lib/screenTime';
+import { allApps, appName, countedUsage, devicesOf, filterApps, guardHealth, httpHost, otherUsageOf, remaining, sameSite, unlockActive, usageOf, validLink, withPkg } from '@/lib/screenTime';
 
 const NOW = Date.parse('2026-10-22T12:00:00Z');
 const device = (over: Partial<DeviceReport> = {}): DeviceReport => ({
@@ -26,6 +26,34 @@ describe('guardHealth', () => {
   it('calls a report older than 2 hours stale', () => {
     expect(guardHealth(device({ reported_at: '2026-10-22T07:30:00Z' }), NOW)).toEqual({ kind: 'stale', hours: 4 });
     expect(guardHealth(device({ reported_at: '2026-10-22T10:30:00Z' }), NOW).kind).toBe('ok');
+  });
+});
+
+describe('several devices of one child', () => {
+  const tablet = device({
+    device_id: 'd2',
+    name: 'Samsung SM-T220',
+    apps: [{ pkg: 'com.youtube', name: 'YouTube' }, { pkg: 'com.tiktok', name: 'TikTok' }],
+    usage: { date: '2026-10-22', total_min: 30, apps: { 'com.tiktok': 10, 'com.youtube': 20 } },
+  });
+  const old = device({ device_id: 'd3', usage: { date: '2026-10-21', total_min: 300, apps: { 'com.tiktok': 300 } } });
+  const st = { device: device(), devices: [device(), tablet, old], today: '2026-10-22' };
+  it('sums today\'s usage of every device, leaving out reports of another day', () => {
+    expect(usageOf(st)).toEqual({ total: 120, apps: { 'com.tiktok': 50, 'com.whatsapp': 20, 'com.youtube': 20 } });
+  });
+  it('lists each reported app once and finds names on any device', () => {
+    expect(allApps(st).map((a) => a.pkg)).toEqual(['com.tiktok', 'com.youtube']);
+    expect(appName({ ...st, rules: { app_limits: [] } as never }, 'com.youtube')).toBe('YouTube');
+  });
+  it('falls back to `device` on older servers', () => {
+    expect(devicesOf({ device: device() }).length).toBe(1);
+    expect(devicesOf({ device: null })).toEqual([]);
+  });
+  it('a child device adds the other devices\' usage of today only', () => {
+    const o = { date: '2026-10-22', total_min: 25, apps: { 'com.tiktok': 10 } };
+    expect(otherUsageOf({ today: '2026-10-22', usage_other_devices: o })).toEqual({ total: 25, apps: { 'com.tiktok': 10 } });
+    expect(otherUsageOf({ today: '2026-10-23', usage_other_devices: o })).toEqual({ total: 0, apps: {} });
+    expect(otherUsageOf({ today: '2026-10-22' })).toEqual({ total: 0, apps: {} });
   });
 });
 

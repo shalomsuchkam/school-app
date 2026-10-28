@@ -13,10 +13,16 @@ import { space, usePalette } from '@/lib/theme';
  * How the child's phone is doing, from its latest report. Calm wording on purpose: a silent phone is
  * usually a phone without internet, not a child who broke the rules.
  */
-export function GuardCard({ device, enabled, usedToday }: { device: DeviceReport | null; enabled: boolean; usedToday: number }) {
+// title: which of the child's devices this card is about (several devices: one card each).
+export function GuardCard({ device, enabled, usedToday, title }: { device: DeviceReport | null; enabled: boolean; usedToday: number; title?: string }) {
   const p = usePalette();
   const t = useT();
   const h = guardHealth(device);
+  const label = title ? (
+    <Txt v="sub" color={p.muted} style={{ fontWeight: '600' }} numberOfLines={1}>
+      {title}
+    </Txt>
+  ) : null;
 
   if (h.kind === 'none') {
     return (
@@ -41,6 +47,7 @@ export function GuardCard({ device, enabled, usedToday }: { device: DeviceReport
   if (h.kind === 'off') {
     return (
       <Card tone={enabled ? 'warn' : undefined} style={styles.card}>
+        {label}
         <View style={styles.head}>
           <IconTile icon="shield-outline" size={40} tone="warn" />
           <View style={{ flex: 1, minWidth: 0 }}>
@@ -63,6 +70,7 @@ export function GuardCard({ device, enabled, usedToday }: { device: DeviceReport
   if (h.kind === 'stale') {
     return (
       <Card tone={enabled ? 'warn' : undefined} style={styles.card}>
+        {label}
         <View style={styles.head}>
           <IconTile icon="cloud-offline-outline" size={40} tone="warn" />
           <Txt v="headline" style={{ flex: 1 }}>
@@ -78,6 +86,7 @@ export function GuardCard({ device, enabled, usedToday }: { device: DeviceReport
 
   return (
     <Card tone={enabled ? 'ok' : undefined} style={styles.card}>
+      {label}
       <View style={styles.head}>
         <IconTile icon="shield-checkmark" size={40} tone="ok" />
         <View style={{ flex: 1, minWidth: 0 }}>

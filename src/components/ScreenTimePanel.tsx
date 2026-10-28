@@ -21,7 +21,7 @@ import {
   type UsageToday,
 } from '@/lib/screenGuard';
 import { applyIos, iosScreenTimeOn } from '@/lib/screenGuardIos';
-import { appName, countedUsage, hmIn, remaining, unlockActive } from '@/lib/screenTime';
+import { addUsage, appName, countedUsage, hmIn, otherUsageOf, remaining, unlockActive } from '@/lib/screenTime';
 import { space, usePalette } from '@/lib/theme';
 
 const POLL_MS = 5 * 60_000;
@@ -174,9 +174,11 @@ export function ScreenTimePanel() {
     );
   }
 
-  // running: today's usage and what is left
-  const apps = usage?.apps ?? {};
-  const used = countedUsage(usage?.total_min ?? 0, apps, r.always_allowed);
+  // running: today's usage and what is left. Limits are shared by the child's devices: the server sends what the
+  // others used today (from their latest reports, up to ~5 min old) and it adds to this phone's own minutes.
+  const other = otherUsageOf(st);
+  const apps = addUsage(usage?.apps ?? {}, other.apps);
+  const used = countedUsage(usage?.total_min ?? 0, usage?.apps ?? {}, r.always_allowed) + other.total;
   const left = remaining(r.daily_limit_min, used);
   const limited = r.app_limits.filter((l) => apps[l.pkg]).slice(0, 3);
   const lockSoon = r.homework_lock && st.homework_due_today && !st.homework_done;
@@ -202,6 +204,11 @@ export function ScreenTimePanel() {
         ) : null}
       </View>
       {r.daily_limit_min ? <ProgressBar value={used / r.daily_limit_min} color={left === 0 ? p.bad : p.brand} /> : null}
+      {other.total > 0 ? (
+        <Txt v="sub" color={p.muted}>
+          {t('devices.child.other', { dur: duration(other.total) })}
+        </Txt>
+      ) : null}
       {limited.map((l) => (
         <Txt key={l.pkg} v="sub" color={p.ink2}>
           {t('screen.child.appLine', { app: appName(st, l.pkg), used: apps[l.pkg] ?? 0, limit: l.minutes })}

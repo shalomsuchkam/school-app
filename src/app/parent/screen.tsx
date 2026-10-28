@@ -12,7 +12,8 @@ import { useIsViewer } from '@/lib/auth';
 import { ChildSwitcher, currentChildReady, getCurrentChild, setCurrentChild, useCurrentChild } from '@/lib/currentChild';
 import { duration } from '@/lib/format';
 import { useT } from '@/lib/i18n';
-import { appName, countedUsage, hmIn, unlockActive, usageOf, withPkg } from '@/lib/screenTime';
+import { deviceKind } from '@/lib/devices';
+import { allApps, appName, countedUsage, devicesOf, deviceUsage, hmIn, unlockActive, usageOf, withPkg } from '@/lib/screenTime';
 import { space, usePalette } from '@/lib/theme';
 
 type Target = 'limit' | 'blocked' | 'allowed' | 'bedtime' | 'school';
@@ -34,6 +35,8 @@ export default function ScreenTime() {
   const [approveLimit, setApproveLimit] = useState<string | null>(null);
   const [approveMins, setApproveMins] = useState(60);
   const [busy, setBusy] = useState<string | null>(null);
+  // an iPhone/iPad of this child: Apple gives no usage numbers, its limits count that device only
+  const [iosChild, setIosChild] = useState(false);
   const limitTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const load = useCallback(async () => {
@@ -41,6 +44,8 @@ export default function ScreenTime() {
       const cid = await currentChildReady();
       const me = await api.me();
       setKids(me.children);
+      const kidId = cid ?? me.children[0]?.id;
+      setIosChild(me.members.some((m) => m.role === 'child' && m.platform === 'ios' && (m.child_id === kidId || (me.children.length === 1 && m.child_id == null))));
       try {
         const s = await api.getScreenRules(cid ?? undefined);
         if (getCurrentChild() !== cid) return;
@@ -76,8 +81,14 @@ export default function ScreenTime() {
 
   const r = st.rules;
   const cid = r.child_id;
+  // usage and apps of all the child's devices together: the limits are shared across devices
   const usage = usageOf(st);
-  const apps = (st.device?.apps ?? []).filter((a) => a.pkg !== SELF);
+  const devices = devicesOf(st);
+  const apps = allApps(st).filter((a) => a.pkg !== SELF);
+  const deviceTitle = (dv: (typeof devices)[number]) => {
+    const kind = t(`devices.kind.${deviceKind(dv.platform, dv.name)}`);
+    return dv.name ? (deviceKind(dv.platform, dv.name) === 'unknown' ? dv.name : `${dv.name} · ${kind}`) : kind;
+  };
   const name = (pkg: string) => appName(st, pkg);
   const usedLine = (pkg: string) => (usage.apps[pkg] ? t('screen.usage.today', { dur: duration(usage.apps[pkg]) }) : undefined);
 
@@ -168,9 +179,29 @@ export default function ScreenTime() {
       <ChildSwitcher list={kids} value={childId} onChange={switchChild} />
       <ErrorBanner error={error} onRetry={load} />
 
-      <GuardCard device={st.device} enabled={r.enabled} usedToday={countedUsage(usage.total, usage.apps, r.always_allowed)} />
+      {/* one card per device of the child (phone, tablet…): guard status and today's usage of each */}
+      {devices.length ? (
+        devices.map((dv) => {
+          const u = deviceUsage(dv, st.today);
+          return (
+            <GuardCard key={dv.device_id} device={dv} enabled={r.enabled} usedToday={countedUsage(u.total, u.apps, r.always_allowed)} title={devices.length > 1 || dv.name ? deviceTitle(dv) : undefined} />
+          );
+        })
+      ) : (
+        <GuardCard device={null} enabled={r.enabled} usedToday={0} />
+      )}
+      {devices.length > 1 ? (
+        <Txt v="sub" color={p.muted} style={styles.hint}>
+          {t('devices.shared')}
+        </Txt>
+      ) : null}
+      {iosChild && iosScreenTimeReleased ? (
+        <Txt v="sub" color={p.muted} style={styles.hint}>
+          {t('devices.ios')}
+        </Txt>
+      ) : null}
       {/* an iPhone never reports (Apple gives no usage data), so no Android report = maybe an iPhone */}
-      {iosScreenTimeReleased && !st.device ? <IosParentCard /> : null}
+      {iosScreenTimeReleased && !devices.length ? <IosParentCard /> : null}
 
       <Group style={{ marginTop: space.s }}>
         <ToggleRow icon="hourglass" tint="blue" title={t('screen.enabled')} subtitle={t(r.enabled ? 'screen.enabledOn' : 'screen.enabledOff')} value={r.enabled} onChange={(v) => save({ enabled: v })} />

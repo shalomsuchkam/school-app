@@ -9,6 +9,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Btn, Field, haptic, IconBtn, Txt } from '@/components/ui';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
+import { deviceModel } from '@/lib/devices';
 import { CODE_LEN, codeFromLink, codeFromParam, normalizeCode } from '@/lib/invite';
 import { tn, useT } from '@/lib/i18n';
 import { radius, space, usePalette } from '@/lib/theme';
@@ -54,7 +55,7 @@ export default function Join() {
     setBusy(true);
     setError(null);
     try {
-      const r = await api.join(clean, name.trim());
+      const r = await api.join(clean, name.trim(), deviceModel());
       setJoined(true);
       await signIn(r);
       // Drop welcome/join from history so Back can't return to them.

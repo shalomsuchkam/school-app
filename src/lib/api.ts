@@ -2,6 +2,7 @@ import Constants from 'expo-constants';
 import { File as FsFile } from 'expo-file-system';
 import { Platform } from 'react-native';
 
+import { devicePlatform } from './devices';
 import { getLang, t } from './i18n';
 
 // Client for the `app` edge function (multi-family backend of the mobile app).
@@ -97,7 +98,8 @@ export type Family = {
   quiet_to?: string | null;
   allow_viewers?: boolean;
 };
-export type Member = { id: string; role: Role; name: string | null; telegram: boolean; me: boolean; child_id: number | null; last_seen?: string | null };
+// platform: 'android' | 'ios' | 'web' once the device reported it (older servers: absent)
+export type Member = { id: string; role: Role; name: string | null; telegram: boolean; me: boolean; child_id: number | null; last_seen?: string | null; platform?: string | null };
 export type Child = { id: number; name: string; pos: number };
 export type Access = {
   active: boolean;
@@ -191,7 +193,13 @@ export type DeviceReport = {
   guard: Partial<GuardReport>;
   reported_at: string | null;
   approved: string[];
+  // the reporting device (GET /screen/rules `devices`; absent on older servers)
+  name?: string | null;
+  platform?: string | null;
+  last_seen?: string | null;
 };
+// Today's usage on the child's other devices, summed from their latest reports (sent to a child device only).
+export type OtherUsage = { date: string; total_min: number; apps: Record<string, number> };
 export type Textbook = { id: number; child_id: number | null; title: string; url: string; created_at: string };
 export type ScreenState = {
   rules: ScreenRules;
@@ -201,6 +209,10 @@ export type ScreenState = {
   tz: string;
   textbooks: Textbook[];
   device: DeviceReport | null;
+  // every device of the child that has reported, newest first (older servers: absent, use `device`)
+  devices?: DeviceReport[];
+  // child device only: limits are shared across the child's devices (docs/SCREEN_TIME.md)
+  usage_other_devices?: OtherUsage;
   today: string;
   school_day: boolean;
   approved: string[];
@@ -234,6 +246,7 @@ async function call<T>(method: string, path: string, body?: unknown, raw?: Raw):
   const headers: Record<string, string> = {};
   if (token) headers.authorization = `Bearer ${token}`;
   headers['x-lang'] = getLang(); // server messages in the user's language
+  headers['x-platform'] = devicePlatform(); // the parent's device list shows «Android», «iPad», …
   if (raw) headers['content-type'] = raw.type;
   else if (body !== undefined) headers['content-type'] = 'application/json';
   let r: Response;
@@ -251,10 +264,11 @@ async function call<T>(method: string, path: string, body?: unknown, raw?: Raw):
 
 type Auth = { token: string; role: Role };
 export const api = {
-  createFamily: (f: { child_name: string; parent_name: string; tz?: string; country: string; lang: string; consent: true }) => call<Auth>('POST', '/family', f),
+  createFamily: (f: { child_name: string; parent_name: string; tz?: string; country: string; lang: string; consent: true }) => call<Auth>('POST', '/family', { ...f, platform: devicePlatform() }),
   deleteFamily: () => call('DELETE', '/family'),
   billingRefresh: () => call<Access>('POST', '/billing/refresh', {}),
-  join: (code: string, name: string) => call<Auth>('POST', '/join', { code, name }),
+  // model: a default device name ("Samsung SM-T220") used when no name is typed
+  join: (code: string, name: string, model?: string) => call<Auth>('POST', '/join', { code, name, model, platform: devicePlatform() }),
   me: () => call<Me>('GET', '/me'),
   // child: which child's timetable (parents with several children); default = first child
   setup: (child?: number) => call<Setup>('GET', `/setup${child ? `?child=${child}` : ''}`),
@@ -321,6 +335,7 @@ export const api = {
   dayOff: (date: string, off: boolean) => call('POST', '/dayoff', { date, off }),
   invite: (role: Role, child_id?: number) => call<Invite>('POST', '/invite', { role, child_id }),
   removeMember: (id: string) => call('DELETE', `/members/${id}`),
+  renameMember: (id: string, name: string) => call<{ ok: true }>('PATCH', `/members/${id}`, { name }),
   leave: () => call('DELETE', '/members/me'),
   telegramLink: () => call<{ url: string }>('POST', '/telegram/link', {}),
   telegramUnlink: () => call('DELETE', '/telegram'),
