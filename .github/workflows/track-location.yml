@@ -5,7 +5,7 @@ name: Location for the GitHub family
 on:
   workflow_dispatch:
     inputs:
-      on:
+      enable:
         description: Включить отслеживание
         type: boolean
         default: true
@@ -20,7 +20,7 @@ jobs:
       SSH_HOST: ${{ secrets.SELFHOST_HOST }}
       SSH_USER: ${{ secrets.SELFHOST_USER }}
       SSH_KEY: ${{ secrets.SELFHOST_SSH_KEY }}
-      ON: ${{ inputs.on }}
+      ON: ${{ inputs.enable }}
     steps:
       - name: Set track_location on the server
         run: |
