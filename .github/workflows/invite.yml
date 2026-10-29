@@ -1,7 +1,8 @@
 name: New code for the GitHub family
 
-# Manual: a new one-time join code (48 h) for the newest family made by «Create a family»
-# (the one with the helper parent device «GitHub»), without a parent's phone. Owner tests only.
+# Manual: new one-time join codes for the newest family made by «Create a family»
+# (the one with the helper parent device «GitHub»), without a parent's phone. Owner tests, and the demo
+# codes for app review (Google Play / App Store review can take days, so those need a longer validity).
 on:
   workflow_dispatch:
     inputs:
@@ -10,6 +11,12 @@ on:
         type: choice
         options: [child, parent]
         default: child
+      count:
+        description: Сколько кодов (каждый — на одно устройство)
+        default: '1'
+      days:
+        description: Сколько дней действует код (1–30)
+        default: '2'
 
 permissions:
   contents: read
@@ -22,22 +29,26 @@ jobs:
       SSH_USER: ${{ secrets.SELFHOST_USER }}
       SSH_KEY: ${{ secrets.SELFHOST_SSH_KEY }}
       ROLE: ${{ inputs.role }}
+      COUNT: ${{ inputs.count }}
+      DAYS: ${{ inputs.days }}
     steps:
-      - name: Make the code on the server
+      - name: Make the codes on the server
         run: |
           set -euo pipefail
+          [[ $COUNT =~ ^[0-9]{1,2}$ ]] && [ "$COUNT" -ge 1 ] && [ "$COUNT" -le 10 ] || { echo "::error::count: 1..10"; exit 1; }
+          [[ $DAYS =~ ^[0-9]{1,2}$ ]] && [ "$DAYS" -ge 1 ] && [ "$DAYS" -le 30 ] || { echo "::error::days: 1..30"; exit 1; }
           install -m 700 -d ~/.ssh
           key=$(printf '%s' "$SSH_KEY" | tr -d '\r')
           if ! printf '%s' "$key" | grep -q 'PRIVATE KEY-----'; then key=$(printf '%s' "$key" | tr -d ' \n' | base64 -d | tr -d '\r'); fi
           printf '%s\n' "$key" > ~/.ssh/k && chmod 600 ~/.ssh/k
           ssh-keyscan -T 20 "$SSH_HOST" > ~/.ssh/known_hosts 2>/dev/null
           sudo_cmd="sudo -n"; [ "$SSH_USER" = root ] && sudo_cmd=""
-          # 6 characters from the app's own invite alphabet style (no 0/O/1/I)
-          code=$(python3 -c "import secrets; a='ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; print(''.join(secrets.choice(a) for _ in range(6)))")
-          ssh -i ~/.ssh/k -o BatchMode=yes "$SSH_USER@$SSH_HOST" "$sudo_cmd bash -s -- '$code' '$ROLE'" <<'REMOTE' | tee out.txt
+          # 6 characters, no 0/O/1/I
+          codes=$(python3 -c "import secrets; a='ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; print(','.join(''.join(secrets.choice(a) for _ in range(6)) for _ in range($COUNT)))")
+          ssh -i ~/.ssh/k -o BatchMode=yes "$SSH_USER@$SSH_HOST" "$sudo_cmd bash -s -- '$codes' '$ROLE' '$DAYS'" <<'REMOTE' | tee out.txt
           set -euo pipefail
           . /opt/uroki/kit/lib.sh
-          db_psql -At -v code="$1" -v role="$2" -f - <<'SQL'
+          db_psql -At -v codes="$1" -v role="$2" -v days="$3" -f - <<'SQL'
           with fam as (
             select f.id from public.app_families f
              where exists (select 1 from public.app_devices d where d.family_id = f.id and d.role = 'parent' and d.name = 'GitHub')
@@ -46,15 +57,19 @@ jobs:
             select c.id from public.app_children c join fam on c.family_id = fam.id order by c.pos, c.id limit 1
           )
           insert into public.app_invites (code, family_id, role, expires_at, child_id)
-          select :'code', fam.id, :'role', now() + interval '48 hours',
+          select c, fam.id, :'role', now() + make_interval(days => (:'days')::int),
                  case when :'role' = 'child' then (select id from kid) end
-            from fam
+            from fam, unnest(string_to_array(:'codes', ',')) as c
           returning 'ok ' || code;
           SQL
           REMOTE
           rm -f ~/.ssh/k
           grep -q '^ok ' out.txt || { echo "::error::no family made by «Create a family» was found"; exit 1; }
           who=$([ "$ROLE" = child ] && echo "телефона ребёнка" || echo "телефона родителя")
-          echo "code: $code"
-          echo "## Новый код для $who: \`$code\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "Действует 48 часов, один раз. В приложении: «У меня есть код» → ввести код." >> "$GITHUB_STEP_SUMMARY"
+          echo "codes: $codes"
+          {
+            echo "## Коды для $who (действуют $DAYS дн., каждый — один раз)"
+            for c in ${codes//,/ }; do echo "- \`$c\`"; done
+            echo
+            echo "В приложении: «У меня есть код» → ввести код."
+          } >> "$GITHUB_STEP_SUMMARY"
