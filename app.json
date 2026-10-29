@@ -16,8 +16,7 @@
         "ITSAppUsesNonExemptEncryption": false,
         "UIBackgroundModes": [
           "location",
-          "fetch",
-          "processing"
+          "fetch"
         ]
       },
       "privacyManifests": {
