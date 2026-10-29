@@ -16,6 +16,7 @@ import {
 import { notifyChild, notifyParents, tg, tgEnabled } from "./notify.ts";
 import { createPromo, normPromo, redeemPromo } from "./promo.ts";
 import { screenRoute } from "./screen.ts";
+import { childLocation, parentLocations, parentTrail } from "./geo.ts";
 
 // viewer = a tutor or teacher the family let in (allow_viewers): reads the parent's dashboards, changes nothing
 type Role = "parent" | "child" | "viewer";
@@ -531,6 +532,8 @@ async function route(req: Request, path: string): Promise<Response> {
       await uploadVoice(fam, Number(new URL(req.url).searchParams.get("task_id")), new Uint8Array(await req.arrayBuffer()));
       return json({ ok: true });
     }
+    // one location ping from a child device (reads its own JSON body): geo.ts
+    if (path === "/child/location" && M === "POST") return await childLocation(req, d, fam);
     const b = await body(req);
     if (path === "/child/skip" && M === "POST") {
       await requestSkip(fam, Number(b.task_id), clean(b.reason, 120) || "Не задали");
@@ -563,6 +566,9 @@ async function route(req: Request, path: string): Promise<Response> {
       if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) throw new HttpError(400, "Неверный месяц");
       return json(await monthCalendar(kid, month));
     }
+    // child location: latest point of every child, and the breadcrumb trail of one (geo.ts)
+    if (path === "/parent/locations") return await parentLocations(kid);
+    if (path === "/parent/location/trail") return await parentTrail(kid, qChild || kid.child_id);
   }
 
   parentOnly(d);
@@ -600,6 +606,16 @@ async function route(req: Request, path: string): Promise<Response> {
     for (let i = 0; i < paths.length; i += 100) await db.storage.from("app-photos").remove(paths.slice(i, i + 100));
     await db.from("app_children").delete().eq("id", id).eq("family_id", famId);
     return json({ ok: true });
+  }
+
+  // turn child location tracking on/off (geo.ts stores the point; the child phone starts/stops on its next /child/state)
+  if (path === "/parent/track-location" && M === "POST") {
+    const b = await body(req);
+    const target = await kidOf(fam0, Number(b.child_id) || qChild, true);
+    const on = b.on === true;
+    await db.from("app_children").update({ track_location: on }).eq("id", target.child_id).eq("family_id", famId);
+    if (!on) await db.from("app_locations").delete().eq("child_id", target.child_id);
+    return json({ ok: true, tracking: on });
   }
 
   if (path === "/parent/task" && M === "POST") {

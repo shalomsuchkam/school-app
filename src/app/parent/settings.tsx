@@ -372,6 +372,7 @@ export default function Settings() {
         <SectionLabel>{t('screen.section')}</SectionLabel>
         <Group>
           <Row icon="hourglass" tint="violet" title={t('screen.row')} subtitle={t('screen.rowSub')} chevron onPress={() => router.push('/parent/screen')} />
+          <Row icon="navigate" tint="blue" title={t('loc.row')} subtitle={t('loc.rowSub')} chevron onPress={() => router.push('/parent/location')} />
         </Group>
 
         <SectionLabel>{t('parent.bc.section')}</SectionLabel>

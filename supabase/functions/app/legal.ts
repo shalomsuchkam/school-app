@@ -2,7 +2,7 @@
 // Bump LEGAL_VERSION whenever the text changes: families accept a specific version at sign-up.
 import { secret } from "./lib.ts";
 
-export const LEGAL_VERSION = "2026-10-28.1";
+export const LEGAL_VERSION = "2026-10-29.1";
 
 // Operator details come from app_secrets (app_operator_ru / app_operator_kk / app_operator_en, app_support_email),
 // so the owner can fill in the legal entity, БИН and address without a new deploy.
@@ -53,8 +53,9 @@ const ru = {
 <li><b>Подписка:</b> идентификатор покупателя (это идентификатор семьи), статус и срок подписки от App Store / Google Play через RevenueCat. Платёжные данные карты мы не получаем.</li>
 <li>Если родитель подключит Telegram — идентификатор чата для отправки уведомлений.</li>
 <li><b>Экранное время</b> (только если родитель его включил): на Android телефон ученика передаёт список установленных приложений (название и идентификатор), минуты использования за день и состояние разрешений защиты — чтобы родитель видел их и задавал лимиты. На iPhone выбор приложений и статистика остаются на устройстве (Экранное время Apple) и нам не передаются. Ссылки на учебники хранятся у нас; PDF-файлы учебников остаются только на телефоне ученика.</li>
+<li><b>Геолокация ребёнка</b> (только если родитель включил «Где ребёнок»): телефон ученика на Android периодически, в том числе в фоне, отправляет своё местоположение (координаты, точность, уровень заряда) и признак того, включена ли на телефоне геолокация и выдан ли доступ, — чтобы родитель видел на карте, где ребёнок. Хранятся последняя точка и короткий недавний маршрут. Родитель может выключить сбор в любой момент в настройках; ребёнок видит, что геолокация включена (постоянный значок и уведомление в приложении).</li>
 </ul>
-<p>Мы не собираем геолокацию, контакты, рекламные идентификаторы, не показываем рекламу и не передаём данные для рекламы, профилирования или аналитики третьим лицам.</p>
+<p>Мы не собираем контакты и рекламные идентификаторы, не показываем рекламу и не передаём данные для рекламы, профилирования или аналитики третьим лицам.</p>
 <h2>Основание и цели</h2>
 <p>Данные обрабатываются на основании согласия родителя (законного представителя), данного при регистрации, и для исполнения соглашения — только чтобы показать задания и фото родителю, напомнить о сроках, проверить подписку и защитить сервис от злоупотреблений.</p>
 <h2>Где и сколько хранится</h2>
@@ -115,8 +116,9 @@ const kk = {
 <li><b>Жазылым:</b> сатып алушы идентификаторы (отбасы идентификаторы), App Store / Google Play-дан RevenueCat арқылы алынған жазылым мәртебесі мен мерзімі. Карта деректерін алмаймыз.</li>
 <li>Ата-ана Telegram қосса — хабарландыру жіберу үшін чат идентификаторы.</li>
 <li><b>Экран уақыты</b> (тек ата-ана қосса): Android-та оқушының телефоны орнатылған қолданбалар тізімін (атауы мен идентификаторы), күндік пайдалану минуттарын және қорғау рұқсаттарының күйін жібереді — ата-ана оларды көріп, лимит қоюы үшін. iPhone-да қолданбаларды таңдау мен статистика құрылғыда қалады (Apple Экран уақыты) және бізге берілмейді. Оқулық сілтемелері бізде сақталады; оқулықтардың PDF файлдары тек оқушының телефонында қалады.</li>
+<li><b>Баланың геолокациясы</b> (тек ата-ана «Бала қайда»-ны қосса): оқушының Android телефоны мезгіл-мезгіл, оның ішінде фонда, өз орналасуын (координаттар, дәлдік, батарея деңгейі) және телефонда геолокация қосулы ма, рұқсат берілген бе дегенді жібереді — ата-ана картадан баланың қайда екенін көруі үшін. Соңғы нүкте мен жақындағы қысқа бағыт сақталады. Ата-ана жинауды кез келген уақытта баптауда өшіре алады; бала геолокацияның қосулы екенін көреді (тұрақты белгі және қолданбадағы хабарлама).</li>
 </ul>
-<p>Геолокацияны, контактілерді, жарнама идентификаторларын жинамаймыз, жарнама көрсетпейміз және деректерді жарнама, профильдеу немесе аналитика үшін үшінші тұлғаларға бермейміз.</p>
+<p>Контактілерді, жарнама идентификаторларын жинамаймыз, жарнама көрсетпейміз және деректерді жарнама, профильдеу немесе аналитика үшін үшінші тұлғаларға бермейміз.</p>
 <h2>Негіз және мақсат</h2>
 <p>Деректер тіркелу кезінде ата-ана (заңды өкіл) берген келісім негізінде және келісімді орындау үшін — тек тапсырмалар мен фотоны ата-анаға көрсету, мерзімдерді еске салу, жазылымды тексеру және сервисті теріс пайдаланудан қорғау үшін өңделеді.</p>
 <h2>Қайда және қанша уақыт сақталады</h2>
@@ -177,8 +179,9 @@ const en = {
 <li><b>Subscription:</b> the customer id (the family id), subscription status and expiry from the App Store / Google Play via RevenueCat. We never receive card details.</li>
 <li>If a parent connects Telegram — the chat id used to send notifications.</li>
 <li><b>Screen time</b> (only if the parent turns it on): on Android the student's phone sends the list of installed apps (name and package id), minutes of use per day and the state of the protection permissions, so the parent can see them and set limits. On iPhone the app selection and usage stay on the device (Apple Screen Time) and are not sent to us. Textbook links are stored on our server; textbook PDF files stay only on the student's phone.</li>
+<li><b>Child location</b> (only if the parent turns on “Where is my child”): on Android the student's phone reports its location (coordinates, accuracy, battery level) periodically, including in the background, together with whether location services and the app's permission are on — so the parent can see on a map where the child is. The latest point and a short recent trail are stored. The parent can turn collection off at any time in settings; the child can see that location is on (a persistent icon and an in-app notice).</li>
 </ul>
-<p>We do not collect location, contacts or advertising identifiers, show no ads and share no data for advertising, profiling or analytics.</p>
+<p>We do not collect contacts or advertising identifiers, show no ads and share no data for advertising, profiling or analytics.</p>
 <h2>Legal basis and purpose</h2>
 <p>We process data based on the consent of the parent (legal guardian) given at sign-up and to perform our terms (GDPR Art. 6(1)(a), 6(1)(b) and 8) — only to show tasks and photos to the parent, remind about deadlines, verify the subscription and protect the service from abuse.</p>
 <h2>Storage and retention</h2>

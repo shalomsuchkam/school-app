@@ -9,6 +9,7 @@ import { Bookshelf } from '@/components/Bookshelf';
 import { ChatSheet } from '@/components/ChatSheet';
 import { Paywall } from '@/components/Paywall';
 import { Confetti } from '@/components/Confetti';
+import { GeoPanel } from '@/components/GeoPanel';
 import { PhotoViewer } from '@/components/PhotoViewer';
 import { ProgressRing } from '@/components/ProgressRing';
 import { ScreenTimePanel } from '@/components/ScreenTimePanel';
@@ -192,6 +193,7 @@ export default function ChildHome() {
         upcoming: st.upcoming,
         reward: st.reward,
         track_time: st.track_time,
+        track_location: st.track_location,
         started_at: st.started_at,
         override_note: st.override_note,
       });
@@ -442,6 +444,7 @@ export default function ChildHome() {
         ) : null}
 
         <ScreenTimePanel />
+        <GeoPanel trackLocation={s.track_location} />
 
         {s.override_note ? <Banner tone="brand" icon="swap-horizontal" title={t('common.overrideTitle')} text={s.override_note} /> : null}
 

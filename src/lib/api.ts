@@ -60,6 +60,8 @@ export type ChildState = {
   upcoming: { due_date: string; school_date: string }[];
   reward: { goal: number; text: string } | null;
   track_time: boolean;
+  // the parent turned on location tracking for this child: the phone starts its background reporting
+  track_location: boolean;
   started_at: string | null;
   // note of a one-day override for school_date
   override_note?: string | null;
@@ -267,6 +269,28 @@ async function call<T>(method: string, path: string, body?: unknown, raw?: Raw):
   return data as T;
 }
 
+// Child location (geo.ts on the backend). `status` explains a motionless dot: live / stale (no recent ping) /
+// services_off (child turned GPS off) / no_permission (revoked) / never (no device reported yet).
+export type LocStatus = 'live' | 'stale' | 'services_off' | 'no_permission' | 'never';
+export type ChildLoc = {
+  child_id: number;
+  name: string;
+  tracking: boolean;
+  lat: number | null;
+  lng: number | null;
+  accuracy: number | null;
+  battery: number | null;
+  moving: boolean;
+  services_on: boolean;
+  perm: 'always' | 'while' | 'denied' | 'unknown';
+  fix_at: string | null;
+  reported_at: string | null;
+  stale: boolean;
+  status: LocStatus;
+};
+export type Locations = { children: ChildLoc[]; tz: string; now: string };
+export type TrailPoint = { lat: number; lng: number; accuracy: number | null; fix_at: string | null; created_at: string };
+
 type Auth = { token: string; role: Role };
 export const api = {
   createFamily: (f: { child_name: string; parent_name: string; tz?: string; country: string; lang: string; consent: true }) => call<Auth>('POST', '/family', { ...f, platform: devicePlatform() }),
@@ -318,6 +342,11 @@ export const api = {
   },
   addChild: (name: string) => call<Child>('POST', '/children', { name }),
   renameChild: (id: number, name: string) => call('PATCH', `/children/${id}`, { name }),
+
+  // child location (geo.ts): parents read the latest point / breadcrumb and turn tracking on or off per child
+  locations: () => call<Locations>('GET', '/parent/locations'),
+  locationTrail: (child?: number) => call<{ trail: TrailPoint[] }>('GET', `/parent/location/trail${child ? `?child=${child}` : ''}`),
+  setTrackLocation: (on: boolean, child?: number) => call<{ ok: true; tracking: boolean }>('POST', '/parent/track-location', { on, child_id: child }),
   removeChild: (id: number) => call('DELETE', `/children/${id}`),
   calendar: (month?: string, child?: number) => {
     const q = [month ? `month=${month}` : '', child ? `child=${child}` : ''].filter(Boolean).join('&');

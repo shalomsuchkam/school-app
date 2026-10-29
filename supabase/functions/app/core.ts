@@ -215,6 +215,8 @@ export async function streakStats(fam: any, today: string, S: string, isSchool: 
 
 export async function childState(fam: any) {
   const { now, S, due, isSchool } = await activeDay(fam);
+  // whether the parent turned location tracking on for this child (the child phone starts/stops accordingly)
+  const { data: locCh } = await db.from("app_children").select("track_location").eq("id", fam.child_id).maybeSingle();
   const ov = await ensureTasks(fam, S);
   const tasks = await loadTasks(fam, S);
   await signPhotos(tasks);
@@ -236,6 +238,7 @@ export async function childState(fam: any) {
     upcoming,
     reward: fam.reward_goal ? { goal: fam.reward_goal, text: fam.reward_text ?? "" } : null,
     track_time: !!fam.track_time,
+    track_location: !!locCh?.track_location,
     started_at: fam.track_time ? await sessionStart(fam.child_id, S) : null,
     tasks: tasks.map((t) => shape(t, fam.tz)),
   };
