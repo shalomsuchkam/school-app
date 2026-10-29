@@ -1,0 +1,51 @@
+name: Status of the GitHub family
+
+# Manual, read-only: devices, children and screen-time state of the newest family made by «Create a family».
+# For owner tests (e.g. "the phone was signed out": is its device still there?).
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  status:
+    runs-on: ubuntu-latest
+    env:
+      SSH_HOST: ${{ secrets.SELFHOST_HOST }}
+      SSH_USER: ${{ secrets.SELFHOST_USER }}
+      SSH_KEY: ${{ secrets.SELFHOST_SSH_KEY }}
+    steps:
+      - name: Read the family from the server
+        run: |
+          set -euo pipefail
+          install -m 700 -d ~/.ssh
+          key=$(printf '%s' "$SSH_KEY" | tr -d '\r')
+          if ! printf '%s' "$key" | grep -q 'PRIVATE KEY-----'; then key=$(printf '%s' "$key" | tr -d ' \n' | base64 -d | tr -d '\r'); fi
+          printf '%s\n' "$key" > ~/.ssh/k && chmod 600 ~/.ssh/k
+          ssh-keyscan -T 20 "$SSH_HOST" > ~/.ssh/known_hosts 2>/dev/null
+          sudo_cmd="sudo -n"; [ "$SSH_USER" = root ] && sudo_cmd=""
+          ssh -i ~/.ssh/k -o BatchMode=yes "$SSH_USER@$SSH_HOST" "$sudo_cmd bash -s" <<'REMOTE'
+          set -euo pipefail
+          . /opt/uroki/kit/lib.sh
+          db_psql -P pager=off -f - <<'SQL'
+          \echo === family
+          select f.id, f.child_name, f.created_at, f.free_forever, f.granted_until
+            from public.app_families f
+           where exists (select 1 from public.app_devices d where d.family_id = f.id and d.role = 'parent' and d.name = 'GitHub')
+           order by f.created_at desc limit 1 \gset fam_
+          \echo :fam_id
+          \echo === devices
+          select d.id, d.role, d.name, d.platform, d.child_id, d.created_at, d.last_seen
+            from public.app_devices d where d.family_id = :'fam_id' order by d.created_at;
+          \echo === children
+          select id, name, pos from public.app_children where family_id = :'fam_id' order by pos, id;
+          \echo === invites (unused)
+          select role, child_id, expires_at from public.app_invites where family_id = :'fam_id' order by expires_at;
+          \echo === screen rules
+          select child_id, enabled, enabled_at, app_limits, unlock_until, updated_at from public.app_screen_rules where family_id = :'fam_id';
+          \echo === screen reports
+          select device_id, reported_at, guard, usage->>'total_min' as total_min from public.app_screen_reports where family_id = :'fam_id';
+          SQL
+          REMOTE
+          rm -f ~/.ssh/k
