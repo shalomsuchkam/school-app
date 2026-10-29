@@ -40,7 +40,9 @@ export function GeoPanel({ trackLocation }: { trackLocation: boolean }) {
       await syncTracking(true, labels());
       void pingNow();
     } else {
-      await syncTracking(false, labels());
+      // Permission revoked is different from the parent disabling sharing: retain
+      // the status heartbeat so the parent can be notified about lost permission.
+      await syncTracking(true, labels());
     }
   }, [trackLocation, labels]);
 

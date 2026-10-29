@@ -4,6 +4,15 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      upload_testflight:
+        description: Upload the signed iOS build to TestFlight
+        type: boolean
+        default: false
+      publish_release:
+        description: Publish build artifacts as a GitHub release
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -26,6 +35,8 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
       - run: npm test -- --ci
 
   android:
@@ -92,7 +103,7 @@ jobs:
             echo "::warning title=Test signature::ANDROID_KEYSTORE_B64 / ANDROID_KEYSTORE_PASSWORD / ANDROID_KEY_ALIAS / ANDROID_KEY_PASSWORD secrets are not set, so the APK is signed with the public React Native debug key. Use it for testing only."
             echo "signing=debug" >> "$GITHUB_OUTPUT"
           fi
-          ./gradlew assembleRelease --no-daemon -PreactNativeArchitectures=arm64-v8a,armeabi-v7a "${signing[@]}"
+          ./gradlew :screen-guard:testReleaseUnitTest assembleRelease --no-daemon -PreactNativeArchitectures=arm64-v8a,armeabi-v7a "${signing[@]}"
           mkdir -p ../out && cp app/build/outputs/apk/release/app-release.apk ../out/Uroki.apk
           # a lighter APK for 32-bit phones (Galaxy A11 and other budget models): about half the size
           ./gradlew assembleRelease --no-daemon -PreactNativeArchitectures=armeabi-v7a "${signing[@]}"
@@ -127,6 +138,7 @@ jobs:
       EAS_PROJECT_ID: ${{ secrets.EAS_PROJECT_ID }}
     outputs:
       testflight: ${{ steps.mode.outputs.signed }}
+      uploaded: ${{ steps.upload.outcome == 'success' }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
@@ -238,8 +250,16 @@ jobs:
             -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID" > export.log 2>&1 \
             || (tail -n 150 export.log; exit 1)
           ls "$RUNNER_TEMP/export"
-      - name: Upload to TestFlight
+      - name: Save signed IPA as a build artifact
         if: steps.mode.outputs.signed == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ios-signed
+          path: ${{ runner.temp }}/export/*.ipa
+          if-no-files-found: error
+      - name: Upload to TestFlight
+        id: upload
+        if: steps.mode.outputs.signed == 'true' && inputs.upload_testflight == true
         env:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
@@ -271,7 +291,7 @@ jobs:
 
   release:
     needs: [android, ios]
-    if: always() && (needs.android.result == 'success' || needs.ios.result == 'success')
+    if: always() && inputs.publish_release == true && (needs.android.result == 'success' || needs.ios.result == 'success')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
@@ -287,5 +307,5 @@ jobs:
           files: out/*
           body: |
             **Android:** скачайте `Uroki.apk` на телефон и откройте (разрешите установку из этого источника). Для 32-битных телефонов (Samsung Galaxy A11 и подобные) есть облегчённый `Uroki-32bit.apk`.
-            **iPhone:** ${{ needs.ios.result == 'success' && needs.ios.outputs.testflight == 'true' && format('сборка {0} загружена в TestFlight (появится там после обработки Apple, обычно 5–30 минут).', github.run_number) || needs.ios.outputs.testflight == 'true' && 'сборка для TestFlight в этот раз не удалась, см. журнал задачи ios.' || '`Uroki-unsigned.ipa` нужно подписать своим Apple ID через Sideloadly или AltStore (бесплатный Apple ID — приложение работает 7 дней, потом переподписать).' }}
+            **iPhone:** ${{ needs.ios.outputs.uploaded == 'true' && format('сборка {0} загружена в TestFlight.', github.run_number) || needs.ios.result == 'success' && needs.ios.outputs.testflight == 'true' && 'Подписанный IPA приложен к сборке. Загрузка в TestFlight не выполнялась.' || needs.ios.outputs.testflight == 'true' && 'Сборка iOS не удалась, см. журнал задачи ios.' || '`Uroki-unsigned.ipa` нужно подписать своим Apple ID через Sideloadly или AltStore.' }}
             ${{ needs.android.outputs.signing == 'release' && 'APK подписан закрытым ключом проекта, поэтому новые версии ставятся поверх старых. Если стояла тестовая версия и установка не проходит, удалите её один раз.' || 'Это тестовая сборка: APK подписан общедоступным тестовым ключом. Версии для магазина приложений будут подписаны закрытым ключом, и тестовую версию перед их установкой нужно будет один раз удалить.' }}

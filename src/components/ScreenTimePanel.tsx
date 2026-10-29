@@ -1,5 +1,5 @@
 import { useFocusEffect } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState, Platform, StyleSheet, View } from 'react-native';
 
 import { IosSetupCard } from '@/components/screen/IosScreenTime';
@@ -24,7 +24,7 @@ import { applyIos, iosScreenTimeOn } from '@/lib/screenGuardIos';
 import { addUsage, appName, countedUsage, hmIn, otherUsageOf, remaining, unlockActive } from '@/lib/screenTime';
 import { space, usePalette } from '@/lib/theme';
 
-const POLL_MS = 5 * 60_000;
+const POLL_MS = 30_000;
 
 // Child home: screen time. Fetches the parent's rules, hands them to the Android guard (or, in iOS builds with the
 // iosScreenTime flag, to Apple's Screen Time: lib/screenGuardIos), turns the guard off when the rules are off (or the
@@ -37,6 +37,7 @@ export function ScreenTimePanel() {
   const [usage, setUsage] = useState<UsageToday | null>(null);
   const [starting, setStarting] = useState(false);
   const [failed, setFailed] = useState(false);
+  const refreshing = useRef(false);
 
   const start = useCallback(async (s: ScreenState) => {
     const token = getToken();
@@ -48,37 +49,43 @@ export function ScreenTimePanel() {
   }, []);
 
   const refresh = useCallback(async () => {
-    const status = await guardStatus();
-    setG(status);
-    let s: ScreenState;
+    if (refreshing.current) return;
+    refreshing.current = true;
     try {
-      s = await api.getScreenRules();
-    } catch (e) {
-      if (isPaywall(e)) {
-        setSt(null);
-        if (iosScreenTimeOn) await applyIos(null);
+      const status = await guardStatus();
+      setG(status);
+      let s: ScreenState;
+      try {
+        s = await api.getScreenRules();
+      } catch (e) {
+        if (isPaywall(e)) {
+          setSt(null);
+          if (iosScreenTimeOn) await applyIos(null);
+          if (status.running) {
+            await stopGuard();
+            setG(await guardStatus());
+          }
+        }
+        return; // offline: the guard keeps its last rules and polls by itself
+      }
+      setSt(s);
+      // iOS: recompute shields and schedules on every fetch and foreground (clears everything when the rules are off)
+      if (iosScreenTimeOn) await applyIos(s);
+      if (!status.supported) return;
+      await setGuardRules(s as unknown as Record<string, unknown>);
+      if (!s.rules.enabled) {
         if (status.running) {
           await stopGuard();
           setG(await guardStatus());
         }
+        return;
       }
-      return; // offline: the guard keeps its last rules and polls by itself
+      // set up before (e.g. stopped while the subscription lapsed): start again without asking
+      if (guardReady(status) && !status.running && status.configured) await start(s);
+      setUsage(await usageToday());
+    } finally {
+      refreshing.current = false;
     }
-    setSt(s);
-    // iOS: recompute shields and schedules on every fetch and foreground (clears everything when the rules are off)
-    if (iosScreenTimeOn) await applyIos(s);
-    if (!status.supported) return;
-    await setGuardRules(s as unknown as Record<string, unknown>);
-    if (!s.rules.enabled) {
-      if (status.running) {
-        await stopGuard();
-        setG(await guardStatus());
-      }
-      return;
-    }
-    // set up before (e.g. stopped while the subscription lapsed): start again without asking
-    if (guardReady(status) && !status.running && status.configured) await start(s);
-    setUsage(await usageToday());
   }, [start]);
 
   useFocusEffect(

@@ -110,9 +110,31 @@ export async function requestGeoPermission(): Promise<GeoPermission> {
 // Start the foreground-service location updates and the heartbeat. Idempotent. The foreground-service notification
 // is deliberately visible (not covert): this is open parental monitoring, and Android requires it for background
 // location anyway.
-export async function startTracking(labels: { title: string; body: string }): Promise<void> {
+let transition: Promise<void> = Promise.resolve();
+function serializeTracking(action: () => Promise<void>): Promise<void> {
+  const next = transition.catch(() => {}).then(action);
+  transition = next;
+  return next;
+}
+
+export function startTracking(labels: { title: string; body: string }): Promise<void> {
+  return serializeTracking(() => startTrackingNow(labels));
+}
+
+async function startTrackingNow(labels: { title: string; body: string }): Promise<void> {
   if (!tracked) return;
   await storage.set(WANT_KEY, '1');
+  // Report permission/services status before waiting for a GPS fix (which may never
+  // arrive indoors). Keep the heartbeat when permission is revoked, so the parent
+  // still gets a status report rather than silently losing this device.
+  void postPing({ lat: null, lng: null, accuracy: null, at: null, moving: false });
+  try {
+    if (!(await TaskManager.isTaskRegisteredAsync(HEARTBEAT_TASK))) {
+      await BackgroundFetch.registerTaskAsync(HEARTBEAT_TASK, { minimumInterval: 15 * 60, stopOnTerminate: false, startOnBoot: true });
+    }
+  } catch {
+    // Background fetch is best effort; the location service still reports fixes.
+  }
   const fg = await Location.getForegroundPermissionsAsync();
   if (!fg.granted) return; // nothing to start until the child/parent grants permission on the setup screen
 
@@ -132,16 +154,15 @@ export async function startTracking(labels: { title: string; body: string }): Pr
       },
     });
   }
-  try {
-    await BackgroundFetch.registerTaskAsync(HEARTBEAT_TASK, { minimumInterval: 15 * 60, stopOnTerminate: false, startOnBoot: true });
-  } catch {
-    // background fetch unavailable (e.g. web): the foreground service still reports
-  }
   // report once right away so the parent sees a point without waiting for the first scheduled fix
   void pingNow();
 }
 
-export async function stopTracking(): Promise<void> {
+export function stopTracking(): Promise<void> {
+  return serializeTracking(stopTrackingNow);
+}
+
+async function stopTrackingNow(): Promise<void> {
   if (!tracked) return;
   await storage.set(WANT_KEY, '0');
   try {

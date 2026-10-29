@@ -75,7 +75,10 @@ class GuardService : Service() {
     isRunning = true
     val t = HandlerThread("screen-guard").also { it.start() }
     loopThread = t
-    loop = Handler(t.looper).also { it.post(tickRunnable) }
+    // Publish the handler before the worker can run: otherwise its first tick can observe
+    // loop == null and never schedule another check.
+    loop = Handler(t.looper)
+    loop?.post(tickRunnable)
     val filter = IntentFilter().apply {
       addAction(Intent.ACTION_SCREEN_ON)
       addAction(Intent.ACTION_SCREEN_OFF)
