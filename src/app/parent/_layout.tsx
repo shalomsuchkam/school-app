@@ -48,6 +48,7 @@ export default function ParentTabs() {
       <Tabs.Screen name="calendar" options={{ href: null, title: t('parent.cal.title') }} />
       <Tabs.Screen name="bilimclass" options={{ href: null, title: t('parent.bc.title') }} />
       <Tabs.Screen name="screen" options={{ href: null, title: t('screen.title') }} />
+      <Tabs.Screen name="location" options={{ href: null, title: t('loc.title') }} />
     </Tabs>
   );
 }
