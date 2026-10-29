@@ -1,0 +1,79 @@
+name: Screen time for the GitHub family
+
+# Manual: turns on screen time for the first child of the newest family made by «Create a family»
+# (the one with the helper parent device «GitHub») and sets a daily limit for one app.
+# For owner tests while the parent's phone isn't at hand; parents normally do this in the app.
+on:
+  workflow_dispatch:
+    inputs:
+      pkg:
+        description: Пакет приложения (YouTube = com.google.android.youtube)
+        required: true
+        default: com.google.android.youtube
+      name:
+        description: Название приложения
+        required: true
+        default: YouTube
+      minutes:
+        description: Лимит в минутах в день
+        required: true
+        default: '1'
+
+permissions:
+  contents: read
+
+jobs:
+  rules:
+    runs-on: ubuntu-latest
+    env:
+      SSH_HOST: ${{ secrets.SELFHOST_HOST }}
+      SSH_USER: ${{ secrets.SELFHOST_USER }}
+      SSH_KEY: ${{ secrets.SELFHOST_SSH_KEY }}
+      PKG: ${{ inputs.pkg }}
+      APP_NAME: ${{ inputs.name }}
+      MINUTES: ${{ inputs.minutes }}
+    steps:
+      - name: Check the input
+        run: |
+          [[ $PKG =~ ^[A-Za-z0-9._]{3,200}$ ]] || { echo "::error::bad package name"; exit 1; }
+          [[ $MINUTES =~ ^[0-9]{1,4}$ ]] && [ "$MINUTES" -ge 1 ] && [ "$MINUTES" -le 1440 ] || { echo "::error::minutes: 1..1440"; exit 1; }
+          [[ $APP_NAME =~ ^[[:alnum:][:space:]._-]{1,40}$ ]] || { echo "::error::bad app name"; exit 1; }
+      - name: Set the rules on the server
+        run: |
+          set -euo pipefail
+          install -m 700 -d ~/.ssh
+          key=$(printf '%s' "$SSH_KEY" | tr -d '\r')
+          if ! printf '%s' "$key" | grep -q 'PRIVATE KEY-----'; then key=$(printf '%s' "$key" | tr -d ' \n' | base64 -d | tr -d '\r'); fi
+          printf '%s\n' "$key" > ~/.ssh/k && chmod 600 ~/.ssh/k
+          ssh-keyscan -T 20 "$SSH_HOST" > ~/.ssh/known_hosts 2>/dev/null
+          sudo_cmd="sudo -n"; [ "$SSH_USER" = root ] && sudo_cmd=""
+          ssh -i ~/.ssh/k -o BatchMode=yes "$SSH_USER@$SSH_HOST" "$sudo_cmd bash -s -- '$PKG' '$APP_NAME' '$MINUTES'" <<'REMOTE' | tee out.txt
+          set -euo pipefail
+          . /opt/uroki/kit/lib.sh
+          db_psql -At -v pkg="$1" -v name="$2" -v min="$3" -f - <<'SQL'
+          with fam as (
+            select f.id from public.app_families f
+             where exists (select 1 from public.app_devices d where d.family_id = f.id and d.role = 'parent' and d.name = 'GitHub')
+             order by f.created_at desc limit 1
+          ), kid as (
+            select c.id, c.family_id, c.name from public.app_children c join fam on c.family_id = fam.id order by c.pos, c.id limit 1
+          ), lim as (
+            select jsonb_build_object('pkg', :'pkg', 'name', :'name', 'minutes', (:'min')::int) as l
+          )
+          insert into public.app_screen_rules (child_id, family_id, enabled, enabled_at, app_limits, updated_at)
+          select kid.id, kid.family_id, true, now(), jsonb_build_array(lim.l), now() from kid, lim
+          on conflict (child_id) do update set
+            enabled = true,
+            enabled_at = coalesce(public.app_screen_rules.enabled_at, now()),
+            app_limits = (select coalesce(jsonb_agg(x), '[]'::jsonb) from jsonb_array_elements(public.app_screen_rules.app_limits) x
+                           where x->>'pkg' <> :'pkg') || jsonb_build_array((select l from lim)),
+            updated_at = now()
+          returning 'child ' || child_id || ': screen time on, limits ' || app_limits::text;
+          SQL
+          REMOTE
+          rm -f ~/.ssh/k
+          if grep -q '^child ' out.txt; then
+            echo "Готово: экранное время включено, лимит $APP_NAME — $MINUTES мин в день." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::error::no family made by «Create a family» was found"; exit 1
+          fi
