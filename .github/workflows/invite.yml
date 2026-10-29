@@ -33,7 +33,7 @@ jobs:
           ssh-keyscan -T 20 "$SSH_HOST" > ~/.ssh/known_hosts 2>/dev/null
           sudo_cmd="sudo -n"; [ "$SSH_USER" = root ] && sudo_cmd=""
           # 6 characters from the app's own invite alphabet style (no 0/O/1/I)
-          code=$(tr -dc 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789' < /dev/urandom | head -c 6)
+          code=$(python3 -c "import secrets; a='ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; print(''.join(secrets.choice(a) for _ in range(6)))")
           ssh -i ~/.ssh/k -o BatchMode=yes "$SSH_USER@$SSH_HOST" "$sudo_cmd bash -s -- '$code' '$ROLE'" <<'REMOTE' | tee out.txt
           set -euo pipefail
           . /opt/uroki/kit/lib.sh
