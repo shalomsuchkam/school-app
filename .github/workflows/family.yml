@@ -1,0 +1,74 @@
+name: Create a family
+
+# Manual: creates a family on the server without a phone and prints one-time codes (48 h) to join it:
+# a parent code for the parent's phone and a child code for the child's phone. The family gets free access
+# through a one-use promo code made on the server. A helper parent device «GitHub» is created to make the
+# invites; remove it later in the app (Settings → Family) once the parent's phone has joined.
+on:
+  workflow_dispatch:
+    inputs:
+      child_name:
+        description: Имя ребёнка
+        required: true
+        default: Ученик
+      free:
+        description: Бесплатный доступ навсегда (промокод на одну семью)
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  family:
+    runs-on: ubuntu-latest
+    env:
+      API: https://api.urokiapp.kz/functions/v1/app
+      CHILD_NAME: ${{ inputs.child_name }}
+      SSH_HOST: ${{ secrets.SELFHOST_HOST }}
+      SSH_USER: ${{ secrets.SELFHOST_USER }}
+      SSH_KEY: ${{ secrets.SELFHOST_SSH_KEY }}
+    steps:
+      - name: Create the family and the invite codes
+        id: fam
+        run: |
+          set -euo pipefail
+          call() { # method path [json]
+            curl -sS --fail-with-body -X "$1" "$API$2" -H 'content-type: application/json' \
+              ${TOKEN:+-H "authorization: Bearer $TOKEN"} -H 'x-platform: web' ${3:+--data "$3"}
+          }
+          body=$(jq -n --arg c "$CHILD_NAME" '{consent: true, child_name: $c, parent_name: "GitHub", lang: "ru", country: "KZ", tz: "Asia/Almaty", platform: "web"}')
+          TOKEN=$(call POST /family "$body" | jq -r .token)
+          echo "::add-mask::$TOKEN"
+          echo "token=$TOKEN" >> "$GITHUB_OUTPUT"
+          parent=$(call POST /invite '{"role":"parent"}' | jq -r .code)
+          child=$(call POST /invite '{"role":"child"}' | jq -r .code)
+          {
+            echo "## Семья создана: $CHILD_NAME"
+            echo
+            echo "| Кому | Код (действует 48 часов, один раз) |"
+            echo "|---|---|"
+            echo "| Телефон родителя | \`$parent\` |"
+            echo "| Телефон ребёнка | \`$child\` |"
+            echo
+            echo "В приложении на первом экране: «У меня есть код» → ввести код."
+            echo "Когда войдёте с телефона родителя, удалите служебное устройство «GitHub»: Настройки → Семья."
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Free access (one-use promo code made on the server)
+        if: inputs.free
+        env:
+          TOKEN: ${{ steps.fam.outputs.token }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d ~/.ssh
+          key=$(printf '%s' "$SSH_KEY" | tr -d '\r')
+          if ! printf '%s' "$key" | grep -q 'PRIVATE KEY-----'; then key=$(printf '%s' "$key" | tr -d ' \n' | base64 -d | tr -d '\r'); fi
+          printf '%s\n' "$key" > ~/.ssh/k && chmod 600 ~/.ssh/k
+          ssh-keyscan -T 20 "$SSH_HOST" > ~/.ssh/known_hosts 2>/dev/null
+          sudo_cmd="sudo -n"; [ "$SSH_USER" = root ] && sudo_cmd=""
+          code=$(ssh -i ~/.ssh/k -o BatchMode=yes "$SSH_USER@$SSH_HOST" "$sudo_cmd /opt/uroki/kit/promo.sh --forever --uses 1 --note 'family.yml: $CHILD_NAME'" | tail -1 | tr -d '\r ')
+          rm -f ~/.ssh/k
+          echo "::add-mask::$code"
+          curl -sS --fail-with-body -X POST "$API/parent/promo" -H 'content-type: application/json' \
+            -H "authorization: Bearer $TOKEN" --data "{\"code\":\"$code\"}" > /dev/null
+          echo "Бесплатный доступ: включён навсегда." >> "$GITHUB_STEP_SUMMARY"
