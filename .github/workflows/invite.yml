@@ -55,5 +55,6 @@ jobs:
           rm -f ~/.ssh/k
           grep -q '^ok ' out.txt || { echo "::error::no family made by «Create a family» was found"; exit 1; }
           who=$([ "$ROLE" = child ] && echo "телефона ребёнка" || echo "телефона родителя")
+          echo "code: $code"
           echo "## Новый код для $who: \`$code\`" >> "$GITHUB_STEP_SUMMARY"
           echo "Действует 48 часов, один раз. В приложении: «У меня есть код» → ввести код." >> "$GITHUB_STEP_SUMMARY"
