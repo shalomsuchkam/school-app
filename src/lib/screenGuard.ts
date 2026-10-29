@@ -13,6 +13,8 @@ export type GuardStatus = {
   configured: boolean;
 };
 
+/** The guard's copy of the child session (what `start` was given; `stop` clears it). */
+export type GuardSession = { token: string; childId: string; apiBase: string | null };
 export type InstalledApp = { pkg: string; name: string };
 export type UsageToday = { total_min: number; apps: Record<string, number> };
 
@@ -23,6 +25,7 @@ type Native = {
   openBatterySettings(): Promise<boolean>;
   start(config: { apiBase: string; token: string; childId: string }): Promise<boolean>;
   stop(): Promise<boolean>;
+  storedSession(): Promise<GuardSession | null>;
   setRules(snapshot: Record<string, unknown>): Promise<boolean>;
   installedApps(): Promise<InstalledApp[]>;
   usageToday(): Promise<UsageToday>;
@@ -62,6 +65,8 @@ export const openBatterySettings = () => call((n) => n.openBatterySettings(), fa
 export const startGuard = (config: { apiBase: string; token: string; childId: string }) =>
   call((n) => n.start(config), false);
 export const stopGuard = () => call((n) => n.stop(), false);
+/** null off Android, when the guard was never started or was stopped, and on builds whose module predates it. */
+export const storedGuardSession = () => call((n) => n.storedSession(), null as GuardSession | null);
 /** Hands a fresh GET /screen/rules response to the guard right away (it also polls every 5 minutes). */
 export const setGuardRules = (snapshot: Record<string, unknown>) => call((n) => n.setRules(snapshot), false);
 export const installedApps = () => call((n) => n.installedApps(), [] as InstalledApp[]);

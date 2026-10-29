@@ -7,6 +7,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
+import { Loading } from '@/components/ui';
 import { isViewer, setTooOldHandler } from '@/lib/api';
 import { initAppearance, refreshAppearance } from '@/lib/appearance';
 import { AuthProvider, useAuth } from '@/lib/auth';
@@ -31,7 +32,7 @@ setTooOldHandler(() => {
 });
 
 function Root() {
-  const { session } = useAuth();
+  const { session, loadFailed, retryLoad } = useAuth();
   const p = usePalette();
   const [langReady, setLangReady] = useState(false);
   useEffect(() => {
@@ -44,7 +45,7 @@ function Root() {
   // the whole tree re-renders in the new language when it is switched in Settings
   const lang = useLang();
   // the platform font (SF / Roboto) needs no loading: the splash only waits for the language and the session
-  const ready = langReady && session !== undefined;
+  const ready = langReady && (session !== undefined || loadFailed);
   // Register this phone for server push once signed in (parents are asked for permission here;
   // the child is asked on the home screen together with local reminders).
   useEffect(() => {
@@ -55,6 +56,8 @@ function Root() {
     if (ready) SplashScreen.hideAsync().catch(() => {});
   }, [ready]);
   if (!ready) return null;
+  // the saved sign-in could not be read (a Keystore hiccup): offer a retry, never the welcome screen
+  if (loadFailed) return <Loading error={t('common.sessionReadFail')} onRetry={retryLoad} />;
   return (
     <Stack key={lang} screenOptions={{ headerShown: false, contentStyle: { backgroundColor: p.bg }, animation: 'fade' }}>
       <Stack.Screen name="index" />

@@ -172,7 +172,8 @@ status(): Promise<{ supported, usage_access, overlay, battery_ok, running, confi
 openUsageAccessSettings(): Promise<void>; openOverlaySettings(): Promise<void>
 openBatterySettings(): Promise<void>
 start(config: { apiBase, token, childId }): Promise<void>  // foreground service: polls rules, reports usage
-stop(): Promise<void>
+stop(): Promise<void>                                       // also clears the stored config (logout)
+storedSession(): Promise<{ token, childId, apiBase } | null> // the stored config; the app restores a lost session from it
 setRules(snapshot: { rules: ScreenRules, homework_done: boolean, tz: string }): Promise<void> // immediate refresh
 installedApps(): Promise<{ pkg, name }[]>; usageToday(): Promise<{ total_min, apps: Record<string, number> }>
 ```

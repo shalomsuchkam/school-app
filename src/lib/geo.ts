@@ -4,6 +4,7 @@ import * as TaskManager from 'expo-task-manager';
 import { Platform } from 'react-native';
 
 import { API_BASE } from './api';
+import { readSessionToken } from './sessionStore';
 import { storage } from './storage';
 
 // Child location tracking (docs/LOCATION.md). The child's phone reports its position to the server on a background
@@ -19,8 +20,6 @@ export const HEARTBEAT_TASK = 'uroki-location-heartbeat';
 
 // Persisted desire to track, so a relaunch/boot can resume without waiting for the first /child/state.
 const WANT_KEY = 'uroki.geo.want.v1';
-// The session token lives here (set by src/lib/auth.tsx); a headless task reads it straight from SecureStore.
-const SESSION_KEY = 'uroki.session.v2';
 
 type Perm = 'always' | 'while' | 'denied' | 'unknown';
 
@@ -42,8 +41,8 @@ async function currentPerm(): Promise<Perm> {
 // module-level token may be unset. Never throws — a failed ping is retried on the next schedule.
 async function postPing(p: { lat: number | null; lng: number | null; accuracy: number | null; at: string | null; moving: boolean }) {
   try {
-    const raw = await storage.get(SESSION_KEY);
-    const token = raw ? (JSON.parse(raw)?.token as string | undefined) : undefined;
+    // read only (SecureStore, else its mirror): a headless task never restores or rewrites the session
+    const token = await readSessionToken();
     if (!token) return;
     const [services_on, perm] = await Promise.all([
       Location.hasServicesEnabledAsync().catch(() => true),

@@ -8,8 +8,9 @@ import { PhoneLimitGuide } from '@/components/PhoneLimitGuide';
 import { PhotoViewer } from '@/components/PhotoViewer';
 import { ParentTaskCard } from '@/components/TaskCards';
 import { Badge, Banner, Btn, Card, Empty, ErrorBanner, Field, Group, haptic, Icon, IconBtn, Loading, PressableScale, Row, Screen, SectionLabel, Segmented, SegmentBar, Sheet, Txt, useLayout, useToast } from '@/components/ui';
-import { api, ApiError, isDone, isPaywall, type Child, type Day, type Me, type Overview, type ParentAction, type Task } from '@/lib/api';
+import { api, isDone, isPaywall, type Child, type Day, type Me, type Overview, type ParentAction, type Task } from '@/lib/api';
 import { useAuth, useIsViewer } from '@/lib/auth';
+import { deviceSignedOut } from '@/lib/sessionStore';
 import { ChildSwitcher, currentChildReady, getCurrentChild, setCurrentChild, useCurrentChild } from '@/lib/currentChild';
 import { lastSeen, longDate, toMin } from '@/lib/format';
 import { tn, useT } from '@/lib/i18n';
@@ -86,7 +87,7 @@ export default function Today() {
       setToday(todayIn(me.family.tz));
     } catch (e) {
       if (isPaywall(e)) return setPaywall(true);
-      if (e instanceof ApiError && e.status === 401) {
+      if (await deviceSignedOut(e)) {
         await signOut();
         router.replace('/welcome');
         return;

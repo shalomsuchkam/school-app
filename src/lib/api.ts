@@ -229,7 +229,9 @@ export type ScreenState = {
 export type ScreenPatch = Partial<Omit<ScreenRules, 'child_id' | 'unlock_until' | 'updated_at'>> & { child_id: number };
 
 export class ApiError extends Error {
-  constructor(message: string, public status: number) {
+  // authed: the request carried a session token, so a 401 means the server rejected *this device's* token
+  // (and not "no token was set yet").
+  constructor(message: string, public status: number, public authed = false) {
     super(message);
   }
 }
@@ -265,7 +267,7 @@ async function call<T>(method: string, path: string, body?: unknown, raw?: Raw):
   const min = Number(r.headers.get('x-min-build') ?? 0);
   if (min && min > appBuild()) onTooOld?.();
   const data = await r.json().catch(() => ({}));
-  if (!r.ok) throw new ApiError(data.error || t('common.serverError'), r.status);
+  if (!r.ok) throw new ApiError(data.error || t('common.serverError'), r.status, headers.authorization !== undefined);
   return data as T;
 }
 
@@ -398,6 +400,8 @@ export const api = {
 export const legalUrl = (kind: 'terms' | 'privacy', lang = 'ru') => `${API_BASE}/legal/${kind}?lang=${lang === 'en' || lang === 'kk' ? lang : 'ru'}`;
 // 402 = the family's subscription is not active.
 export const isPaywall = (e: unknown) => e instanceof ApiError && e.status === 402;
+/** The server rejected the token this device sent (401 on an authenticated call). */
+export const isTokenRejected = (e: unknown) => e instanceof ApiError && e.status === 401 && e.authed;
 
 // A read-only tutor / teacher device.
 export const isViewer = (r: Role | null | undefined) => r === 'viewer';

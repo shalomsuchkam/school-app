@@ -17,10 +17,11 @@ import { NoteSheet, SkipSheet } from '@/components/SkipSheet';
 import { ChildTaskCard } from '@/components/TaskCards';
 import { Banner, Btn, Card, CONTENT_MAX, Empty, ErrorBanner, Group, haptic, Icon, IconBtn, type IconName, IconTile, Loading, PressableScale, ProgressBar, Screen, SectionLabel, Sheet, Stat, TextScale, ToggleRow, Txt, useLayout, useToast } from '@/components/ui';
 import { VoiceSheet } from '@/components/VoiceNote';
-import { api, ApiError, isPaywall, isDone, type ChildState, type Task } from '@/lib/api';
+import { api, isPaywall, isDone, type ChildState, type Task } from '@/lib/api';
 import { BIG_TEXT_SCALE, setBigText, useAppearance } from '@/lib/appearance';
 import type { Quiet } from '@/lib/quiet';
 import { useAuth } from '@/lib/auth';
+import { deviceSignedOut } from '@/lib/sessionStore';
 import { duration, longDate, shortDate } from '@/lib/format';
 import { t as tr, tn, useT } from '@/lib/i18n';
 import { exactAlarmsAllowed, openExactAlarmSettings } from '@/lib/exactAlarm';
@@ -228,7 +229,7 @@ export default function ChildHome() {
         setPaywall(true);
         return;
       }
-      if (e instanceof ApiError && e.status === 401) {
+      if (await deviceSignedOut(e)) {
         await cancelReminders();
         await signOut();
         router.replace('/welcome');

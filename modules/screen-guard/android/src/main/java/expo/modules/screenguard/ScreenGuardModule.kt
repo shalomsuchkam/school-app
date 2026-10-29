@@ -63,6 +63,21 @@ class ScreenGuardModule : Module() {
       true
     }
 
+    // The guard's own copy of the child session (set by start, cleared by stop). The app restores its session from it
+    // when its SecureStore copy is lost (src/lib/sessionStore.ts); null when the guard is not configured.
+    AsyncFunction("storedSession") {
+      val store = GuardStore(context)
+      val token = store.token
+      val childId = store.childId
+      val out: Map<String, String?>? =
+        if (store.configured && !token.isNullOrEmpty() && !childId.isNullOrEmpty()) {
+          mapOf("token" to token, "childId" to childId, "apiBase" to store.apiBase)
+        } else {
+          null
+        }
+      out
+    }
+
     AsyncFunction("stop") {
       GuardService.stop(context)
       GuardStore(context).clearConfig()
