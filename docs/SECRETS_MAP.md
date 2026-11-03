@@ -14,7 +14,11 @@ GitHub их не показывает (можно только заменить)
 | `BACKUP_PASSPHRASE` | пароль шифрования резервных копий базы | только у владельца (записан при создании). Без него копию не открыть |
 | `SUPABASE_ACCESS_TOKEN`, `SUPABASE_DB_URL` | старое облако Supabase — **больше не нужны** | — |
 | `PLAY_SERVICE_ACCOUNT_JSON` | (ещё не создан) автозагрузка в Google Play | Play Console → Setup → API access |
-| `RC_IOS_KEY`, `RC_ANDROID_KEY`, `EAS_PROJECT_ID` | (ещё не созданы) RevenueCat и push-сервис Expo | RevenueCat / expo.dev |
+| `RC_IOS_KEY`, `RC_ANDROID_KEY` | RevenueCat (платежи; не относятся к push) | RevenueCat |
+| `EAS_PROJECT_ID` | идентификатор проекта push Expo (настроен) | Expo → организация `kontrol-dz` → проект `uroki` |
+| `GOOGLE_SERVICES_JSON` | конфигурация Firebase Android для `kz.uroki.app` | Firebase → KontrolDZ → Project settings → Android app |
+| `FCM_SERVICE_ACCOUNT_JSON` | ключ отправки FCM; только Firebase Cloud Messaging API Admin в проекте KontrolDZ | Google Cloud → IAM → service account `kontrol-dz-expo-push`; используется в Expo |
+| `APNS_KEY_ID`, `APNS_KEY_P8` | APNs production, topic-specific, только `kz.uroki.app`; используется в Expo | Apple Developer → Keys → Kontrol DZ Push; не путать с ключом ASC |
 
 ## 2. Компьютер владельца (Windows)
 
@@ -24,7 +28,9 @@ GitHub их не показывает (можно только заменить)
 | `C:\Users\1\uroki_deploy.pub` | его открытая часть (лежит на сервере в `/home/ubuntu/.ssh/authorized_keys`) — не секрет |
 | `C:\Users\1\.ssh\id_ed25519` | старый личный SSH-ключ (тоже пускает на сервер как `ubuntu`) |
 | `uroki-release.keystore` + `github-secrets.txt` | ключ подписи Android и пароли к нему — **хранить в двух местах** (флешка/облако) |
-| `AuthKey_XXXXXXXX.p8` | ключ App Store Connect API (если сохранён) |
+| `AuthKey_XXXXXXXX.p8` | ключ App Store Connect API (если сохранён); это отдельный ключ от APNs |
+| `C:\Users\1\.codex\kontrol-dz-private\fcm-expo-push.json` | резервная копия FCM-ключа; не коммитить и не пересылать |
+| `C:\Users\1\.codex\kontrol-dz-private\AuthKey_*.p8` | резервная копия APNs production-ключа; не коммитить и не пересылать |
 
 ## 3. Сервер ps.kz (Алматы, 194.110.54.193)
 
@@ -47,6 +53,8 @@ GitHub их не показывает (можно только заменить)
 | Apple Developer / App Store Connect (Team ID в секрете `APPLE_TEAM_ID`) | приложение «Контроль ДЗ», TestFlight, Family Controls |
 | Google Play Console | приложение `kz.uroki.app`, внутренний и закрытый тест |
 | Gmail urokikazakhstan@gmail.com | почта поддержки, указана в магазинах и политике |
+| Expo: пользователь `kontrol-dz-kz`, организация `kontrol-dz`, проект `uroki` | push FCM/APNs; бесплатный аккаунт, ключи подписи Android не загружены |
+| Firebase / Google Cloud: KontrolDZ (`kontroldz-cb3b5`) | Android push, Spark; Google Analytics не подключён |
 | Supabase (старое облако) | старая система — не трогать |
 
 ## 5. Приложение
@@ -54,3 +62,4 @@ GitHub их не показывает (можно только заменить)
 Входа по паролю нет: устройство входит в семью **одноразовым кодом** (по умолчанию 48 ч). Код создаёт родитель в
 приложении, а без телефона — GitHub Actions → «New code for the GitHub family». Токен устройства хранится в
 защищённом хранилище телефона (SecureStore), на сервере — только его хэш.
+

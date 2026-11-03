@@ -162,22 +162,23 @@ async function startTrackingNow(labels: { title: string; body: string }): Promis
   const fg = await Location.getForegroundPermissionsAsync();
   if (!fg.granted) return; // nothing to start until the child/parent grants permission on the setup screen
 
-  if (!(await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK))) {
-    await Location.startLocationUpdatesAsync(LOCATION_TASK, {
-      accuracy: Location.Accuracy.Balanced,
-      timeInterval: 3 * 60_000, // at most ~ every 3 min when still…
-      distanceInterval: 60, // …or every 60 m of movement
-      deferredUpdatesInterval: 2 * 60_000,
-      pausesUpdatesAutomatically: false,
-      showsBackgroundLocationIndicator: true,
-      foregroundService: {
-        notificationTitle: labels.title,
-        notificationBody: labels.body,
-        notificationColor: '#2A4BB0',
-        killServiceOnDestroy: false,
-      },
-    });
-  }
+  // A persisted task registration does not prove its Android foreground service
+  // is alive (for example after restoring the task with location switched off).
+  // Reapplying options lets Expo restart the existing consumer and service.
+  await Location.startLocationUpdatesAsync(LOCATION_TASK, {
+    accuracy: Location.Accuracy.Balanced,
+    timeInterval: 3 * 60_000, // at most ~ every 3 min when still…
+    distanceInterval: 60, // …or every 60 m of movement
+    deferredUpdatesInterval: 2 * 60_000,
+    pausesUpdatesAutomatically: false,
+    showsBackgroundLocationIndicator: true,
+    foregroundService: {
+      notificationTitle: labels.title,
+      notificationBody: labels.body,
+      notificationColor: '#2A4BB0',
+      killServiceOnDestroy: false,
+    },
+  });
   // report once right away so the parent sees a point without waiting for the first scheduled fix
   void pingNow();
 }

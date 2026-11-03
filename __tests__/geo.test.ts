@@ -44,6 +44,13 @@ it('defines location and heartbeat handlers on module import, without mounting a
   expect(TaskManager.defineTask).toHaveBeenCalledWith(HEARTBEAT_TASK, expect.any(Function));
 });
 
+it('restarts a registered location task whose foreground service may have stopped', async () => {
+  jest.mocked(Location.hasStartedLocationUpdatesAsync).mockResolvedValue(true);
+  await startTracking(labels);
+  expect(Location.startLocationUpdatesAsync).toHaveBeenCalledWith(LOCATION_TASK,
+    expect.objectContaining({ foregroundService: expect.objectContaining({ killServiceOnDestroy: false }) }));
+});
+
 it('retains a permission-status heartbeat when the child revokes location', async () => {
   jest.mocked(Location.getForegroundPermissionsAsync).mockResolvedValue({ granted: false } as any);
   await startTracking(labels);
