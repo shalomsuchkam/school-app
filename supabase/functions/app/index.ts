@@ -557,7 +557,15 @@ async function route(req: Request, path: string): Promise<Response> {
   // --- everyone ---
   if (path === "/push" && M === "POST") {
     const b = await body(req);
-    await db.from("app_devices").update({ push_token: clean(b.token, 200) || null }).eq("id", d.id);
+    const token = clean(b.token, 200) || null;
+    if (token) {
+      // One installation can move between families. Retaining this token on its
+      // old device row would deliver the previous family's private notifications.
+      const { error } = await db.from("app_devices").update({ push_token: null }).eq("push_token", token).neq("id", d.id);
+      if (error) throw new HttpError(500, "Не удалось обновить уведомления");
+    }
+    const { error } = await db.from("app_devices").update({ push_token: token }).eq("id", d.id);
+    if (error) throw new HttpError(500, "Не удалось обновить уведомления");
     return json({ ok: true });
   }
   // read-only dashboards: parents and viewers
