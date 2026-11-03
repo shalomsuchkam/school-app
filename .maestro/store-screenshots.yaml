@@ -9,6 +9,18 @@ appId: kz.uroki.app
       visible: "Open|Открыть"
     commands:
       - tapOn: "Open|Открыть"
+- runFlow:
+    when:
+      visible: ".*(I have a code|У меня есть код).*"
+    commands:
+      # A first launch can finish hydration after the OS opens the link.
+      # Reopen it only when the welcome screen is visibly still active.
+      - openLink: "uroki://join?code=${REVIEW_CODE}"
+      - runFlow:
+          when:
+            visible: "Open|Открыть"
+          commands:
+            - tapOn: "Open|Открыть"
 - takeScreenshot: "${OUTPUT}/00-join-debug"
 - extendedWaitUntil:
     visible: "Join|Войти"
