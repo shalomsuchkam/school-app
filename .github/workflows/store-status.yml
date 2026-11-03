@@ -44,7 +44,8 @@ jobs:
           console.log(`::add-mask::${token}`);
           async function request(path, method='GET', body) {
             const r = await fetch('https://api.appstoreconnect.apple.com/v1/'+path,{method,headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},...(body ? {body:JSON.stringify(body)} : {})});
-            const data=await r.json();
+            const raw=await r.text();
+            const data=raw ? JSON.parse(raw) : {data:null};
             if(!r.ok) throw new Error(JSON.stringify({status:r.status,errors:data.errors}));
             return data.data;
           }
@@ -61,6 +62,8 @@ jobs:
                 const build=builds.find(x=>x.attributes.version===process.env.RELEASE_BUILD && x.attributes.processingState==='VALID');
                 if(!build) throw new Error('Requested build is not yet VALID: '+process.env.RELEASE_BUILD);
                 await request(`appStoreVersions/${version.id}/relationships/build`,'PATCH',{data:{type:'builds',id:build.id}});
+                const linked=await get(`appStoreVersions/${version.id}/build`);
+                if(linked?.id !== build.id) throw new Error('Build relationship verification failed');
                 console.log('BUILD_LINKED',process.env.RELEASE_BUILD,version.id);
               }
               if(process.env.PREPARE_METADATA === 'true' && process.env.REVIEW_NOTES && version.attributes.appStoreState === 'PREPARE_FOR_SUBMISSION') {
