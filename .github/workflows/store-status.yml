@@ -24,6 +24,7 @@ jobs:
           ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
           CONFIGURE_CONTROLS: ${{ inputs.configure_family_controls }}
           PREPARE_METADATA: ${{ inputs.prepare_metadata }}
+          REVIEW_NOTES: ${{ secrets.STORE_REVIEW_NOTES }}
         shell: bash
         run: |
           node --input-type=module <<'NODE'
@@ -50,6 +51,14 @@ jobs:
             console.log('VERSIONS',JSON.stringify(versions.map(x=>({id:x.id,...x.attributes}))));
             console.log('BUILDS',JSON.stringify((await get(`builds?filter[app]=${app.id}&sort=-uploadedDate&limit=5`)).map(x=>({id:x.id,version:x.attributes.version,state:x.attributes.processingState}))));
             for(const version of versions) {
+              if(process.env.PREPARE_METADATA === 'true' && process.env.REVIEW_NOTES && version.attributes.appStoreState === 'PREPARE_FOR_SUBMISSION') {
+                let detail;
+                try { detail=await get(`appStoreVersions/${version.id}/appStoreReviewDetail`); } catch (e) { if(!e.message.includes('404')) throw e; }
+                const attributes={notes:process.env.REVIEW_NOTES,demoAccountRequired:true,demoAccountName:'Invite codes in Notes',demoAccountPassword:'No password; use I have a code'};
+                if(detail) await request(`appStoreReviewDetails/${detail.id}`,'PATCH',{data:{type:'appStoreReviewDetails',id:detail.id,attributes}});
+                else await request('appStoreReviewDetails','POST',{data:{type:'appStoreReviewDetails',attributes,relationships:{appStoreVersion:{data:{type:'appStoreVersions',id:version.id}}}}});
+                console.log('REVIEW_NOTES_SAVED',version.id);
+              }
               const locs=await get(`appStoreVersions/${version.id}/appStoreVersionLocalizations`);
               for(const loc of locs) {
                 if(process.env.PREPARE_METADATA === 'true' && version.attributes.appStoreState === 'PREPARE_FOR_SUBMISSION' && loc.attributes.locale === 'ru') {
