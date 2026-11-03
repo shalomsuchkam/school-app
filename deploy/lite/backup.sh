@@ -25,6 +25,11 @@ if [ "${1:-}" = --stdout ]; then
 fi
 
 umask 077
+mkdir -p "$BACKUP_DIR"
+# The timer and the manual CI check can overlap. Never write the same daily
+# archive concurrently; flock is released automatically when the process exits.
+exec 9>"$BACKUP_DIR/.backup.lock"
+flock 9
 day=$(date +%F)
 out=$BACKUP_DIR/$day
 mkdir -p "$out"
@@ -51,7 +56,13 @@ log "storage files -> $out/storage.tar.gz"
 tar -C "$DATA_DIR" -czf "$out/storage.tar.gz.tmp" storage
 mv "$out/storage.tar.gz.tmp" "$out/storage.tar.gz"
 
-find "$BACKUP_DIR" -mindepth 1 -maxdepth 1 -type d -name '20*' -mtime +$((KEEP_DAYS - 1)) -exec rm -rf {} +
+# Compare ISO folder dates, not rounded mtimes: a daily run with -mtime can keep
+# eight calendar days and delay deletion beyond the stated seven-day retention.
+cutoff=$(date -d "$KEEP_DAYS days ago" +%F)
+while IFS= read -r -d '' candidate; do
+  name=${candidate##*/}
+  if [[ "$name" < "$cutoff" || "$name" = "$cutoff" ]]; then rm -rf -- "$candidate"; fi
+done < <(find "$BACKUP_DIR" -mindepth 1 -maxdepth 1 -type d -name '20??-??-??' -print0)
 log "backup done: $(du -sh "$out" | cut -f1); kept: $(find "$BACKUP_DIR" -mindepth 1 -maxdepth 1 -type d -name '20*' | wc -l) day(s)"
 free_pct=$(df --output=pcent "$UROKI_DIR" | tail -1 | tr -dc '0-9')
 [ "$free_pct" -lt 85 ] || warn "disk is ${free_pct}% full"
