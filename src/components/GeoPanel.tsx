@@ -4,7 +4,7 @@ import { AppState, Linking, Platform } from 'react-native';
 import * as Location from 'expo-location';
 
 import { Banner } from '@/components/ui';
-import { pingNow, requestGeoPermission, syncTracking } from '@/lib/geo';
+import { locationServicesEnabled, pingNow, requestGeoPermission, syncTracking } from '@/lib/geo';
 import { useT } from '@/lib/i18n';
 
 type Perm = 'granted' | 'foreground-only' | 'denied' | 'unknown';
@@ -38,7 +38,7 @@ export function GeoPanel({ trackLocation }: { trackLocation: boolean }) {
       // treat as unknown; the banner will offer to request
     }
     setPerm(!fgGranted ? 'denied' : bgGranted ? 'granted' : 'foreground-only');
-    setServicesOn(await Location.hasServicesEnabledAsync().catch(() => null));
+    setServicesOn(await locationServicesEnabled().catch(() => null));
     try {
       await syncTracking(true, labels());
       setStartFailed(false);
@@ -69,7 +69,7 @@ export function GeoPanel({ trackLocation }: { trackLocation: boolean }) {
     if (r !== 'denied') {
       await reconcile();
     }
-    setServicesOn(await Location.hasServicesEnabledAsync().catch(() => null));
+    setServicesOn(await locationServicesEnabled().catch(() => null));
   };
 
   if (perm === 'denied') {

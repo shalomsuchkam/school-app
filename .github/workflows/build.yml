@@ -5,6 +5,10 @@ on:
     branches: [main]
   workflow_dispatch:
     inputs:
+      build_ios:
+        description: Also rebuild iOS (disable for Android-only fixes)
+        type: boolean
+        default: true
       upload_testflight:
         description: Upload the signed iOS build to TestFlight
         type: boolean
@@ -125,6 +129,7 @@ jobs:
   # without them an unsigned IPA for Sideloadly/AltStore, as before. The screen-time extensions are in the app only
   # when app.json has expo.extra.iosScreenTime = true (app.config.ts).
   ios:
+    if: github.event_name != 'workflow_dispatch' || inputs.build_ios
     needs: test
     runs-on: macos-latest
     timeout-minutes: 90
@@ -319,5 +324,5 @@ jobs:
           files: out/*
           body: |
             **Android:** скачайте `Uroki.apk` на телефон и откройте (разрешите установку из этого источника). Для 32-битных телефонов (Samsung Galaxy A11 и подобные) есть облегчённый `Uroki-32bit.apk`.
-            **iPhone:** ${{ needs.ios.outputs.uploaded == 'true' && format('сборка {0} загружена в TestFlight.', github.run_number) || needs.ios.result == 'success' && needs.ios.outputs.testflight == 'true' && 'Подписанный IPA приложен к сборке. Загрузка в TestFlight не выполнялась.' || needs.ios.outputs.testflight == 'true' && 'Сборка iOS не удалась, см. журнал задачи ios.' || '`Uroki-unsigned.ipa` нужно подписать своим Apple ID через Sideloadly или AltStore.' }}
+            **iPhone:** ${{ needs.ios.result == 'skipped' && 'В этом запуске iOS не пересобирался; используйте последнюю проверенную сборку TestFlight.' || needs.ios.outputs.uploaded == 'true' && format('сборка {0} загружена в TestFlight.', github.run_number) || needs.ios.result == 'success' && needs.ios.outputs.testflight == 'true' && 'Подписанный IPA приложен к сборке. Загрузка в TestFlight не выполнялась.' || needs.ios.outputs.testflight == 'true' && 'Сборка iOS не удалась, см. журнал задачи ios.' || '`Uroki-unsigned.ipa` нужно подписать своим Apple ID через Sideloadly или AltStore.' }}
             ${{ needs.android.outputs.signing == 'release' && 'APK подписан закрытым ключом проекта, поэтому новые версии ставятся поверх старых. Если стояла тестовая версия и установка не проходит, удалите её один раз.' || 'Это тестовая сборка: APK подписан общедоступным тестовым ключом. Версии для магазина приложений будут подписаны закрытым ключом, и тестовую версию перед их установкой нужно будет один раз удалить.' }}

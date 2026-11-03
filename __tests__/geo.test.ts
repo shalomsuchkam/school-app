@@ -1,7 +1,8 @@
 import * as Location from 'expo-location';
 import * as TaskManager from 'expo-task-manager';
 import * as BackgroundFetch from 'expo-background-fetch';
-import { HEARTBEAT_TASK, LOCATION_TASK, startTracking, stopTracking } from '@/lib/geo';
+import { HEARTBEAT_TASK, LOCATION_TASK, locationServicesEnabled, startTracking, stopTracking } from '@/lib/geo';
+import { Platform } from 'react-native';
 import { storage } from '@/lib/storage';
 import { File } from 'expo-file-system';
 
@@ -11,7 +12,7 @@ jest.mock('@/lib/storage', () => ({ storage: { get: jest.fn(), set: jest.fn() } 
 jest.mock('expo-file-system', () => ({ Paths: { document: 'private' }, File: jest.fn(() => ({ exists: false, create: jest.fn(), write: jest.fn() })) }));
 jest.mock('expo-location', () => ({
   getForegroundPermissionsAsync: jest.fn(), getBackgroundPermissionsAsync: jest.fn(),
-  hasServicesEnabledAsync: jest.fn(), hasStartedLocationUpdatesAsync: jest.fn(),
+  hasServicesEnabledAsync: jest.fn(), getProviderStatusAsync: jest.fn(), hasStartedLocationUpdatesAsync: jest.fn(),
   startLocationUpdatesAsync: jest.fn(), stopLocationUpdatesAsync: jest.fn(),
   getLastKnownPositionAsync: jest.fn(), getCurrentPositionAsync: jest.fn(),
   Accuracy: { Balanced: 3 },
@@ -35,6 +36,25 @@ it('starts the service when Android Keystore fails but the private preference fi
   await expect(startTracking(labels)).resolves.toBeUndefined();
   expect(File).toHaveBeenCalled();
   expect(Location.startLocationUpdatesAsync).toHaveBeenCalledWith(LOCATION_TASK, expect.any(Object));
+});
+
+it('uses the Android master switch even when a location provider remains available', async () => {
+  const os = jest.replaceProperty(Platform, 'OS', 'android');
+  try {
+    jest.mocked(Location.hasServicesEnabledAsync).mockResolvedValue(true);
+    jest.mocked(Location.getProviderStatusAsync).mockResolvedValue({ locationServicesEnabled: false, gpsAvailable: true } as any);
+    expect(await locationServicesEnabled()).toBe(false);
+    expect(Location.hasServicesEnabledAsync).not.toHaveBeenCalled();
+  } finally { os.restore(); }
+});
+
+it('keeps the existing iOS system location check', async () => {
+  const os = jest.replaceProperty(Platform, 'OS', 'ios');
+  try {
+    jest.mocked(Location.hasServicesEnabledAsync).mockResolvedValue(true);
+    expect(await locationServicesEnabled()).toBe(true);
+    expect(Location.getProviderStatusAsync).not.toHaveBeenCalled();
+  } finally { os.restore(); }
 });
 
 it('defines location and heartbeat handlers on module import, without mounting a screen', () => {

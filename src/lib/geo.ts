@@ -49,6 +49,13 @@ type Perm = 'always' | 'while' | 'denied' | 'unknown';
 
 const tracked = Platform.OS === 'android' || Platform.OS === 'ios';
 
+export async function locationServicesEnabled(): Promise<boolean> {
+  // Provider availability is not Android's master location switch: mock/network
+  // providers can remain available while the user has disabled device location.
+  if (Platform.OS === 'android') return (await Location.getProviderStatusAsync()).locationServicesEnabled;
+  return Location.hasServicesEnabledAsync();
+}
+
 // --- permission snapshot, mapped to the server's perm field ---
 async function currentPerm(): Promise<Perm> {
   try {
@@ -69,7 +76,7 @@ async function postPing(p: { lat: number | null; lng: number | null; accuracy: n
     const token = await readSessionToken();
     if (!token) return;
     const [services_on, perm] = await Promise.all([
-      Location.hasServicesEnabledAsync().catch(() => true),
+      locationServicesEnabled().catch(() => true),
       currentPerm(),
     ]);
     await fetch(API_BASE + '/child/location', {
@@ -107,7 +114,7 @@ if (tracked && !TaskManager.isTaskDefined(HEARTBEAT_TASK)) {
     if (!(await readWanted())) return BackgroundFetch.BackgroundFetchResult.NoData;
     let pos: Location.LocationObject | null = null;
     try {
-      if (await Location.hasServicesEnabledAsync()) pos = await Location.getLastKnownPositionAsync();
+      if (await locationServicesEnabled()) pos = await Location.getLastKnownPositionAsync();
     } catch {
       // services off or no permission: pos stays null, the ping still reports services_on/perm
     }
@@ -212,7 +219,7 @@ export async function pingNow(): Promise<void> {
   if (!(await readWanted())) return;
   let pos: Location.LocationObject | null = null;
   try {
-    if (await Location.hasServicesEnabledAsync()) {
+    if (await locationServicesEnabled()) {
       pos = (await Location.getLastKnownPositionAsync()) ?? (await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }));
     }
   } catch {
