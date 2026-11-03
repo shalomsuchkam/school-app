@@ -6,6 +6,10 @@ on:
         description: Enable already approved Family Controls Distribution for the main app
         type: boolean
         default: false
+      prepare_metadata:
+        description: Save reviewed Russian App Store description and privacy/support URLs
+        type: boolean
+        default: false
 permissions:
   contents: read
 jobs:
@@ -19,6 +23,7 @@ jobs:
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
           ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
           CONFIGURE_CONTROLS: ${{ inputs.configure_family_controls }}
+          PREPARE_METADATA: ${{ inputs.prepare_metadata }}
         shell: bash
         run: |
           node --input-type=module <<'NODE'
@@ -45,7 +50,27 @@ jobs:
             console.log('VERSIONS',JSON.stringify(versions.map(x=>({id:x.id,...x.attributes}))));
             console.log('BUILDS',JSON.stringify((await get(`builds?filter[app]=${app.id}&sort=-uploadedDate&limit=5`)).map(x=>({id:x.id,version:x.attributes.version,state:x.attributes.processingState}))));
             for(const version of versions) {
-              console.log('LOCALIZATIONS',JSON.stringify((await get(`appStoreVersions/${version.id}/appStoreVersionLocalizations`)).map(x=>({id:x.id,...x.attributes}))));
+              const locs=await get(`appStoreVersions/${version.id}/appStoreVersionLocalizations`);
+              for(const loc of locs) {
+                if(process.env.PREPARE_METADATA === 'true' && version.attributes.appStoreState === 'PREPARE_FOR_SUBMISSION' && loc.attributes.locale === 'ru') {
+                  const description = '«Контроль ДЗ» помогает семье организовать домашние задания и дела ребёнка. Родитель задаёт расписание, ребёнок отмечает выполненное и прикладывает фотографии работы. Родитель проверяет результат, одобряет или просит переделать.\n\nВ ПРИЛОЖЕНИИ\n• Задания по предметам и домашние дела.\n• Фото, комментарии, чат у задания и голосовые заметки.\n• Календарь прогресса и отчёты.\n• Ссылки на учебники и локальные PDF.\n• Второй родитель и репетитор подключаются одноразовым кодом.\n• Русский, қазақша и English; светлая и тёмная темы.\n\nЭКРАННОЕ ВРЕМЯ\nС iPhone родитель может задавать лимиты на приложения Android-телефона ребёнка, время сна и школьные часы, блокировку до выполнения заданий и дополнительное время. На Android ребёнок отдельно разрешает доступ к статистике и отображение поверх приложений. Контроль работает с постоянным видимым уведомлением. Звонки и сообщения остаются доступны. В этой версии блокировка приложений на iPhone ребёнка не включена.\n\nГДЕ РЕБЁНОК\nРодитель может включить обмен местоположением. После разрешения на устройстве ребёнка приложение передаёт точное местоположение, включая фоновый режим, и недавний маршрут на сервер в Казахстане. Ребёнок видит, что функция включена. Разрешения и обмен местоположением можно отключить.\n\nДОСТУП И КОНФИДЕНЦИАЛЬНОСТЬ\nВход по одноразовому коду семьи, без паролей и электронной почты. Скрытого наблюдения, чтения переписки и рекламного трекинга нет. Удалить семью и её данные можно в настройках. Уведомления зависят от разрешений устройства и подключения к интернету.\n\nУсловия использования: https://urokiapp.kz/terms\nПолитика конфиденциальности: https://urokiapp.kz/privacy\nПоддержка: https://urokiapp.kz/support';
+                  await request(`appStoreVersionLocalizations/${loc.id}`,'PATCH',{data:{type:'appStoreVersionLocalizations',id:loc.id,attributes:{description,keywords:'уроки,школа,задания,дневник,расписание,родительский,лимит,телефон,дети,семья',supportUrl:'https://urokiapp.kz/support',marketingUrl:'https://urokiapp.kz'}}});
+                  await request(`appStoreVersions/${version.id}`,'PATCH',{data:{type:'appStoreVersions',id:version.id,attributes:{versionString:'1.0.0',copyright:'2026 KonG Service'}}});
+                  console.log('METADATA_SAVED',loc.id);
+                }
+                const sets=await get(`appStoreVersionLocalizations/${loc.id}/appScreenshotSets`);
+                console.log('SCREENSHOT_SETS',JSON.stringify(sets.map(x=>({id:x.id,...x.attributes}))));
+              }
+              console.log('LOCALIZATIONS',JSON.stringify((await get(`appStoreVersions/${version.id}/appStoreVersionLocalizations`)).map(x=>({id:x.id,locale:x.attributes.locale,hasDescription:!!x.attributes.description,supportUrl:x.attributes.supportUrl}))));
+            }
+            for(const info of await get(`apps/${app.id}/appInfos`)) {
+              const locs=await get(`appInfos/${info.id}/appInfoLocalizations`);
+              for(const loc of locs) {
+                if(process.env.PREPARE_METADATA === 'true' && loc.attributes.locale === 'ru') {
+                  await request(`appInfoLocalizations/${loc.id}`,'PATCH',{data:{type:'appInfoLocalizations',id:loc.id,attributes:{name:'Контроль ДЗ',subtitle:'Домашка, дела и экранное время',privacyPolicyUrl:'https://urokiapp.kz/privacy'}}});
+                }
+              }
+              console.log('APP_INFO',JSON.stringify({id:info.id,...info.attributes}));
             }
           }
           if(!apps.length) console.log('NO_APP_STORE_APP');
