@@ -231,7 +231,7 @@
       "reactCompiler": true
     },
     "extra": {
-      "iosScreenTime": false
+      "iosScreenTime": true
     }
   }
 }

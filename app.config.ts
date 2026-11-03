@@ -11,7 +11,7 @@ import fs from 'node:fs';
 //   and of the screen-time extensions.
 // - iOS screen time (docs/SCREEN_TIME.md, "iOS"): `expo.extra.iosScreenTime` in app.json or EXPO_PUBLIC_IOS_SCREEN_TIME=1
 //   adds the react-native-device-activity config plugin (Family Controls entitlement, App Group, three app
-//   extensions from ./targets). Off by default: Apple must first approve the Family Controls (Distribution)
+//   extensions from ./targets). Enable only after Apple approves Family Controls (Distribution)
 //   entitlement for the app and every extension, otherwise a signed build cannot be exported. With the flag off the
 //   config is exactly what app.json says.
 
