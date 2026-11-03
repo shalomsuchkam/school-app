@@ -2,6 +2,7 @@
   "expo": {
     "name": "Uroki",
     "slug": "uroki",
+    "owner": "kontrol-dz",
     "version": "1.0.0",
     "orientation": "default",
     "icon": "./assets/images/icon.png",
@@ -231,7 +232,10 @@
       "reactCompiler": true
     },
     "extra": {
-      "iosScreenTime": true
+      "iosScreenTime": true,
+      "eas": {
+        "projectId": "0989c4de-abdc-4810-9763-fcdd3a771259"
+      }
     }
   }
 }
