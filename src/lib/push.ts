@@ -4,6 +4,14 @@ import { Platform } from 'react-native';
 
 import { api } from './api';
 
+// Loaded by the root layout for both roles. A handler installed only by the
+// child's reminder screen leaves foreground parent alerts silently hidden.
+if (Platform.OS !== 'web') {
+  Notifications.setNotificationHandler({
+    handleNotification: async () => ({ shouldShowBanner: true, shouldShowList: true, shouldPlaySound: true, shouldSetBadge: false }),
+  });
+}
+
 // Server push (parent alerts, "Напомнить ученику", approvals) goes through the Expo push service.
 // It works once the build has an EAS project id (and FCM on Android); until then this is a no-op
 // and the child still gets local reminders scheduled on the phone.

@@ -7,8 +7,18 @@ jest.mock('@/lib/api', () => ({ api: { pushToken: jest.fn() } }));
 jest.mock('expo-notifications', () => ({
   getPermissionsAsync: jest.fn(), requestPermissionsAsync: jest.fn(),
   getExpoPushTokenAsync: jest.fn(), setNotificationChannelAsync: jest.fn(),
+  setNotificationHandler: jest.fn(),
   AndroidImportance: { DEFAULT: 3 },
 }));
+
+it('presents foreground parent alerts before loading any child reminder screen', async () => {
+  jest.isolateModules(() => { require('@/lib/push'); });
+  const calls = jest.mocked(Notifications.setNotificationHandler).mock.calls;
+  const handler = calls[calls.length - 1][0]!;
+  await expect(handler.handleNotification({} as any)).resolves.toEqual({
+    shouldShowBanner: true, shouldShowList: true, shouldPlaySound: true, shouldSetBadge: false,
+  });
+});
 
 beforeEach(() => {
   jest.mocked(Notifications.getPermissionsAsync).mockResolvedValue({ granted: true } as any);

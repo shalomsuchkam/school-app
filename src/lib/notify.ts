@@ -9,11 +9,6 @@ import { inQuiet, type Quiet } from './quiet';
 
 // Local reminders scheduled on the phone: they work offline and need no push service.
 const supported = Platform.OS !== 'web';
-if (supported) {
-  Notifications.setNotificationHandler({
-    handleNotification: async () => ({ shouldShowBanner: true, shouldShowList: true, shouldPlaySound: true, shouldSetBadge: false }),
-  });
-}
 const CHANNEL = 'reminders';
 const MAX_PENDING = 60; // iOS keeps at most 64 pending local notifications per app
 
