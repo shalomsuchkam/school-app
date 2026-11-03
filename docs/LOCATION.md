@@ -1,7 +1,7 @@
 # Child location — «Где ребёнок»
 
 Open parental location, the way Family Link / Life360 do it: the child's phone reports where it is, the parent sees
-it on a map, and the moment the child turns location off or revokes the permission the parent gets a push. This is
+it on a map, and the server requests a parent push when a device report first shows that location or permission is off. This is
 **not covert** — the child sees a persistent location icon and an in‑app notice, and is asked, in plain words, to
 allow it.
 
@@ -12,11 +12,13 @@ permission, force‑stopping it or uninstalling it. That is Android's security m
 un‑bypassable enforcement needs **Device Owner / MDM provisioning** (the child's phone is factory‑reset and enrolled,
 and the app becomes the device policy controller) — a separate, heavy mode we do not use here.
 
-So the design is: **report whenever possible, and detect + alert instantly when it stops.**
+So the design is: **report whenever possible, and alert when the server receives a changed status.**
 
-- A foreground service keeps reporting after the app is swiped away (and `startOnBoot` resumes after a reboot).
+- A foreground service is configured to continue after the app is swiped away. Force-stop, battery restrictions and OS background-start rules can interrupt it. The heartbeat requests boot persistence, but does not guarantee service restart after reboot.
 - Every ping carries the phone's self‑reported state (`services_on`, `perm`), so a ping with no fix still tells the
-  server the switch was turned off — and the server pushes the parent the moment that state changes.
+  server the switch was turned off. The server requests a push on receipt; delivery depends on notification permission, push credentials and connectivity.
+- Opening or returning to the app triggers a status ping and reapplies tracking options. A registered Expo task alone does not prove the foreground service is alive.
+- Background heartbeat scheduling requests a minimum 15-minute interval; the OS may delay it. Turning location off while the app is closed therefore does not guarantee an immediate alert. The parent can also see stale data.
 
 ## Pieces
 
@@ -38,7 +40,7 @@ So the design is: **report whenever possible, and detect + alert instantly when 
    the time") and starts the foreground service (`src/lib/geo.ts`).
 3. The phone posts pings to `POST /child/location`. The server keeps the latest point, trims the trail, and compares
    each ping with the previous one.
-4. If `services_on` or `perm` flips to off/denied, `notifyParents` pushes the parent at once. The parent screen also
+4. When a received report changes `services_on` or `perm` to off/denied, `notifyParents` requests a parent push. The parent screen also
    shows an honest status line (`services_off` / `no_permission` / `stale` / `never`).
 
 ## Permissions / policy
