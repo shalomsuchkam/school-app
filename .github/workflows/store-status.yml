@@ -1,6 +1,11 @@
 name: Store readiness status
 on:
   workflow_dispatch:
+    inputs:
+      configure_family_controls:
+        description: Enable already approved Family Controls Distribution for the main app
+        type: boolean
+        default: false
 permissions:
   contents: read
 jobs:
@@ -13,6 +18,7 @@ jobs:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
           ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+          CONFIGURE_CONTROLS: ${{ inputs.configure_family_controls }}
         shell: bash
         run: |
           node --input-type=module <<'NODE'
@@ -25,22 +31,32 @@ jobs:
           const sig = sign('sha256',Buffer.from(unsigned),{key:createPrivateKey(process.env.ASC_KEY_P8),dsaEncoding:'ieee-p1363'}).toString('base64url');
           const token = `${unsigned}.${sig}`;
           console.log(`::add-mask::${token}`);
-          async function get(path) {
-            const r = await fetch('https://api.appstoreconnect.apple.com/v1/'+path,{headers:{Authorization:'Bearer '+token}});
+          async function request(path, method='GET', body) {
+            const r = await fetch('https://api.appstoreconnect.apple.com/v1/'+path,{method,headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},...(body ? {body:JSON.stringify(body)} : {})});
             const data=await r.json();
             if(!r.ok) throw new Error(JSON.stringify({status:r.status,errors:data.errors}));
             return data.data;
           }
+          const get=(path)=>request(path);
           const apps = await get('apps?filter[bundleId]=kz.uroki.app');
           for(const app of apps) {
             console.log('APP',JSON.stringify({id:app.id,...app.attributes}));
-            console.log('VERSIONS',JSON.stringify(await get(`apps/${app.id}/appStoreVersions?limit=5`)));
-            console.log('BUILDS',JSON.stringify(await get(`builds?filter[app]=${app.id}&sort=-uploadedDate&limit=5`)));
+            const versions=await get(`apps/${app.id}/appStoreVersions?limit=5`);
+            console.log('VERSIONS',JSON.stringify(versions.map(x=>({id:x.id,...x.attributes}))));
+            console.log('BUILDS',JSON.stringify((await get(`builds?filter[app]=${app.id}&sort=-uploadedDate&limit=5`)).map(x=>({id:x.id,version:x.attributes.version,state:x.attributes.processingState}))));
+            for(const version of versions) {
+              console.log('LOCALIZATIONS',JSON.stringify((await get(`appStoreVersions/${version.id}/appStoreVersionLocalizations`)).map(x=>({id:x.id,...x.attributes}))));
+            }
           }
           if(!apps.length) console.log('NO_APP_STORE_APP');
           const bundles=await get('bundleIds?filter[identifier]=kz.uroki.app,kz.uroki.app.ActivityMonitorExtension,kz.uroki.app.ShieldConfiguration,kz.uroki.app.ShieldAction');
           for(const bundle of bundles) {
             console.log('BUNDLE',JSON.stringify(bundle.attributes));
-            console.log('CAPABILITIES',JSON.stringify(await get(`bundleIds/${bundle.id}/bundleIdCapabilities`)));
+            let caps=await get(`bundleIds/${bundle.id}/bundleIdCapabilities`);
+            if(process.env.CONFIGURE_CONTROLS === 'true' && bundle.attributes.identifier === 'kz.uroki.app' && !caps.some(x=>x.attributes.capabilityType==='FAMILY_CONTROLS_DISTRIBUTION')) {
+              await request('bundleIdCapabilities','POST',{data:{type:'bundleIdCapabilities',attributes:{capabilityType:'FAMILY_CONTROLS_DISTRIBUTION'},relationships:{bundleId:{data:{type:'bundleIds',id:bundle.id}}}}});
+              caps=await get(`bundleIds/${bundle.id}/bundleIdCapabilities`);
+            }
+            console.log('CAPABILITIES',JSON.stringify(caps.map(x=>x.attributes)));
           }
           NODE
