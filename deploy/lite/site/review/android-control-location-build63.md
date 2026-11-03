@@ -19,6 +19,8 @@ No UI screens, notifications, permission states, or successful results were
 fabricated. Calls/SMS applications are absent from these emulators and are not
 demonstrated. No physical-device GPS fix or route is demonstrated.
 
-The video is available directly for foreground-service review. It has not been
-uploaded to YouTube. A background-location form requiring a YouTube URL remains
-for the owner to complete after reviewing the demonstration.
+The video is available directly for foreground-service review. On November 3,
+2026, the owner separately authorized a YouTube upload and accepted YouTube's
+upload terms. The processed video is saved as unlisted; its URL is in the store
+declaration and the owner's release handoff report. Foreground-service and
+background-location declarations are saved, but store approval is still pending.
