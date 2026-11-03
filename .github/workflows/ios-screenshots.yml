@@ -29,10 +29,12 @@ jobs:
         if: inputs.simulator_run == ''
       - name: Build actual simulator app
         if: inputs.simulator_run == ''
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           xcodebuild -workspace ios/Uroki.xcworkspace -scheme Uroki -configuration Release \
             -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath build/ios-sim \
-            ARCHS="$(uname -m)" ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=NO \
+            ARCHS="$(uname -m)" ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
             build > simulator-build.log 2>&1 || (tail -n 180 simulator-build.log; exit 1)
           tail -n 5 simulator-build.log
           (cd build/ios-sim/Build/Products/Release-iphonesimulator && zip -qry "$RUNNER_TEMP/Uroki-simulator.zip" Uroki.app)
@@ -48,19 +50,11 @@ jobs:
         run: |
           mkdir -p build/ios-sim/Build/Products/Release-iphonesimulator
           unzip -q "$RUNNER_TEMP/Uroki-simulator.zip" -d build/ios-sim/Build/Products/Release-iphonesimulator
-      - name: Sign simulator app for Keychain access
-        env:
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      - name: Inspect simulator build entitlements
         run: |
-          python3 - <<'PY'
-          import os, plistlib
-          team=os.environ['APPLE_TEAM_ID']
-          assert team
-          identifier=team+'.kz.uroki.app'
-          with open('/tmp/simulator-entitlements.plist','wb') as f:
-              plistlib.dump({'application-identifier':identifier,'com.apple.developer.team-identifier':team,'keychain-access-groups':[identifier]},f)
-          PY
-          codesign --force --deep --sign - --generate-entitlement-der --entitlements /tmp/simulator-entitlements.plist build/ios-sim/Build/Products/Release-iphonesimulator/Uroki.app
+          # Xcode embeds simulator entitlements in the executable. Re-signing an
+          # unsigned simulator build with device entitlements makes macOS deny launch.
+          otool -s __TEXT __entitlements build/ios-sim/Build/Products/Release-iphonesimulator/Uroki.app/Uroki > simulator-entitlements.log
           codesign --verify --deep --strict build/ios-sim/Build/Products/Release-iphonesimulator/Uroki.app
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
@@ -106,6 +100,7 @@ jobs:
             screenshots/**/*.png
             screenshots/**/*.log
             simulator-build.log
+            simulator-entitlements.log
             ~/.maestro/tests/**/*.png
             ~/.maestro/tests/**/*.log
           if-no-files-found: error
