@@ -7,14 +7,14 @@ import { useT } from '@/lib/i18n';
 import { filterApps } from '@/lib/screenTime';
 import { space, usePalette } from '@/lib/theme';
 
-const PRESETS = [15, 30, 60, 90, 120, 180];
+const PRESETS = [1, 15, 30, 60, 90, 120, 180];
 
 /** Minutes as preset chips plus −/+ 15 for anything else (1..1440, as the server accepts). */
 export function MinutesPicker({ value, onChange }: { value: number; onChange: (m: number) => void }) {
   const p = usePalette();
   const t = useT();
   const step = (d: number) => {
-    const next = Math.min(1440, Math.max(15, value + d));
+    const next = Math.min(1440, Math.max(1, value + d));
     if (next === value) return haptic.warn();
     haptic.tap();
     onChange(next);
