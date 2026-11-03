@@ -28,15 +28,25 @@ appId: kz.uroki.app
 - tapOn:
     text: "Join|Войти"
 - extendedWaitUntil:
-    visible: ".*(Settings|Настройки).*"
+    visible: "Open schedule|Открыть расписание"
     timeout: 60000
+- waitForAnimationToEnd
 - takeScreenshot: "${OUTPUT}/01-parent-home"
 - openLink: "uroki://parent/screen"
+- extendedWaitUntil:
+    visible: "Rules for your child's phone|Правила для телефона ребёнка"
+    timeout: 30000
 - waitForAnimationToEnd
 - takeScreenshot: "${OUTPUT}/02-screen-time"
 - openLink: "uroki://parent/calendar"
+- extendedWaitUntil:
+    visible: "Calendar|Календарь"
+    timeout: 30000
 - waitForAnimationToEnd
 - takeScreenshot: "${OUTPUT}/03-calendar"
 - openLink: "uroki://parent/settings"
+- extendedWaitUntil:
+    visible: "Students|Ученики"
+    timeout: 30000
 - waitForAnimationToEnd
 - takeScreenshot: "${OUTPUT}/04-settings"
