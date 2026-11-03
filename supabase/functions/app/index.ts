@@ -414,8 +414,12 @@ async function route(req: Request, path: string): Promise<Response> {
     const b = await body(req);
     const code = clean(b.code, 12).toUpperCase().replace(/[^A-Z0-9]/g, "");
     // delete-and-return claims the code atomically: two phones can't both use one invite
-    const { data: used } = await db.from("app_invites").delete().eq("code", code).gt("expires_at", new Date().toISOString()).select("*");
-    const inv = used?.[0];
+    const now = new Date().toISOString();
+    const { data: used } = await db.from("app_invites").delete().eq("code", code).eq("reusable", false).gt("expires_at", now).select("*");
+    // Admin-provisioned codes for an isolated demo family are reusable for store
+    // reviews. Ordinary invitations keep the atomic single-use claim above.
+    const review = used?.[0] ? null : await db.from("app_invites").select("*").eq("code", code).eq("reusable", true).gt("expires_at", now).maybeSingle();
+    const inv = used?.[0] ?? review?.data;
     if (!inv) {
       // service-wide cap on wrong codes: guessing stays hopeless even from many IP addresses
       await limit("join-fail", 300, 900, true);
