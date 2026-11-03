@@ -107,14 +107,14 @@ jobs:
             echo "::warning title=Test signature::ANDROID_KEYSTORE_B64 / ANDROID_KEYSTORE_PASSWORD / ANDROID_KEY_ALIAS / ANDROID_KEY_PASSWORD secrets are not set, so the APK is signed with the public React Native debug key. Use it for testing only."
             echo "signing=debug" >> "$GITHUB_OUTPUT"
           fi
-          ./gradlew :screen-guard:testReleaseUnitTest assembleRelease --no-daemon -PreactNativeArchitectures=arm64-v8a,armeabi-v7a "${signing[@]}"
+          ./gradlew :screen-guard:testReleaseUnitTest assembleRelease --no-daemon --stacktrace -PreactNativeArchitectures=arm64-v8a,armeabi-v7a "${signing[@]}"
           mkdir -p ../out && cp app/build/outputs/apk/release/app-release.apk ../out/Uroki.apk
           # a lighter APK for 32-bit phones (Galaxy A11 and other budget models): about half the size
-          ./gradlew assembleRelease --no-daemon -PreactNativeArchitectures=armeabi-v7a "${signing[@]}"
+          ./gradlew assembleRelease --no-daemon --stacktrace -PreactNativeArchitectures=armeabi-v7a "${signing[@]}"
           cp app/build/outputs/apk/release/app-release.apk ../out/Uroki-32bit.apk
           # Google Play takes an .aab signed with the private upload key (all ABIs incl. x86_64 for Chromebooks/tablets)
           if [ ${#signing[@]} -gt 0 ]; then
-            ./gradlew bundleRelease --no-daemon -PreactNativeArchitectures=arm64-v8a,armeabi-v7a,x86_64 "${signing[@]}"
+            ./gradlew bundleRelease --no-daemon --stacktrace -PreactNativeArchitectures=arm64-v8a,armeabi-v7a,x86_64 "${signing[@]}"
           fi
       - run: |
           mkdir -p out
