@@ -1,7 +1,6 @@
 appId: kz.uroki.app
 ---
-- launchApp:
-    clearState: true
+- launchApp
 - openLink: "uroki://join?code=${REVIEW_CODE}"
 - runFlow:
     when:
