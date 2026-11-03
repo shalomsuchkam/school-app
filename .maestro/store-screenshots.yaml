@@ -1,6 +1,8 @@
 appId: kz.uroki.app
 ---
-- launchApp
+- launchApp:
+    permissions:
+      all: unset
 - openLink: "uroki://join?code=${REVIEW_CODE}"
 - runFlow:
     when:

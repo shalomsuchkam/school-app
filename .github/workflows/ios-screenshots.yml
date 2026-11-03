@@ -60,8 +60,8 @@ jobs:
           with open('/tmp/simulator-entitlements.plist','wb') as f:
               plistlib.dump({'application-identifier':identifier,'com.apple.developer.team-identifier':team,'keychain-access-groups':[identifier]},f)
           PY
-          codesign --force --sign - --entitlements /tmp/simulator-entitlements.plist build/ios-sim/Build/Products/Release-iphonesimulator/Uroki.app
-          codesign --verify build/ios-sim/Build/Products/Release-iphonesimulator/Uroki.app
+          codesign --force --deep --sign - --generate-entitlement-der --entitlements /tmp/simulator-entitlements.plist build/ios-sim/Build/Products/Release-iphonesimulator/Uroki.app
+          codesign --verify --deep --strict build/ios-sim/Build/Products/Release-iphonesimulator/Uroki.app
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: ios-simulator-app
@@ -91,6 +91,10 @@ jobs:
             xcrun simctl status_bar "$device" override --time '9:41' --dataNetwork wifi --wifiMode active --wifiBars 3 --batteryState charged --batteryLevel 100
             xcrun simctl install "$device" build/ios-sim/Build/Products/Release-iphonesimulator/Uroki.app
             mkdir -p "screenshots/$label"
+            xcrun simctl launch "$device" kz.uroki.app || {
+              xcrun simctl spawn "$device" log show --last 3m --style compact --predicate 'eventMessage CONTAINS "kz.uroki.app" OR eventMessage CONTAINS "Codesigning"' > "screenshots/$label/launch.log"
+              exit 1
+            }
             "$HOME/.maestro/bin/maestro" --device "$device" test -e REVIEW_CODE="$REVIEW_CODE" -e OUTPUT="screenshots/$label" .maestro/store-screenshots.yaml
             xcrun simctl shutdown "$device"
           done < /tmp/capture-devices.txt
@@ -100,6 +104,7 @@ jobs:
           name: ios-actual-screenshots
           path: |
             screenshots/**/*.png
+            screenshots/**/*.log
             simulator-build.log
             ~/.maestro/tests/**/*.png
             ~/.maestro/tests/**/*.log
