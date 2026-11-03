@@ -27,6 +27,11 @@ jobs:
             ARCHS="$(uname -m)" ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=NO \
             build > simulator-build.log 2>&1 || (tail -n 180 simulator-build.log; exit 1)
           tail -n 5 simulator-build.log
+          (cd build/ios-sim/Build/Products/Release-iphonesimulator && zip -qry "$RUNNER_TEMP/Uroki-simulator.zip" Uroki.app)
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ios-simulator-app
+          path: ${{ runner.temp }}/Uroki-simulator.zip
       - name: Install UI test driver
         run: curl -fsSL https://get.maestro.mobile.dev | bash
       - name: Record app screens on iPhone and iPad
@@ -62,4 +67,6 @@ jobs:
           path: |
             screenshots/**/*.png
             simulator-build.log
+            ~/.maestro/tests/**/*.png
+            ~/.maestro/tests/**/*.log
           if-no-files-found: error

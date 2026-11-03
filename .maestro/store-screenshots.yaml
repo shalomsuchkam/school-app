@@ -3,6 +3,15 @@ appId: kz.uroki.app
 - launchApp:
     clearState: true
 - openLink: "uroki://join?code=${REVIEW_CODE}"
+- runFlow:
+    when:
+      visible: "Open|Открыть"
+    commands:
+      - tapOn: "Open|Открыть"
+- takeScreenshot: "${OUTPUT}/00-join-debug"
+- extendedWaitUntil:
+    visible: "Join|Войти"
+    timeout: 60000
 - tapOn:
     text: "Join|Войти"
 - extendedWaitUntil:
