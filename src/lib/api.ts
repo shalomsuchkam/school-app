@@ -390,10 +390,6 @@ export const api = {
   screenApprove: (child_id: number, pkg: string, action: 'allow' | 'block' | 'limit', minutes?: number) =>
     call<ScreenRules>('POST', '/screen/approve', { child_id, pkg, action, ...(action === 'limit' ? { minutes } : null) }),
 
-  // Textbook links (child_id null = every child); a parent without `child` gets all of the family's links.
-  textbooks: (child?: number) => call<Textbook[]>('GET', `/textbooks${child ? `?child=${child}` : ''}`),
-  addTextbook: (b: { child_id: number | null; title: string; url: string }) => call<Textbook>('POST', '/textbooks', b),
-  deleteTextbook: (id: number) => call<{ ok: true }>('DELETE', `/textbooks/${id}`),
 };
 
 // Public legal pages served by the backend.

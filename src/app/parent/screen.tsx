@@ -5,7 +5,6 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import { AppPicker, MinutesPicker } from '@/components/screen/AppPicker';
 import { GuardCard } from '@/components/screen/GuardCard';
 import { IosParentCard, iosScreenTimeReleased } from '@/components/screen/IosScreenTime';
-import { TextbookLinks } from '@/components/screen/TextbookLinks';
 import { Banner, Btn, Card, Chip, ErrorBanner, Group, IconBtn, Loading, Row, Screen, SectionLabel, Sheet, TimeStepper, ToggleRow, Txt, useToast, WeekdayPicker } from '@/components/ui';
 import { api, isPaywall, type Child, type ScreenPatch, type ScreenRules, type ScreenState } from '@/lib/api';
 import { useIsViewer } from '@/lib/auth';
@@ -73,7 +72,6 @@ export default function ScreenTime() {
     return (
       <Screen title={t('screen.title')} right={close} footer={toast.node}>
         <Banner tone="warn" icon="lock-closed-outline" title={t('screen.paywall.title')} text={t('screen.paywall.text')} />
-        <TextbookLinks kids={kids} childId={childId} onToast={toast.show} />
       </Screen>
     );
   }
@@ -364,8 +362,6 @@ export default function ScreenTime() {
           {st.homework_done ? t('screen.hw.doneNow') : t('screen.hw.notDone')}
         </Txt>
       ) : null}
-
-      <TextbookLinks kids={kids} childId={childId} onToast={toast.show} />
 
       <AppPicker
         visible={picker !== null}

@@ -3,36 +3,27 @@ import { useCallback, useState } from 'react';
 import { Alert, Platform, Pressable } from 'react-native';
 
 import { Group, Row, SectionLabel, Txt } from '@/components/ui';
-import { api, type Textbook } from '@/lib/api';
 import { useT } from '@/lib/i18n';
-import { addPdf, listPdfs, MAX_PDFS, openPdfExternally, pdfSupported, pdfUri, PdfError, removePdf, sizeLabel, type LocalPdf } from '@/lib/pdfShelf';
-import { httpHost } from '@/lib/screenTime';
+import { addPdf, listPdfs, MAX_PDFS, openPdfExternally, pdfSupported, PdfError, removePdf, sizeLabel, type LocalPdf } from '@/lib/pdfShelf';
 import { space, usePalette } from '@/lib/theme';
 
-// Child home: «Учебники». The parent's links open in the in-app viewer (child/reader); the child's own PDFs
-// stay on this phone (iOS shows them in-app, Android hands them to a PDF app).
+// User-selected PDFs stay on this phone. No remote textbook catalog or website links.
 export function Bookshelf({ onToast }: { onToast: (msg: string) => void }) {
   const p = usePalette();
   const t = useT();
-  const [links, setLinks] = useState<Textbook[]>([]);
   const [pdfs, setPdfs] = useState<LocalPdf[]>([]);
   const [adding, setAdding] = useState(false);
 
   useFocusEffect(
     useCallback(() => {
-      api
-        .textbooks()
-        .then(setLinks)
-        .catch(() => {}); // offline: keep what is on screen
       listPdfs()
         .then(setPdfs)
         .catch(() => {});
     }, []),
   );
 
-  const openLink = (b: Textbook) => router.push({ pathname: '/child/reader', params: { url: b.url, title: b.title } });
   const openPdf = async (f: LocalPdf) => {
-    if (Platform.OS === 'ios') return router.push({ pathname: '/child/reader', params: { pdf: pdfUri(f), title: f.title } });
+    if (Platform.OS === 'ios') return router.push({ pathname: '/child/reader', params: { pdfId: f.id } });
     if (!(await openPdfExternally(f))) onToast(t('books.noViewer'));
   };
   const add = async () => {
@@ -57,14 +48,11 @@ export function Bookshelf({ onToast }: { onToast: (msg: string) => void }) {
       { text: t('common.delete'), style: 'destructive', onPress: () => removePdf(pdfs, f.id).then(setPdfs).catch(() => {}) },
     ]);
 
-  if (!links.length && !pdfSupported) return null;
+  if (!pdfSupported) return null;
   return (
     <>
       <SectionLabel>{t('books.title')}</SectionLabel>
       <Group>
-        {links.map((b) => (
-          <Row key={`l${b.id}`} icon="book" tint="violet" title={b.title} subtitle={httpHost(b.url) ?? undefined} chevron onPress={() => openLink(b)} />
-        ))}
         {pdfs.map((f) => (
           <Row
             key={f.id}
@@ -85,7 +73,7 @@ export function Bookshelf({ onToast }: { onToast: (msg: string) => void }) {
         {pdfSupported ? <Row key="add" icon="add" tint="orange" title={adding ? t('books.adding') : t('books.addPdf')} onPress={add} disabled={adding} /> : null}
       </Group>
       <Txt v="sub" color={p.muted} style={{ marginTop: space.xs, marginHorizontal: 6 }}>
-        {links.length ? t('books.hint') : t('books.hintEmpty')}
+        {t('books.hintEmpty')}
       </Txt>
     </>
   );

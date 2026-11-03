@@ -85,7 +85,7 @@
 • Чат прямо у задания и голосовые заметки от ребёнка.
 • Календарь месяца: вовремя, с опозданием, не сделано. Серии и звёзды за старание.
 • Отчёт за неделю.
-• Учебники: ссылки на электронные учебники и свои PDF внутри приложения.
+• Учебники: свои PDF из файлов устройства; на iOS просмотр внутри приложения, на Android — через установленный PDF-просмотрщик.
 • Второй родитель и репетитор подключаются по коду или QR-коду, без паролей и почты. Репетитору можно дать режим «только просмотр».
 • Русский, қазақша, English. Светлая и тёмная тема. iPhone, iPad и Android в любом сочетании.
 
@@ -220,7 +220,7 @@ ALSO
 • A chat right on each task and voice notes from the child.
 • A month calendar: on time, late, not done. Streaks and stars for effort.
 • A weekly report.
-• Textbooks: links to e-textbooks and your own PDFs inside the app.
+• Textbooks: your own PDFs imported from the device. iOS displays them in-app; Android opens an installed PDF viewer.
 • A second parent and a tutor join with a code or QR code — no passwords, no email. A tutor can get view-only access.
 • Russian, Kazakh and English. Light and dark theme. iPhone, iPad and Android in any combination.
 
@@ -418,7 +418,7 @@ The language can be switched to English in Settings → Language.
 
 SUBSCRIPTION: a new family can open the paywall from Settings → Subscription → Subscribe. It shows the price, the 7-day free trial, auto-renewal terms, Restore Purchases and links to the Terms of Use and Privacy Policy. Use a Sandbox account to test. The demo family above has free access granted by us, so the paywall does not appear there.
 
-SCREEN TIME: the parental-control rules (Settings → "Экранное время и учебники" / Screen time) are applied on the CHILD's iPhone through Apple's Screen Time API (FamilyControls with .child authorization). This requires the child's Apple ID to be a child member of the parent's Family Sharing group; the parent approves the authorization with their Apple ID on the child's device. Without Family Sharing the app shows the rules but cannot apply them. Calls and messages are never blocked, and the child always sees that control is on.
+SCREEN TIME: the parental-control rules (Settings → "Экранное время" / Screen time) are applied on the CHILD's iPhone through Apple's Screen Time API (FamilyControls with .child authorization). This requires the child's Apple ID to be a child member of the parent's Family Sharing group; the parent approves the authorization with their Apple ID on the child's device. Without Family Sharing the app shows the rules but cannot apply them. Calls and messages are never blocked, and the child always sees that control is on.
 
 USER CONTENT: photos, voice notes and the task chat are visible only inside one family. Members join only with a one-time code from a parent's phone; there is no search, no public profiles and no contact with strangers. Parents can disconnect any device and delete the family with all data (Settings → "Удалить семью и все данные").
 
@@ -481,7 +481,7 @@ Operator: IE "KonG Service", Almaty, Kazakhstan
 ЕЩЁ
 • Чат прямо у задания и голосовые заметки от ребёнка.
 • Календарь месяца и отчёт за неделю, серии и звёзды за старание.
-• Учебники: ссылки на электронные учебники и свои PDF.
+• Учебники: свои PDF из файлов устройства.
 • Второй родитель и репетитор подключаются по коду или QR-коду. Репетитору можно дать режим «только просмотр».
 • Виджет «Завтра» на главном экране.
 • Русский, қазақша, English. Светлая и тёмная тема.
@@ -589,7 +589,7 @@ On the child's phone the app needs Usage access (to count minutes in apps) and "
 ALSO
 • A chat right on each task and voice notes from the child.
 • A month calendar and a weekly report, streaks and stars for effort.
-• Textbooks: links to e-textbooks and your own PDFs.
+• Textbooks: your own PDFs imported from the device.
 • A second parent and a tutor join with a code or QR code. A tutor can get view-only access.
 • A "Tomorrow" home-screen widget.
 • Russian, Kazakh and English. Light and dark theme.
@@ -632,7 +632,7 @@ No username/password: a device joins a family with a one-time invite code (48 h)
 Parent device: first screen → "У меня есть код" (I have a code) → DEMO_PARENT_CODE_1 (spare: DEMO_PARENT_CODE_2, DEMO_PARENT_CODE_3).
 Child device: "У меня есть код" → DEMO_CHILD_CODE_1 (spare: DEMO_CHILD_CODE_2, DEMO_CHILD_CODE_3).
 The demo family has free access, no payment needed. You can also create a new family: "Я родитель — начать", then Settings → "Пригласить ученика" shows a code for the second device.
-Screen time (parental control) runs on the CHILD's Android device: Parent → Settings → "Экранное время и учебники" → turn on and set a limit; Child device → open the app → grant Usage access and "Display over other apps" → "Включить контроль". A persistent notification shows while control is on. Language: Settings → Language → English.
+Screen time (parental control) runs on the CHILD's Android device: Parent → Settings → "Экранное время" → turn on and set a limit; Child device → open the app → grant Usage access and "Display over other apps" → "Включить контроль". A persistent notification shows while control is on. Language: Settings → Language → English.
 ```
 
 **Content rating (IARC):**
@@ -647,7 +647,7 @@ Screen time (parental control) runs on the CHILD's Android device: Parent → Se
 | Does the app allow users to interact or exchange content with each other? | **Yes**. Чат и фото, только внутри семьи; модерация не нужна, участников приглашает родитель |
 | Does the app share the user's current physical location with other users? | **Yes** — only with the invited parent when the parent enables child location and the child grants permission |
 | Does the app allow users to purchase digital goods? | **Yes** (подписка) |
-| Does the app contain unrestricted internet access / web browser? | **No** (учебники открываются во встроенном просмотрщике, только сайт ссылки) |
+| Does the app contain unrestricted internet access / web browser? | **No** (нет просмотра сайтов учебников; только PDF пользователя) |
 | Is the app a news / social media app? | No |
 | Contains Russian-Federation-specific / content restricted by law? | No |
 
@@ -812,7 +812,7 @@ Used only on the child's device while parental control is on, so that the full-s
 родителя. Ссылку вставить в декларацию Foreground service. Её же присылать, если проверка спросит про Usage access,
 overlay или Stalkerware.
 
-1. Телефон родителя: Настройки → «Экранное время и учебники» → включить, лимит на день 30 мин, лимит на YouTube 1 мин,
+1. Телефон родителя: Настройки → «Экранное время» → включить, лимит на день 30 мин, лимит на YouTube 1 мин,
    «Сначала уроки» включено.
 2. Телефон ребёнка: открыть приложение.
    - Экран настройки контроля с объяснением.

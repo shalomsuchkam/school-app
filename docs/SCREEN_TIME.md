@@ -1,3 +1,5 @@
+> Mobile release update (November 4, 2026): textbook website links have been removed from both parent and child UI. The reader accepts only IDs from the local imported-PDF shelf, never remote URLs or arbitrary file paths. The legacy backend contract below remains for older installed clients; stored family links are preserved, not deleted. No supplied books or website catalog is included in the new mobile release.
+
 # Screen time & textbooks — shared contract (v1)
 
 Parental controls for the child's phone, configured by the parent in «Уроки». Android is enforced by the
