@@ -74,7 +74,7 @@ jobs:
           import json
           groups=json.load(open('/tmp/devices.json'))['devices']
           devices=[d for key,values in groups.items() if 'iOS' in key for d in values if d.get('isAvailable')]
-          for label,match in [('iphone',lambda n:'iPhone' in n and 'Pro Max' in n),('ipad',lambda n:'iPad' in n and '13-inch' in n)]:
+          for label,match in [('iphone',lambda n:'iPhone' in n and n.endswith('Pro')),('ipad',lambda n:'iPad Pro' in n and '13-inch' in n)]:
               selected=[d for d in devices if match(d['name'])]
               if not selected: raise RuntimeError('No matching device: '+label)
               print(label,selected[-1]['udid'])
