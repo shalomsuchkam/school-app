@@ -10,6 +10,10 @@ on:
         description: Save reviewed Russian App Store description and privacy/support URLs
         type: boolean
         default: false
+      release_build:
+        description: Link this processed build number to the draft App Store version
+        type: string
+        default: ''
 permissions:
   contents: read
 jobs:
@@ -25,6 +29,7 @@ jobs:
           CONFIGURE_CONTROLS: ${{ inputs.configure_family_controls }}
           PREPARE_METADATA: ${{ inputs.prepare_metadata }}
           REVIEW_NOTES: ${{ secrets.STORE_REVIEW_NOTES }}
+          RELEASE_BUILD: ${{ inputs.release_build }}
         shell: bash
         run: |
           node --input-type=module <<'NODE'
@@ -49,8 +54,15 @@ jobs:
             console.log('APP',JSON.stringify({id:app.id,...app.attributes}));
             const versions=await get(`apps/${app.id}/appStoreVersions?limit=5`);
             console.log('VERSIONS',JSON.stringify(versions.map(x=>({id:x.id,...x.attributes}))));
-            console.log('BUILDS',JSON.stringify((await get(`builds?filter[app]=${app.id}&sort=-uploadedDate&limit=5`)).map(x=>({id:x.id,version:x.attributes.version,state:x.attributes.processingState}))));
+            const builds=await get(`builds?filter[app]=${app.id}&sort=-uploadedDate&limit=5`);
+            console.log('BUILDS',JSON.stringify(builds.map(x=>({id:x.id,version:x.attributes.version,state:x.attributes.processingState}))));
             for(const version of versions) {
+              if(process.env.RELEASE_BUILD && version.attributes.appStoreState === 'PREPARE_FOR_SUBMISSION') {
+                const build=builds.find(x=>x.attributes.version===process.env.RELEASE_BUILD && x.attributes.processingState==='VALID');
+                if(!build) throw new Error('Requested build is not yet VALID: '+process.env.RELEASE_BUILD);
+                await request(`appStoreVersions/${version.id}/relationships/build`,'PATCH',{data:{type:'builds',id:build.id}});
+                console.log('BUILD_LINKED',process.env.RELEASE_BUILD,version.id);
+              }
               if(process.env.PREPARE_METADATA === 'true' && process.env.REVIEW_NOTES && version.attributes.appStoreState === 'PREPARE_FOR_SUBMISSION') {
                 let detail;
                 try { detail=await get(`appStoreVersions/${version.id}/appStoreReviewDetail`); } catch (e) { if(!e.message.includes('404')) throw e; }
