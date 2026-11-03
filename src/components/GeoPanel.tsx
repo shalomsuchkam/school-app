@@ -17,6 +17,7 @@ export function GeoPanel({ trackLocation }: { trackLocation: boolean }) {
   const t = useT();
   const [perm, setPerm] = useState<Perm>('unknown');
   const [servicesOn, setServicesOn] = useState<boolean | null>(null);
+  const [startFailed, setStartFailed] = useState(false);
 
   const labels = useCallback(() => ({ title: t('loc.child.on.title'), body: t('loc.child.on.text') }), [t]);
 
@@ -38,13 +39,12 @@ export function GeoPanel({ trackLocation }: { trackLocation: boolean }) {
     }
     setPerm(!fgGranted ? 'denied' : bgGranted ? 'granted' : 'foreground-only');
     setServicesOn(await Location.hasServicesEnabledAsync().catch(() => null));
-    if (fgGranted) {
+    try {
       await syncTracking(true, labels());
-      void pingNow();
-    } else {
-      // Permission revoked is different from the parent disabling sharing: retain
-      // the status heartbeat so the parent can be notified about lost permission.
-      await syncTracking(true, labels());
+      setStartFailed(false);
+      if (fgGranted) void pingNow().catch(() => {});
+    } catch {
+      setStartFailed(true);
     }
   }, [trackLocation, labels]);
 
@@ -67,8 +67,7 @@ export function GeoPanel({ trackLocation }: { trackLocation: boolean }) {
     const r = await requestGeoPermission();
     setPerm(r === 'granted' ? 'granted' : r === 'foreground-only' ? 'foreground-only' : 'denied');
     if (r !== 'denied') {
-      await syncTracking(true, labels()).catch(() => {});
-      void pingNow();
+      await reconcile();
     }
     setServicesOn(await Location.hasServicesEnabledAsync().catch(() => null));
   };
@@ -81,6 +80,9 @@ export function GeoPanel({ trackLocation }: { trackLocation: boolean }) {
   }
   if (perm === 'foreground-only') {
     return <Banner tone="warn" icon="location-outline" text={t('loc.child.perm.foreground')} action={{ label: t('loc.child.perm.open'), onPress: () => Linking.openSettings(), icon: 'settings-outline' }} live />;
+  }
+  if (startFailed) {
+    return <Banner tone="warn" icon="location-outline" title={t('loc.child.failed.title')} text={t('loc.child.failed.text')} action={{ label: t('common.retry'), onPress: () => { void reconcile().catch(() => {}); }, icon: 'refresh' }} />;
   }
   if (perm === 'granted') {
     return <Banner tone="brand" icon="location" title={t('loc.child.on.title')} text={t('loc.child.on.text')} live />;

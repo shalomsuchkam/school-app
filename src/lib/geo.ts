@@ -2,6 +2,7 @@ import * as BackgroundFetch from 'expo-background-fetch';
 import * as Location from 'expo-location';
 import * as TaskManager from 'expo-task-manager';
 import { Platform } from 'react-native';
+import { File, Paths } from 'expo-file-system';
 
 import { API_BASE } from './api';
 import { readSessionToken } from './sessionStore';
@@ -20,6 +21,29 @@ export const HEARTBEAT_TASK = 'uroki-location-heartbeat';
 
 // Persisted desire to track, so a relaunch/boot can resume without waiting for the first /child/state.
 const WANT_KEY = 'uroki.geo.want.v1';
+
+// This is a non-secret preference. Keep it independent of Keystore availability,
+// just as session recovery does, so a restored Android install can still start tracking.
+const wantFile = () => new File(Paths.document, 'geo-want.v1.txt');
+async function readWanted(): Promise<boolean> {
+  try {
+    const file = wantFile();
+    if (file.exists) return file.textSync() === '1';
+  } catch { /* legacy secure preference remains a fallback */ }
+  return (await storage.get(WANT_KEY).catch(() => null)) === '1';
+}
+async function writeWanted(on: boolean): Promise<void> {
+  const value = on ? '1' : '0';
+  let written = false;
+  try {
+    const file = wantFile();
+    if (!file.exists) file.create();
+    file.write(value);
+    written = true;
+  } catch { /* retain support for the previous storage */ }
+  try { await storage.set(WANT_KEY, value); }
+  catch (error) { if (!written) throw error; }
+}
 
 type Perm = 'always' | 'while' | 'denied' | 'unknown';
 
@@ -80,7 +104,7 @@ if (tracked && !TaskManager.isTaskDefined(LOCATION_TASK)) {
 // --- heartbeat: periodic wake-up that pings even when stationary, and when location was switched off ---
 if (tracked && !TaskManager.isTaskDefined(HEARTBEAT_TASK)) {
   TaskManager.defineTask(HEARTBEAT_TASK, async () => {
-    if ((await storage.get(WANT_KEY)) !== '1') return BackgroundFetch.BackgroundFetchResult.NoData;
+    if (!(await readWanted())) return BackgroundFetch.BackgroundFetchResult.NoData;
     let pos: Location.LocationObject | null = null;
     try {
       if (await Location.hasServicesEnabledAsync()) pos = await Location.getLastKnownPositionAsync();
@@ -123,7 +147,7 @@ export function startTracking(labels: { title: string; body: string }): Promise<
 
 async function startTrackingNow(labels: { title: string; body: string }): Promise<void> {
   if (!tracked) return;
-  await storage.set(WANT_KEY, '1');
+  await writeWanted(true);
   // Report permission/services status before waiting for a GPS fix (which may never
   // arrive indoors). Keep the heartbeat when permission is revoked, so the parent
   // still gets a status report rather than silently losing this device.
@@ -164,7 +188,7 @@ export function stopTracking(): Promise<void> {
 
 async function stopTrackingNow(): Promise<void> {
   if (!tracked) return;
-  await storage.set(WANT_KEY, '0');
+  await writeWanted(false);
   try {
     if (await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK)) await Location.stopLocationUpdatesAsync(LOCATION_TASK);
   } catch { /* already stopped */ }
@@ -184,7 +208,7 @@ export async function syncTracking(on: boolean, labels: { title: string; body: s
 // location switch or revoked permission reaches the parent within seconds rather than at the next schedule.
 export async function pingNow(): Promise<void> {
   if (!tracked) return;
-  if ((await storage.get(WANT_KEY)) !== '1') return;
+  if (!(await readWanted())) return;
   let pos: Location.LocationObject | null = null;
   try {
     if (await Location.hasServicesEnabledAsync()) {
@@ -203,7 +227,7 @@ export async function pingNow(): Promise<void> {
 // Whether the child phone currently wants to track (persisted desire), for showing status on a settings screen.
 export async function isTrackingWanted(): Promise<boolean> {
   try {
-    return (await storage.get(WANT_KEY)) === '1';
+    return await readWanted();
   } catch {
     return false;
   }

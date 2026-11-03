@@ -3,10 +3,12 @@ import * as TaskManager from 'expo-task-manager';
 import * as BackgroundFetch from 'expo-background-fetch';
 import { HEARTBEAT_TASK, LOCATION_TASK, startTracking, stopTracking } from '@/lib/geo';
 import { storage } from '@/lib/storage';
+import { File } from 'expo-file-system';
 
 jest.mock('@/lib/api', () => ({ API_BASE: 'https://example.test/app' }));
 jest.mock('@/lib/sessionStore', () => ({ readSessionToken: jest.fn(() => Promise.resolve(null)) }));
 jest.mock('@/lib/storage', () => ({ storage: { get: jest.fn(), set: jest.fn() } }));
+jest.mock('expo-file-system', () => ({ Paths: { document: 'private' }, File: jest.fn(() => ({ exists: false, create: jest.fn(), write: jest.fn() })) }));
 jest.mock('expo-location', () => ({
   getForegroundPermissionsAsync: jest.fn(), getBackgroundPermissionsAsync: jest.fn(),
   hasServicesEnabledAsync: jest.fn(), hasStartedLocationUpdatesAsync: jest.fn(),
@@ -19,12 +21,20 @@ jest.mock('expo-background-fetch', () => ({ registerTaskAsync: jest.fn(), unregi
 
 const labels = { title: 'Location sharing is on', body: 'The parent can see your location' };
 beforeEach(() => {
+  jest.mocked(storage.set).mockResolvedValue(undefined);
   jest.mocked(storage.get).mockResolvedValue(null);
   jest.mocked(Location.getForegroundPermissionsAsync).mockResolvedValue({ granted: true } as any);
   jest.mocked(Location.getBackgroundPermissionsAsync).mockResolvedValue({ granted: true } as any);
   jest.mocked(Location.hasServicesEnabledAsync).mockResolvedValue(false);
   jest.mocked(Location.hasStartedLocationUpdatesAsync).mockResolvedValue(false);
   jest.mocked(TaskManager.isTaskRegisteredAsync).mockResolvedValue(false);
+});
+
+it('starts the service when Android Keystore fails but the private preference file is writable', async () => {
+  jest.mocked(storage.set).mockRejectedValueOnce(new Error('Keystore unavailable'));
+  await expect(startTracking(labels)).resolves.toBeUndefined();
+  expect(File).toHaveBeenCalled();
+  expect(Location.startLocationUpdatesAsync).toHaveBeenCalledWith(LOCATION_TASK, expect.any(Object));
 });
 
 it('defines location and heartbeat handlers on module import, without mounting a screen', () => {
