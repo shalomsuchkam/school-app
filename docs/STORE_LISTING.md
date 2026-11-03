@@ -318,13 +318,13 @@ App Store Connect → App Privacy → Get Started. **Do you or your third-party 
 | Identifiers → **User ID** | идентификатор семьи (он же ID покупателя в RevenueCat), случайный токен устройства (храним только хэш), chat id Telegram, если родитель подключил бота | `app_families.id`, `app_devices` |
 | Purchases → **Purchase History** | статус подписки и дата окончания от App Store / Google Play через RevenueCat | `app_families.paid_until`, `billing_*` |
 | Usage Data → **Other Usage Data** | минуты в приложениях и список приложений с Android-телефона ребёнка. Родитель видит их и в iOS-приложении | `POST /screen/report` |
+| Location → **Precise Location** | координаты и недавний маршрут ребёнка, только при включённой функции и выданном разрешении | `POST /child/location`, `app_locations`, `app_location_log` |
+| Identifiers → **Device ID** | идентификатор установки и токен доставки push, без рекламного трекинга | `app_devices` |
 
 Не отмечать:
 
-- **Location, Contacts, Health, Financial Info (карт мы не получаем), Browsing History, Search History,
+- **Contacts, Health, Financial Info (карт мы не получаем), Browsing History, Search History,
   Sensitive Info.** Ничего из этого не собираем.
-- **Device ID.** Push-токен Expo нужен только для доставки уведомлений. Apple не считает его «Device ID» (это не
-  IDFA/IDFV).
 - **Diagnostics.** Нет Crashlytics/Sentry, crash-логи мы не собираем.
 - **IP-адрес.** Используется только для защиты от перебора (счётчик запросов на минуты) и не хранится с данными
   семьи. По правилам Apple это не «сбор».
@@ -474,7 +474,7 @@ Operator: IE "KonG Service", Almaty, Kazakhstan
 • ребёнок сам включает контроль на своём телефоне, видит, какие разрешения нужны и зачем;
 • пока контроль работает, в шторке всегда есть уведомление «родительский контроль включён»;
 • приложение не прячет свою иконку и удаляется обычным способом — родитель увидит «Защита выключена»;
-• родитель видит список приложений и минуты в них, но не переписку, не историю браузера и не содержимое приложений; местоположение не отслеживается;
+• родитель видит список приложений и минуты в них, но не переписку, не историю браузера и не содержимое приложений; местоположение передаётся родителю только при включении «Где ребёнок» и разрешении геолокации на устройстве ребёнка;
 • звонки, сообщения и экстренные вызовы работают всегда.
 Для работы на телефоне ребёнка нужны доступ к статистике использования (чтобы считать минуты в приложениях) и разрешение «Поверх других приложений» (чтобы показать экран «Время вышло»).
 
@@ -582,7 +582,7 @@ This is open parental control, not hidden monitoring:
 • the child turns control on on their own phone and sees which permissions are needed and why;
 • while control is running, a notification "parental control is on" is always shown;
 • the app never hides its icon and can be uninstalled normally — the parent then sees "Protection is off";
-• the parent sees the list of apps and the minutes spent in them, but not messages, browsing history or app content; location is not tracked;
+• the parent sees the list of apps and the minutes spent in them, but not messages, browsing history or app content; location is shared only when the parent enables child location and the child grants permission;
 • calls, messages and emergency calls always work.
 On the child's phone the app needs Usage access (to count minutes in apps) and "Display over other apps" (to show the "Time is up" screen).
 
@@ -645,7 +645,7 @@ Screen time (parental control) runs on the CHILD's Android device: Parent → Se
 | Violence, blood, fear, sexuality, profanity, crude humour, drugs, alcohol, tobacco | No на все |
 | Gambling / simulated gambling | No |
 | Does the app allow users to interact or exchange content with each other? | **Yes**. Чат и фото, только внутри семьи; модерация не нужна, участников приглашает родитель |
-| Does the app share the user's current physical location with other users? | **No** |
+| Does the app share the user's current physical location with other users? | **Yes** — only with the invited parent when the parent enables child location and the child grants permission |
 | Does the app allow users to purchase digital goods? | **Yes** (подписка) |
 | Does the app contain unrestricted internet access / web browser? | **No** (учебники открываются во встроенном просмотрщике, только сайт ссылки) |
 | Is the app a news / social media app? | No |
@@ -718,20 +718,18 @@ financial features». **Health:** No health features.
 | App activity → **Other actions** | Optional | App functionality | минуты в каждом приложении за день на телефоне ребёнка (экранное время) |
 | App info and performance | — | — | **не собираем** (нет crash-логов и диагностики) |
 | Device or other IDs → **Device or other IDs** | Required | App functionality | push-токен для уведомлений, случайный токен устройства |
+| Location → **Precise location** | Optional | App functionality | координаты и недавний маршрут ребёнка, включая фоновый режим, только при включении родителем и разрешении на устройстве ребёнка |
 
 **Не отмечать:**
 
-- Location, Contacts, Calendar, Files and docs: PDF-учебники остаются на телефоне и на сервер не попадают.
+- Contacts, Calendar, Files and docs: PDF-учебники остаются на телефоне и на сервер не попадают.
 - Web browsing, Health and fitness, Emails, SMS.
 - Race/ethnicity, political, religious, sexual orientation.
 
 **IP-адрес** используется только для ограничения частоты запросов и хранится считанные минуты. Если Play
 спросит, это «processed ephemerally».
 
-> ⚠️ Политика конфиденциальности (`supabase/functions/app/legal.ts`) пока **не упоминает экранное время** (список
-> приложений и минуты с телефона ребёнка). Ещё в ней написано «серверы Supabase в ЕС», а сервер теперь в Алматы
-> (`api.urokiapp.kz`). Google сверяет Data safety с политикой: до отправки на проверку политику нужно дополнить и
-> поднять `LEGAL_VERSION`.
+Политика `supabase/functions/app/legal.ts` описывает экранное время и геолокацию. Перед отправкой сверяйте опубликованный текст, Data safety и фактически включённые функции; сервер находится в Казахстане (`api.urokiapp.kz`).
 
 ### 2.5. Декларации разрешений Android
 
@@ -752,7 +750,7 @@ financial features». **Health:** No health features.
 | `INTERNET`, `ACCESS_NETWORK_STATE`, `VIBRATE`, `WAKE_LOCK` и т. п. | Expo | нет |
 
 Accessibility Service, Device Admin, VPN, `REQUEST_INSTALL_PACKAGES`, `MANAGE_EXTERNAL_STORAGE`, SMS/Call log и
-местоположение **не используются**. Это сильно упрощает проверку.
+не используются. Местоположение используется только после включения родителем и согласия ребёнка: нужны декларации фоновой геолокации и foreground service Location, а также настоящее демонстрационное видео.
 
 #### Foreground service (Special use)
 
@@ -802,7 +800,7 @@ Used only on the child's device while parental control is on, so that the full-s
 | В описании магазина прямо сказано, что это родительский контроль / мониторинг | раздел «Родительский контроль экранного времени» в полном описании (выше) |
 | Только для родителей / законных представителей | семью создаёт взрослый родитель, ребёнок подключается кодом с телефона родителя; условия: родитель подтверждает, что он законный представитель |
 | Флаг `isMonitoringTool` в манифесте | `child_monitoring` в `modules/screen-guard/android/src/main/AndroidManifest.xml` |
-| Нет сбора переписки, звонков, местоположения, фото с устройства | собираются только имена пакетов и минуты; фото — только снятые камерой внутри приложения для заданий |
+| Нет сбора переписки, звонков и произвольных фото с устройства | собираются имена пакетов и минуты; фото — только снятые камерой внутри приложения для заданий; геолокация — отдельная добровольно включаемая функция с фоновым разрешением |
 | Нет обхода системы: не мешаем удалить, нет Device Admin | так и есть |
 
 > Перед загрузкой сборки проверьте, что текст уведомления после переименования говорит «Контроль ДЗ: родительский

@@ -16,6 +16,7 @@ type Perm = 'granted' | 'foreground-only' | 'denied' | 'unknown';
 export function GeoPanel({ trackLocation }: { trackLocation: boolean }) {
   const t = useT();
   const [perm, setPerm] = useState<Perm>('unknown');
+  const [servicesOn, setServicesOn] = useState<boolean | null>(null);
 
   const labels = useCallback(() => ({ title: t('loc.child.on.title'), body: t('loc.child.on.text') }), [t]);
 
@@ -36,6 +37,7 @@ export function GeoPanel({ trackLocation }: { trackLocation: boolean }) {
       // treat as unknown; the banner will offer to request
     }
     setPerm(!fgGranted ? 'denied' : bgGranted ? 'granted' : 'foreground-only');
+    setServicesOn(await Location.hasServicesEnabledAsync().catch(() => null));
     if (fgGranted) {
       await syncTracking(true, labels());
       void pingNow();
@@ -48,12 +50,14 @@ export function GeoPanel({ trackLocation }: { trackLocation: boolean }) {
 
   useFocusEffect(
     useCallback(() => {
-      reconcile();
+      void reconcile().catch(() => {});
     }, [reconcile]),
   );
   useEffect(() => {
     // back from the OS location dialog / settings: refresh the banner and (re)start tracking at once
-    const sub = AppState.addEventListener('change', (a) => a === 'active' && reconcile());
+    const sub = AppState.addEventListener('change', (a) => {
+      if (a === 'active') void reconcile().catch(() => {});
+    });
     return () => sub.remove();
   }, [reconcile]);
 
@@ -63,13 +67,17 @@ export function GeoPanel({ trackLocation }: { trackLocation: boolean }) {
     const r = await requestGeoPermission();
     setPerm(r === 'granted' ? 'granted' : r === 'foreground-only' ? 'foreground-only' : 'denied');
     if (r !== 'denied') {
-      await syncTracking(true, labels());
+      await syncTracking(true, labels()).catch(() => {});
       void pingNow();
     }
+    setServicesOn(await Location.hasServicesEnabledAsync().catch(() => null));
   };
 
   if (perm === 'denied') {
     return <Banner tone="brand" icon="location-outline" title={t('loc.child.perm.title')} text={t('loc.child.perm.text')} action={{ label: t('loc.child.perm.btn'), onPress: ask, icon: 'navigate' }} />;
+  }
+  if (servicesOn === false) {
+    return <Banner tone="warn" icon="location-outline" title={t('loc.child.off.title')} text={t('loc.child.off.text')} action={{ label: t('loc.child.perm.open'), onPress: () => Linking.openSettings(), icon: 'settings-outline' }} />;
   }
   if (perm === 'foreground-only') {
     return <Banner tone="warn" icon="location-outline" text={t('loc.child.perm.foreground')} action={{ label: t('loc.child.perm.open'), onPress: () => Linking.openSettings(), icon: 'settings-outline' }} live />;

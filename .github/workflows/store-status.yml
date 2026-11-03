@@ -1,0 +1,46 @@
+name: Store readiness status
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  status:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Read Apple app and capability status (no secret values)
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import { createPrivateKey, sign } from 'node:crypto';
+          const b64 = (v) => Buffer.from(JSON.stringify(v)).toString('base64url');
+          const now = Math.floor(Date.now()/1000);
+          const head = b64({alg:'ES256',kid:process.env.ASC_KEY_ID,typ:'JWT'});
+          const body = b64({iss:process.env.ASC_ISSUER_ID,iat:now,exp:now+300,aud:'appstoreconnect-v1'});
+          const unsigned = `${head}.${body}`;
+          const sig = sign('sha256',Buffer.from(unsigned),{key:createPrivateKey(process.env.ASC_KEY_P8),dsaEncoding:'ieee-p1363'}).toString('base64url');
+          const token = `${unsigned}.${sig}`;
+          console.log(`::add-mask::${token}`);
+          async function get(path) {
+            const r = await fetch('https://api.appstoreconnect.apple.com/v1/'+path,{headers:{Authorization:'Bearer '+token}});
+            const data=await r.json();
+            if(!r.ok) throw new Error(JSON.stringify({status:r.status,errors:data.errors}));
+            return data.data;
+          }
+          const apps = await get('apps?filter[bundleId]=kz.uroki.app');
+          for(const app of apps) {
+            console.log('APP',JSON.stringify({id:app.id,...app.attributes}));
+            console.log('VERSIONS',JSON.stringify(await get(`apps/${app.id}/appStoreVersions?limit=5`)));
+            console.log('BUILDS',JSON.stringify(await get(`builds?filter[app]=${app.id}&sort=-uploadedDate&limit=5`)));
+          }
+          if(!apps.length) console.log('NO_APP_STORE_APP');
+          const bundles=await get('bundleIds?filter[identifier]=kz.uroki.app,kz.uroki.app.ActivityMonitorExtension,kz.uroki.app.ShieldConfiguration,kz.uroki.app.ShieldAction');
+          for(const bundle of bundles) {
+            console.log('BUNDLE',JSON.stringify(bundle.attributes));
+            console.log('CAPABILITIES',JSON.stringify(await get(`bundleIds/${bundle.id}/bundleIdCapabilities`)));
+          }
+          NODE

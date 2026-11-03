@@ -44,10 +44,10 @@ So the design is: **report whenever possible, and detect + alert instantly when 
 ## Permissions / policy
 
 - Android: `ACCESS_FINE/COARSE/BACKGROUND_LOCATION`, `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_LOCATION`,
-  `RECEIVE_BOOT_COMPLETED` (app.json). iOS background modes: `location`, `fetch`, `processing`.
+  `RECEIVE_BOOT_COMPLETED` (app.json). iOS background modes: `location`, `fetch`.
 - Google Play requires a visible foreground‑service notification while tracking (we show one) and a prominent
   disclosure + privacy‑policy entry for background location. **The privacy policy must state that the app collects
   precise location in the background for parental monitoring, and where it is stored** — update
-  `supabase/functions/app/legal.ts` before submitting (it currently omits location).
+  `supabase/functions/app/legal.ts` and confirm the deployed policy before submitting (location is described there).
 - Background‑location access needs the Play Console "Location permissions" declaration + the demo video, since the
   feature is gated behind the parent's toggle.
