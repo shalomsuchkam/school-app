@@ -230,6 +230,11 @@ jobs:
             archive > xcodebuild.log 2>&1 \
             || (tail -n 250 xcodebuild.log; exit 1)
           tail -n 5 xcodebuild.log
+      - name: Preserve configured entitlements in archive
+        if: steps.mode.outputs.signed == 'true'
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: python3 scripts/prepare-ios-signing.py "$RUNNER_TEMP/Uroki.xcarchive"
       - name: Export for App Store Connect
         if: steps.mode.outputs.signed == 'true'
         env:
@@ -250,6 +255,13 @@ jobs:
             -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID" > export.log 2>&1 \
             || (tail -n 150 export.log; exit 1)
           ls "$RUNNER_TEMP/export"
+      - name: Verify signed capabilities before upload
+        if: steps.mode.outputs.signed == 'true'
+        run: |
+          flags=()
+          if node -e "process.exit(require('./app.json').expo.extra?.iosScreenTime===true?0:1)"; then flags+=(--screen-time); fi
+          if [ -n "$EAS_PROJECT_ID" ]; then flags+=(--push); fi
+          python3 scripts/verify-ios-entitlements.py "$RUNNER_TEMP/export/Uroki.ipa" "${flags[@]}"
       - name: Save signed IPA as a build artifact
         if: steps.mode.outputs.signed == 'true'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
