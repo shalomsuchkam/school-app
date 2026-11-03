@@ -1,5 +1,6 @@
 import { render, screen } from '@testing-library/react-native';
 import * as Location from 'expo-location';
+import { Platform } from 'react-native';
 import { GeoPanel } from '@/components/GeoPanel';
 import { locationServicesEnabled, syncTracking } from '@/lib/geo';
 
@@ -40,5 +41,15 @@ it('shows sharing status when device location and permissions are enabled', asyn
   jest.mocked(locationServicesEnabled).mockResolvedValue(true);
   await render(<GeoPanel trackLocation />);
   expect(screen.getByText(/loc.child.on.title/)).toBeTruthy();
+});
+
+it('keeps the Android service notification neutral when device location is off', async () => {
+  const os = jest.replaceProperty(Platform, 'OS', 'android');
+  try {
+    jest.mocked(locationServicesEnabled).mockResolvedValue(false);
+    await render(<GeoPanel trackLocation />);
+    expect(syncTracking).toHaveBeenCalledWith(true, { title: 'loc.service.title', body: 'loc.service.text' });
+    expect(screen.getByText(/loc.child.off.title/)).toBeTruthy();
+  } finally { os.restore(); }
 });
 

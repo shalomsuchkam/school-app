@@ -19,7 +19,9 @@ export function GeoPanel({ trackLocation }: { trackLocation: boolean }) {
   const [servicesOn, setServicesOn] = useState<boolean | null>(null);
   const [startFailed, setStartFailed] = useState(false);
 
-  const labels = useCallback(() => ({ title: t('loc.child.on.title'), body: t('loc.child.on.text') }), [t]);
+  const labels = useCallback(() => Platform.OS === 'android'
+    ? { title: t('loc.service.title'), body: t('loc.service.text') }
+    : { title: t('loc.child.on.title'), body: t('loc.child.on.text') }, [t]);
 
   const reconcile = useCallback(async () => {
     if (Platform.OS !== 'android' && Platform.OS !== 'ios') return;
@@ -85,7 +87,7 @@ export function GeoPanel({ trackLocation }: { trackLocation: boolean }) {
     return <Banner tone="warn" icon="location-outline" title={t('loc.child.failed.title')} text={t('loc.child.failed.text')} action={{ label: t('common.retry'), onPress: () => { void reconcile().catch(() => {}); }, icon: 'refresh' }} />;
   }
   if (perm === 'granted') {
-    return <Banner tone="brand" icon="location" title={t('loc.child.on.title')} text={t('loc.child.on.text')} live />;
+    return <Banner tone="brand" icon="location" title={t('loc.child.on.title')} text={t(Platform.OS === 'android' ? 'loc.child.on.androidText' : 'loc.child.on.text')} live />;
   }
   return null;
 }
