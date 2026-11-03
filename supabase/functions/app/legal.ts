@@ -2,7 +2,7 @@
 // Bump LEGAL_VERSION whenever the text changes: families accept a specific version at sign-up.
 import { secret } from "./lib.ts";
 
-export const LEGAL_VERSION = "2026-10-29.1";
+export const LEGAL_VERSION = "2026-11-03.1";
 
 // Operator details come from app_secrets (app_operator_ru / app_operator_kk / app_operator_en, app_support_email),
 // so the owner can fill in the legal entity, БИН and address without a new deploy.
@@ -53,7 +53,7 @@ const ru = {
 <li><b>Подписка:</b> идентификатор покупателя (это идентификатор семьи), статус и срок подписки от App Store / Google Play через RevenueCat. Платёжные данные карты мы не получаем.</li>
 <li>Если родитель подключит Telegram — идентификатор чата для отправки уведомлений.</li>
 <li><b>Экранное время</b> (только если родитель его включил): на Android телефон ученика передаёт список установленных приложений (название и идентификатор), минуты использования за день и состояние разрешений защиты — чтобы родитель видел их и задавал лимиты. На iPhone выбор приложений и статистика остаются на устройстве (Экранное время Apple) и нам не передаются. Ссылки на учебники хранятся у нас; PDF-файлы учебников остаются только на телефоне ученика.</li>
-<li><b>Геолокация ребёнка</b> (только если родитель включил «Где ребёнок»): телефон ученика на Android периодически, в том числе в фоне, отправляет своё местоположение (координаты, точность, уровень заряда) и признак того, включена ли на телефоне геолокация и выдан ли доступ, — чтобы родитель видел на карте, где ребёнок. Хранятся последняя точка и короткий недавний маршрут. Родитель может выключить сбор в любой момент в настройках; ребёнок видит, что геолокация включена (постоянный значок и уведомление в приложении).</li>
+<li><b>Геолокация ребёнка</b> (только если родитель включил «Где ребёнок»): телефон ученика на Android или iOS периодически, в том числе в фоне, отправляет своё местоположение (координаты, точность, уровень заряда) и признак того, включена ли на телефоне геолокация и выдан ли доступ, — чтобы родитель видел на карте, где ребёнок. Хранятся последняя точка и короткий недавний маршрут. Родитель может выключить сбор в любой момент в настройках; ребёнок видит, что геолокация включена (постоянный значок и уведомление в приложении).</li>
 </ul>
 <p>Мы не собираем контакты и рекламные идентификаторы, не показываем рекламу и не передаём данные для рекламы, профилирования или аналитики третьим лицам.</p>
 <h2>Основание и цели</h2>
@@ -68,8 +68,9 @@ const ru = {
 </ul>
 <h2>Кому передаются (обработчики)</h2>
 <p>хостинг-провайдер ps.kz (аренда сервера в Алматы), RevenueCat, Apple и Google (проверка подписки), Expo, Apple и Google (доставка push-уведомлений), Telegram (только если подключён родителем). Иным лицам — только по требованию закона.</p>
+<p>При открытии карты на телефоне родителя подложка загружается с серверов OpenStreetMap, а библиотека карты — с unpkg.com. Эти внешние сервисы получают IP-адрес устройства и запросы ресурсов; запросы тайлов карты содержат область, которую просматривает родитель. Точки и маршрут отображаются в приложении из данных нашего сервера. При открытии учебника по ссылке устройство подключается к выбранному родителем внешнему сайту по его правилам конфиденциальности.</p>
 <h2>Дети</h2>
-<p>Ребёнок пользуется приложением только с согласия родителя, который создаёт семью и управляет ею. Ребёнок не может сам покупать подписку, у ребёнка нет рекламы и внешних ссылок. Родитель может в любой момент посмотреть данные ребёнка, запретить их дальнейший сбор (отключить устройство ребёнка) и удалить их. Для пользователей из США это соответствует требованиям COPPA о прямом уведомлении и согласии родителя.</p>
+<p>Ребёнок пользуется приложением только с согласия родителя, который создаёт семью и управляет ею. Ребёнок не может сам покупать подписку, рекламы нет. Ребёнок может открывать учебники по ссылкам, добавленным родителем. Родитель может в любой момент посмотреть данные ребёнка, запретить их дальнейший сбор (отключить устройство ребёнка) и удалить их.</p>
 <h2>Ваши права</h2>
 <p>Вы вправе знать, какие данные обрабатываются, получить их копию, исправить, отозвать согласие и потребовать удаления — в приложении (Настройки → Удалить семью и все данные) или по адресу ${mail}. Мы отвечаем в течение 30 дней. Жители Казахстана вправе обратиться в уполномоченный орган по защите персональных данных (Закон РК «О персональных данных и их защите»), жители ЕС — в надзорный орган своей страны (GDPR).</p>`,
   delete: ({ mail }: Ctx) => `
@@ -116,7 +117,7 @@ const kk = {
 <li><b>Жазылым:</b> сатып алушы идентификаторы (отбасы идентификаторы), App Store / Google Play-дан RevenueCat арқылы алынған жазылым мәртебесі мен мерзімі. Карта деректерін алмаймыз.</li>
 <li>Ата-ана Telegram қосса — хабарландыру жіберу үшін чат идентификаторы.</li>
 <li><b>Экран уақыты</b> (тек ата-ана қосса): Android-та оқушының телефоны орнатылған қолданбалар тізімін (атауы мен идентификаторы), күндік пайдалану минуттарын және қорғау рұқсаттарының күйін жібереді — ата-ана оларды көріп, лимит қоюы үшін. iPhone-да қолданбаларды таңдау мен статистика құрылғыда қалады (Apple Экран уақыты) және бізге берілмейді. Оқулық сілтемелері бізде сақталады; оқулықтардың PDF файлдары тек оқушының телефонында қалады.</li>
-<li><b>Баланың геолокациясы</b> (тек ата-ана «Бала қайда»-ны қосса): оқушының Android телефоны мезгіл-мезгіл, оның ішінде фонда, өз орналасуын (координаттар, дәлдік, батарея деңгейі) және телефонда геолокация қосулы ма, рұқсат берілген бе дегенді жібереді — ата-ана картадан баланың қайда екенін көруі үшін. Соңғы нүкте мен жақындағы қысқа бағыт сақталады. Ата-ана жинауды кез келген уақытта баптауда өшіре алады; бала геолокацияның қосулы екенін көреді (тұрақты белгі және қолданбадағы хабарлама).</li>
+<li><b>Баланың геолокациясы</b> (тек ата-ана «Бала қайда»-ны қосса): оқушының Android немесе iOS телефоны мезгіл-мезгіл, оның ішінде фонда, өз орналасуын (координаттар, дәлдік, батарея деңгейі) және телефонда геолокация қосулы ма, рұқсат берілген бе дегенді жібереді — ата-ана картадан баланың қайда екенін көруі үшін. Соңғы нүкте мен жақындағы қысқа бағыт сақталады. Ата-ана жинауды кез келген уақытта баптауда өшіре алады; бала геолокацияның қосулы екенін көреді (тұрақты белгі және қолданбадағы хабарлама).</li>
 </ul>
 <p>Контактілерді, жарнама идентификаторларын жинамаймыз, жарнама көрсетпейміз және деректерді жарнама, профильдеу немесе аналитика үшін үшінші тұлғаларға бермейміз.</p>
 <h2>Негіз және мақсат</h2>
@@ -131,8 +132,9 @@ const kk = {
 </ul>
 <h2>Кімге беріледі (өңдеушілер)</h2>
 <p>ps.kz хостинг-провайдері (Алматыдағы серверді жалға беру), RevenueCat, Apple және Google (жазылымды тексеру), Expo, Apple және Google (push-хабарландыру жеткізу), Telegram (тек ата-ана қосса). Басқа тұлғаларға — тек заң талабы бойынша.</p>
+<p>Ата-ана карта ашқанда карта кескіндері OpenStreetMap серверлерінен, ал карта кітапханасы unpkg.com сайтынан жүктеледі. Бұл сыртқы сервистер құрылғының IP-мекенжайын және ресурс сұрауларын алады; карта сұрауларында ата-ана қарайтын аймақ болады. Нүктелер мен бағыт біздің сервердің деректерінен қолданбада көрсетіледі. Ата-ана қосқан оқулық сілтемесін ашқанда құрылғы сыртқы сайтқа оның құпиялылық ережелері бойынша қосылады.</p>
 <h2>Балалар</h2>
-<p>Бала қосымшаны тек отбасын ашып, оны басқаратын ата-ананың келісімімен пайдаланады. Бала жазылымды өзі сатып ала алмайды, балада жарнама мен сыртқы сілтемелер жоқ. Ата-ана кез келген уақытта баланың деректерін көре алады, оларды әрі қарай жинауға тыйым сала алады (бала құрылғысын ажырату) және жоя алады.</p>
+<p>Бала қосымшаны тек отбасын ашып, оны басқаратын ата-ананың келісімімен пайдаланады. Бала жазылымды өзі сатып ала алмайды, жарнама жоқ. Бала ата-ана қосқан оқулық сілтемелерін аша алады. Ата-ана кез келген уақытта баланың деректерін көре алады, оларды әрі қарай жинауға тыйым сала алады (бала құрылғысын ажырату) және жоя алады.</p>
 <h2>Сіздің құқықтарыңыз</h2>
 <p>Қандай деректер өңделетінін білуге, көшірмесін алуға, түзетуге, келісімді кері қайтарып алуға және жоюды талап етуге құқығыңыз бар — қосымшада (Баптаулар → Отбасын және барлық деректерді жою) немесе ${mail} мекенжайы арқылы. 30 күн ішінде жауап береміз. Қазақстан тұрғындары дербес деректерді қорғау жөніндегі уәкілетті органға («Дербес деректер және оларды қорғау туралы» ҚР Заңы) жүгіне алады.</p>`,
   delete: ({ mail }: Ctx) => `
@@ -179,7 +181,7 @@ const en = {
 <li><b>Subscription:</b> the customer id (the family id), subscription status and expiry from the App Store / Google Play via RevenueCat. We never receive card details.</li>
 <li>If a parent connects Telegram — the chat id used to send notifications.</li>
 <li><b>Screen time</b> (only if the parent turns it on): on Android the student's phone sends the list of installed apps (name and package id), minutes of use per day and the state of the protection permissions, so the parent can see them and set limits. On iPhone the app selection and usage stay on the device (Apple Screen Time) and are not sent to us. Textbook links are stored on our server; textbook PDF files stay only on the student's phone.</li>
-<li><b>Child location</b> (only if the parent turns on “Where is my child”): on Android the student's phone reports its location (coordinates, accuracy, battery level) periodically, including in the background, together with whether location services and the app's permission are on — so the parent can see on a map where the child is. The latest point and a short recent trail are stored. The parent can turn collection off at any time in settings; the child can see that location is on (a persistent icon and an in-app notice).</li>
+<li><b>Child location</b> (only if the parent turns on “Where is my child”): on Android or iOS the student's phone reports its location (coordinates, accuracy, battery level) periodically, including in the background, together with whether location services and the app's permission are on — so the parent can see on a map where the child is. The latest point and a short recent trail are stored. The parent can turn collection off at any time in settings; the child can see that location is on (a persistent icon and an in-app notice).</li>
 </ul>
 <p>We do not collect contacts or advertising identifiers, show no ads and share no data for advertising, profiling or analytics.</p>
 <h2>Legal basis and purpose</h2>
@@ -194,8 +196,9 @@ const en = {
 </ul>
 <h2>Processors</h2>
 <p>the hosting provider ps.kz (server in Almaty), RevenueCat, Apple and Google (subscription verification), Expo, Apple and Google (push delivery), Telegram (only if connected by the parent). Others only where required by law.</p>
+<p>When the parent opens a map, map tiles load from OpenStreetMap servers and the map library from unpkg.com. These external services receive the device IP address and resource requests; tile requests identify the area viewed by the parent. Points and trails are displayed in the app from data on our server. Opening a textbook link connects the device to the external site selected by the parent, under that site's privacy policy.</p>
 <h2>Children</h2>
-<p>A child uses the app only with the consent of the parent who creates and manages the family. A child cannot buy the subscription and sees no ads or external links. The parent can review the child's data, stop further collection (disconnect the child's device) and delete it at any time. For US users this is our direct notice to parents under COPPA; we collect only what is needed for the service.</p>
+<p>A child uses the app only with the consent of the parent who creates and manages the family. A child cannot buy the subscription and sees no ads. A child can open textbook links added by the parent. The parent can review the child's data, stop further collection (disconnect the child's device) and delete it at any time.</p>
 <h2>Your rights</h2>
 <p>You may access, export, correct or delete your data, withdraw consent and object to processing — in the app (Settings → Delete family and all data) or at ${mail}. We reply within 30 days. EU residents may complain to their data protection authority; Kazakhstan residents to the authorized personal data protection body.</p>`,
   delete: ({ mail }: Ctx) => `
