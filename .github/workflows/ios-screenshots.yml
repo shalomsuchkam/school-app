@@ -1,0 +1,65 @@
+name: Capture actual iOS app screenshots
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  screenshots:
+    runs-on: macos-latest
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3
+        with:
+          distribution: temurin
+          java-version: '17'
+      - run: sudo xcode-select -s "$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)/Contents/Developer"
+      - run: npm ci
+      - run: npx expo prebuild --platform ios
+      - name: Build actual simulator app
+        run: |
+          xcodebuild -workspace ios/Uroki.xcworkspace -scheme Uroki -configuration Release \
+            -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath build/ios-sim \
+            ARCHS="$(uname -m)" ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=NO \
+            build > simulator-build.log 2>&1 || (tail -n 180 simulator-build.log; exit 1)
+          tail -n 5 simulator-build.log
+      - name: Install UI test driver
+        run: curl -fsSL https://get.maestro.mobile.dev | bash
+      - name: Record app screens on iPhone and iPad
+        env:
+          REVIEW_CODE: ${{ secrets.STORE_REVIEW_PARENT_CODE }}
+          MAESTRO_CLI_NO_ANALYTICS: '1'
+        run: |
+          test -n "$REVIEW_CODE"
+          mkdir -p screenshots
+          xcrun simctl list devices available -j > /tmp/devices.json
+          python3 - <<'PY' > /tmp/capture-devices.txt
+          import json
+          groups=json.load(open('/tmp/devices.json'))['devices']
+          devices=[d for key,values in groups.items() if 'iOS' in key for d in values if d.get('isAvailable')]
+          for label,match in [('iphone',lambda n:'iPhone' in n and 'Pro Max' in n),('ipad',lambda n:'iPad' in n and '13-inch' in n)]:
+              selected=[d for d in devices if match(d['name'])]
+              if not selected: raise RuntimeError('No matching device: '+label)
+              print(label,selected[-1]['udid'])
+          PY
+          while read -r label device; do
+            xcrun simctl boot "$device" || true
+            xcrun simctl bootstatus "$device" -b
+            xcrun simctl status_bar "$device" override --time '9:41' --dataNetwork wifi --wifiMode active --wifiBars 3 --batteryState charged --batteryLevel 100
+            xcrun simctl install "$device" build/ios-sim/Build/Products/Release-iphonesimulator/Uroki.app
+            mkdir -p "screenshots/$label"
+            "$HOME/.maestro/bin/maestro" --device "$device" test -e REVIEW_CODE="$REVIEW_CODE" -e OUTPUT="screenshots/$label" .maestro/store-screenshots.yaml
+            xcrun simctl shutdown "$device"
+          done < /tmp/capture-devices.txt
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: ios-actual-screenshots
+          path: |
+            screenshots/**/*.png
+            simulator-build.log
+          if-no-files-found: error

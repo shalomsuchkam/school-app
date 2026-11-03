@@ -1,0 +1,20 @@
+appId: kz.uroki.app
+---
+- launchApp:
+    clearState: true
+- openLink: "uroki://join?code=${REVIEW_CODE}"
+- tapOn:
+    text: "Join|Войти"
+- extendedWaitUntil:
+    visible: ".*(Settings|Настройки).*"
+    timeout: 60000
+- takeScreenshot: "${OUTPUT}/01-parent-home"
+- openLink: "uroki://parent/screen"
+- waitForAnimationToEnd
+- takeScreenshot: "${OUTPUT}/02-screen-time"
+- openLink: "uroki://parent/calendar"
+- waitForAnimationToEnd
+- takeScreenshot: "${OUTPUT}/03-calendar"
+- openLink: "uroki://parent/settings"
+- waitForAnimationToEnd
+- takeScreenshot: "${OUTPUT}/04-settings"
