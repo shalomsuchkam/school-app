@@ -32,8 +32,13 @@ chmod 700 "$BACKUP_DIR" "$out"
 
 log "app tables -> $out/app.dump"
 app_dump >"$out/app.dump.tmp"
-compose exec -T db pg_restore --list <"$out/app.dump.tmp" | grep -q 'TABLE DATA public app_families' ||
+# Do not pipe pg_restore to grep -q under pipefail: grep exits as soon as it
+# matches, closes the pipe and can make pg_restore/docker fail with SIGPIPE.
+compose exec -T db pg_restore --list <"$out/app.dump.tmp" >"$out/app.list.tmp"
+grep -q 'TABLE DATA public app_families' "$out/app.list.tmp" ||
   die "app.dump has no app_families data"
+compose exec -T db pg_restore --file=/dev/null <"$out/app.dump.tmp"
+rm -f "$out/app.list.tmp"
 mv "$out/app.dump.tmp" "$out/app.dump"
 
 log "storage metadata -> $out/storage-meta.dump"

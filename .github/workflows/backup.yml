@@ -34,6 +34,37 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  selfhost-backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check self-hosted backup access
+        id: config
+        env:
+          SSH_HOST: ${{ secrets.SELFHOST_HOST }}
+          SSH_USER: ${{ secrets.SELFHOST_USER }}
+          SSH_KEY: ${{ secrets.SELFHOST_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.SELFHOST_SSH_KNOWN_HOSTS }}
+        run: |
+          for name in SSH_HOST SSH_USER SSH_KEY KNOWN_HOSTS; do
+            test -n "${!name}" || { echo "::error::Missing self-hosted backup configuration: $name"; exit 1; }
+          done
+      - name: Run and verify backup on the Kazakhstan server (no data export)
+        env:
+          SSH_HOST: ${{ secrets.SELFHOST_HOST }}
+          SSH_USER: ${{ secrets.SELFHOST_USER }}
+          SSH_KEY: ${{ secrets.SELFHOST_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.SELFHOST_SSH_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          key=$(printf '%s' "$SSH_KEY" | tr -d '\r')
+          if ! printf '%s' "$key" | grep -q 'PRIVATE KEY-----'; then key=$(printf '%s' "$key" | tr -d ' \n' | base64 -d | tr -d '\r'); fi
+          printf '%s\n' "$key" > ~/.ssh/uroki
+          chmod 600 ~/.ssh/uroki
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          ssh -i ~/.ssh/uroki -o BatchMode=yes -o StrictHostKeyChecking=yes "$SSH_USER@$SSH_HOST" \
+            'sudo systemctl start uroki-backup.service && sudo systemctl show uroki-backup.service -p Result -p ExecMainStatus'
+          rm -f ~/.ssh/uroki
   backup:
     runs-on: ubuntu-latest
     timeout-minutes: 30
