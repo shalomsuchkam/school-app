@@ -1,0 +1,49 @@
+name: Submit verified iOS build for review
+on:
+  workflow_dispatch:
+    inputs:
+      build_number:
+        description: Exact build number to submit
+        required: true
+        type: string
+      build_run_id:
+        description: Successful Build APK + IPA run to verify first
+        required: true
+        type: string
+      expected_sha:
+        description: Exact full source commit of that build
+        required: true
+        type: string
+      submit_for_review:
+        description: Submit to Apple after verification (false performs read-only preflight)
+        type: boolean
+        default: false
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: ios-review-kz-uroki-app
+  cancel-in-progress: false
+jobs:
+  submit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+      - name: Verify submission guards
+        run: node --test scripts/submit-ios-review.test.mjs
+      - name: Wait for signed build, link and submit only the intended app version
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+          REVIEW_NOTES: ${{ secrets.STORE_REVIEW_NOTES }}
+          RELEASE_BUILD: ${{ inputs.build_number }}
+          BUILD_RUN_ID: ${{ inputs.build_run_id }}
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
+          SUBMIT_FOR_REVIEW: ${{ inputs.submit_for_review }}
+        run: node scripts/submit-ios-review.mjs
