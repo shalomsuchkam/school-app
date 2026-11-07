@@ -34,13 +34,13 @@ function buildHtml(lat: number, lng: number, accuracy: number | null, trail: Map
   return `<!doctype html><html><head><meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"/>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-<style>html,body,#m{margin:0;height:100%;width:100%;background:#e9eef5}.leaflet-control-attribution{font-size:9px}</style>
+<style>html,body,#m{margin:0;height:100%;width:100%;background:#e9eef5}.leaflet-control-attribution{font-size:11px}</style>
 </head><body><div id="m"></div>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
   var lat=${lat}, lng=${lng}, acc=${acc}, brand=${JSON.stringify(brand)}, trail=${pts};
   var map=L.map('m',{zoomControl:true,attributionControl:true}).setView([lat,lng],16);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}).addTo(map);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© <a href="https://www.openstreetmap.org/copyright" rel="noopener">OpenStreetMap contributors</a> · ODbL'}).addTo(map);
   if(trail.length>1){L.polyline(trail,{color:brand,weight:4,opacity:0.6}).addTo(map);}
   if(acc>0){L.circle([lat,lng],{radius:acc,color:brand,weight:1,fillColor:brand,fillOpacity:0.12}).addTo(map);}
   L.circleMarker([lat,lng],{radius:9,color:'#fff',weight:3,fillColor:brand,fillOpacity:1}).addTo(map);
