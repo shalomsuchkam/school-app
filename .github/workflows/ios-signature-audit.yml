@@ -1,0 +1,23 @@
+name: Audit exported iOS distribution signatures
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Independently verify released builds with Apple tools
+        shell: bash
+        run: |
+          for build in 67 68; do
+            curl --fail --location --retry 2 --max-time 180 "https://github.com/shalomsuchkam/school-app/releases/download/build-${build}/Uroki.ipa" --output "Uroki-${build}.ipa"
+            python3 scripts/audit-ios-distribution.py "Uroki-${build}.ipa" "$build"
+          done
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ios-distribution-audit
+          path: ios-distribution-*.json
+          if-no-files-found: error
