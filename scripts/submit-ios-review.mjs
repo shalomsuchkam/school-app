@@ -32,6 +32,13 @@ export function verifyItems(items, versionId) {
     'Submission must contain only the requested app version');
 }
 
+export function verifyResubmission(candidate, items, versionId, authorizedId) {
+  verifyItems(items, versionId);
+  check(candidate.id === authorizedId && /^[a-f0-9-]{36}$/.test(authorizedId ?? ''), 'Rejected submission was not explicitly selected');
+  check(candidate.attributes.state === 'UNRESOLVED_ISSUES', 'Only an unresolved rejected submission can be resolved');
+  check(items[0].attributes?.state === 'REJECTED', 'Expected one rejected version item');
+}
+
 async function main() {
   const expected = { build: process.env.RELEASE_BUILD, sha: process.env.EXPECTED_SHA };
   const runId = process.env.BUILD_RUN_ID;
@@ -124,7 +131,18 @@ async function main() {
     const items = await apple(`reviewSubmissions/${candidate.id}/items?include=appStoreVersion&limit=200`);
     if (items.some((item) => item.relationships?.appStoreVersion?.data?.id === version.id)) {
       verifyItems(items, version.id);
-      check(candidate.attributes.state === 'READY_FOR_REVIEW', `Existing submission needs attention: ${candidate.attributes.state}`);
+      if (candidate.attributes.state === 'UNRESOLVED_ISSUES') {
+        verifyResubmission(candidate, items, version.id, process.env.REJECTED_SUBMISSION_ID);
+        await apple(`reviewSubmissionItems/${items[0].id}`, 'PATCH', {
+          data: { type: 'reviewSubmissionItems', id: items[0].id, attributes: { resolved: true } },
+        });
+        const resolved = await apple(`reviewSubmissions/${candidate.id}/items?include=appStoreVersion&limit=200`);
+        verifyItems(resolved, version.id);
+        check(resolved[0].attributes.state === 'READY_FOR_REVIEW', 'Rejected item did not become ready for review');
+        console.log(`REJECTED_ITEM_RESOLVED ${candidate.id}`);
+      } else {
+        check(candidate.attributes.state === 'READY_FOR_REVIEW', `Existing submission needs attention: ${candidate.attributes.state}`);
+      }
       check(!submission, 'Multiple draft submissions contain this version');
       submission = candidate;
     }

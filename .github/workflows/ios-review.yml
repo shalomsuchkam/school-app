@@ -18,6 +18,10 @@ on:
         description: Submit to Apple after verification (false performs read-only preflight)
         type: boolean
         default: false
+      rejected_submission_id:
+        description: Exact rejected submission to resolve and resubmit after investigating its issue (optional)
+        type: string
+        default: ''
 permissions:
   contents: read
   actions: read
@@ -46,4 +50,5 @@ jobs:
           BUILD_RUN_ID: ${{ inputs.build_run_id }}
           EXPECTED_SHA: ${{ inputs.expected_sha }}
           SUBMIT_FOR_REVIEW: ${{ inputs.submit_for_review }}
+          REJECTED_SUBMISSION_ID: ${{ inputs.rejected_submission_id }}
         run: node scripts/submit-ios-review.mjs

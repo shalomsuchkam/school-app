@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { verifyApp, verifyItems, verifyRun } from './submit-ios-review.mjs';
+import { verifyApp, verifyItems, verifyResubmission, verifyRun } from './submit-ios-review.mjs';
 
 const expected = { sha: 'a'.repeat(40), build: '68' };
 const run = { repository: { full_name: 'shalomsuchkam/school-app' }, head_sha: expected.sha, run_number: 68, path: '.github/workflows/build.yml', status: 'completed', conclusion: 'success' };
@@ -31,4 +31,17 @@ test('does not submit extra items, another version or an empty review', () => {
   assert.throws(() => verifyItems([], 'intended-version'));
   assert.throws(() => verifyItems([item, item], 'intended-version'));
   assert.throws(() => verifyItems([item], 'another-version'));
+});
+
+test('resolving a rejection requires the exact explicitly selected submission and rejected item', () => {
+  const id = '76e92b18-3c79-4134-a18a-8e707f6ad9cd';
+  const candidate = { id, attributes: { state: 'UNRESOLVED_ISSUES' } };
+  const item = { attributes: { state: 'REJECTED' }, relationships: { appStoreVersion: { data: { id: 'v' } } } };
+  assert.doesNotThrow(() => verifyResubmission(candidate, [item], 'v', id));
+  assert.throws(() => verifyResubmission(candidate, [item], 'v', undefined));
+  assert.throws(() => verifyResubmission(candidate, [item], 'v', 'a'.repeat(36)));
+  assert.throws(() => verifyResubmission({ ...candidate, attributes: { state: 'IN_REVIEW' } }, [item], 'v', id));
+  assert.throws(() => verifyResubmission(candidate, [{ ...item, attributes: { state: 'ACCEPTED' } }], 'v', id));
+  assert.throws(() => verifyResubmission(candidate, [item, item], 'v', id));
+  assert.throws(() => verifyResubmission(candidate, [item], 'other-version', id));
 });
