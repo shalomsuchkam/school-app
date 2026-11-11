@@ -44,6 +44,7 @@ example
 /android
 modules/*/android/build/
 google-services.json
+credentials.json
 
 # iOS screen-time extensions: written by prebuild when the iosScreenTime flag is on
 /targets/*/generated.entitlements

@@ -1,6 +1,17 @@
 {
-  "cli": { "appVersionSource": "local" },
+  "cli": {
+    "appVersionSource": "local",
+    "requireCommit": true
+  },
   "build": {
-    "production": { "distribution": "store" }
+    "apple43": {
+      "distribution": "store",
+      "credentialsSource": "remote",
+      "env": {
+        "BUILD_NUMBER": "72",
+        "APPLE_TEAM_ID": "WP7NWWX4RS",
+        "EAS_PROJECT_ID": "0989c4de-abdc-4810-9763-fcdd3a771259"
+      }
+    }
   }
 }

@@ -67,7 +67,8 @@
     "ios": "expo run:ios",
     "typecheck": "tsc --noEmit",
     "lint": "expo lint",
-    "test": "jest"
+    "test": "jest",
+    "eas-build-on-success": "node scripts/audit-eas-ios.mjs"
   },
   "private": true
 }
