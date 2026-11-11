@@ -111,4 +111,3 @@ describe('pasted homework', () => {
     expect(parsePasted('   ')).toEqual([]);
   });
 });
-

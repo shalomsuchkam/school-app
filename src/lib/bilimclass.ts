@@ -211,4 +211,3 @@ export function mondayOf(d: Date) {
 }
 /** School year that contains `d` (Sept–Aug), as BilimClass's `eduYear`. */
 export const eduYearOf = (d: Date) => (d.getMonth() >= 7 ? d.getFullYear() : d.getFullYear() - 1);
-
