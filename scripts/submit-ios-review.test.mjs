@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { verifyApp, verifyItems, verifyResubmission, verifyRun } from './submit-ios-review.mjs';
+import { verifyApp, verifyEditableVersion, verifyItems, verifyResubmission, verifyRun } from './submit-ios-review.mjs';
 
 const expected = { sha: 'a'.repeat(40), build: '68' };
 const run = { repository: { full_name: 'shalomsuchkam/school-app' }, head_sha: expected.sha, run_number: 68, path: '.github/workflows/build.yml', status: 'completed', conclusion: 'success' };
@@ -44,4 +44,15 @@ test('resolving a rejection requires the exact explicitly selected submission an
   assert.throws(() => verifyResubmission(candidate, [{ ...item, attributes: { state: 'ACCEPTED' } }], 'v', id));
   assert.throws(() => verifyResubmission(candidate, [item, item], 'v', id));
   assert.throws(() => verifyResubmission(candidate, [item], 'other-version', id));
+});
+
+test('a replacement is limited to an editable draft or explicitly verified rejected version', () => {
+  assert.doesNotThrow(() => verifyEditableVersion('PREPARE_FOR_SUBMISSION', 'old', 'new', false));
+  assert.doesNotThrow(() => verifyEditableVersion('REJECTED', 'old', 'new', true));
+  assert.doesNotThrow(() => verifyEditableVersion('READY_FOR_REVIEW', 'same', 'same', false));
+  assert.throws(() => verifyEditableVersion('REJECTED', 'old', 'new', false));
+  assert.throws(() => verifyEditableVersion('READY_FOR_REVIEW', 'old', 'new', true));
+  for (const state of ['WAITING_FOR_REVIEW', 'IN_REVIEW', 'PENDING_DEVELOPER_RELEASE', 'READY_FOR_SALE']) {
+    assert.throws(() => verifyEditableVersion(state, 'old', 'new', true));
+  }
 });

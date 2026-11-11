@@ -22,6 +22,10 @@ on:
         description: Exact rejected submission to resolve and resubmit after investigating its issue (optional)
         type: string
         default: ''
+      update_source_description:
+        description: Save Russian description from the exact verified build source before submitting
+        type: boolean
+        default: false
 permissions:
   contents: read
   actions: read
@@ -51,4 +55,5 @@ jobs:
           EXPECTED_SHA: ${{ inputs.expected_sha }}
           SUBMIT_FOR_REVIEW: ${{ inputs.submit_for_review }}
           REJECTED_SUBMISSION_ID: ${{ inputs.rejected_submission_id }}
+          UPDATE_SOURCE_DESCRIPTION: ${{ inputs.update_source_description }}
         run: node scripts/submit-ios-review.mjs

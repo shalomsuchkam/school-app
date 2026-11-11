@@ -39,6 +39,14 @@ export function verifyResubmission(candidate, items, versionId, authorizedId) {
   check(items[0].attributes?.state === 'REJECTED', 'Expected one rejected version item');
 }
 
+export function verifyEditableVersion(state, currentBuildId, nextBuildId, rejectedVerified) {
+  check(['PREPARE_FOR_SUBMISSION', 'READY_FOR_REVIEW', 'REJECTED'].includes(state), `Unexpected version state: ${state}`);
+  if (state === 'REJECTED') check(rejectedVerified, 'Rejected version requires its explicitly verified review submission');
+  if (currentBuildId !== nextBuildId) {
+    check(['PREPARE_FOR_SUBMISSION', 'REJECTED'].includes(state), 'Cannot replace build in an existing ready review');
+  }
+}
+
 async function main() {
   const expected = { build: process.env.RELEASE_BUILD, sha: process.env.EXPECTED_SHA };
   const runId = process.env.BUILD_RUN_ID;
@@ -65,6 +73,7 @@ async function main() {
   verifyRun(run, jobs, expected);
   const artifacts = (await github(`actions/runs/${runId}/artifacts?per_page=100`)).artifacts;
   check(artifacts.some((item) => item.name === 'ios-signed' && !item.expired), 'Signed iOS artifact missing');
+  check(artifacts.some((item) => item.name === 'ios-distribution-audit' && !item.expired), 'Independent Apple distribution signature audit missing');
   console.log(`VERIFIED_BUILD ${expected.build} ${expected.sha}`);
 
   const key = createPrivateKey(process.env.ASC_KEY_P8);
@@ -110,20 +119,41 @@ async function main() {
     console.log(`ALREADY_SUBMITTED ${expected.build} ${state}`);
     return;
   }
-  check(['PREPARE_FOR_SUBMISSION', 'READY_FOR_REVIEW'].includes(state), `Unexpected version state: ${state}`);
+  const notes = process.env.REVIEW_NOTES;
+  check(notes?.startsWith(`BUILD ${expected.build} —`), 'Reviewer instructions must describe the requested build');
+  let rejectedVerified = false;
+  if (state === 'REJECTED') {
+    const id = process.env.REJECTED_SUBMISSION_ID;
+    check(/^[a-f0-9-]{36}$/.test(id ?? ''), 'Select the exact rejected submission');
+    const candidate = await apple(`reviewSubmissions/${id}`);
+    const items = await apple(`reviewSubmissions/${id}/items?include=appStoreVersion&limit=200`);
+    verifyResubmission(candidate, items, version.id, id);
+    rejectedVerified = true;
+  }
+  verifyEditableVersion(state, current?.id, build.id, rejectedVerified);
   if (current?.id !== build.id) {
-    check(state === 'PREPARE_FOR_SUBMISSION', 'Cannot replace build in an existing review');
     await apple(`appStoreVersions/${version.id}/relationships/build`, 'PATCH', { data: { type: 'builds', id: build.id } });
   }
   const linked = await apple(`appStoreVersions/${version.id}/build`);
   check(linked.id === build.id, 'Build relationship verification failed');
   console.log(`BUILD_LINKED ${expected.build}`);
 
-  const notes = process.env.REVIEW_NOTES;
-  check(notes?.startsWith(`BUILD ${expected.build} —`), 'Reviewer instructions must describe the requested build');
   const detail = await apple(`appStoreVersions/${version.id}/appStoreReviewDetail`);
   check(detail?.id, 'Reviewer contact/demo instructions missing');
   await apple(`appStoreReviewDetails/${detail.id}`, 'PATCH', { data: { type: 'appStoreReviewDetails', id: detail.id, attributes: { notes } } });
+  if (process.env.UPDATE_SOURCE_DESCRIPTION === 'true') {
+    const source = await github(`contents/docs/store/ios-description.ru.txt?ref=${expected.sha}`);
+    check(source.encoding === 'base64' && typeof source.content === 'string', 'Description is missing from verified build source');
+    const description = Buffer.from(source.content, 'base64').toString('utf8').trim();
+    check(description.startsWith('«Контроль ДЗ»') && description.length <= 4000, 'Invalid source description');
+    const localizations = await apple(`appStoreVersions/${version.id}/appStoreVersionLocalizations`);
+    const ru = localizations.filter((item) => item.attributes.locale === 'ru');
+    check(ru.length === 1, 'Expected one Russian version localization');
+    await apple(`appStoreVersionLocalizations/${ru[0].id}`, 'PATCH', {
+      data: { type: 'appStoreVersionLocalizations', id: ru[0].id, attributes: { description } },
+    });
+    console.log(`SOURCE_DESCRIPTION_SAVED ${expected.sha}`);
+  }
 
   const submissions = await apple(`reviewSubmissions?filter[app]=${APP}&filter[platform]=IOS&limit=200`);
   let submission;
