@@ -149,6 +149,9 @@
     },
     "plugins": [
       "expo-router",
+      "expo-asset",
+      "expo-build-properties",
+      "expo-sharing",
       [
         "expo-splash-screen",
         {
