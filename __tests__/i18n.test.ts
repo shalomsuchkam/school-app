@@ -4,10 +4,11 @@ import devices from '@/i18n/devices';
 import onboarding from '@/i18n/onboarding';
 import parent from '@/i18n/parent';
 import screen from '@/i18n/screen';
+import walkthrough from '@/i18n/walkthrough';
 import { DICT, type Bundle, type Entry, type Lang } from '@/i18n';
 
 const LANGS: Lang[] = ['ru', 'kk', 'en'];
-const BUNDLES: Record<string, Bundle> = { common, child, parent, onboarding, screen, devices };
+const BUNDLES: Record<string, Bundle> = { common, child, parent, onboarding, screen, devices, walkthrough };
 
 // A plain string and plural forms are interchangeable (tn() takes both; Kazakh needs no plural forms), lists are not.
 const shape = (e: Entry) => (Array.isArray(e) ? `list(${e.length})` : 'text');

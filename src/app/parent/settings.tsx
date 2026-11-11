@@ -380,6 +380,10 @@ export default function Settings() {
           <Row icon="cloud-download" tint="blue" title={t('parent.bc.row')} subtitle={t('parent.bc.rowSub')} chevron onPress={() => router.push('/parent/bilimclass')} />
         </Group>
 
+        <SectionLabel>{t('walkthrough.title')}</SectionLabel>
+        <Group>
+          <Row icon="book-outline" title={t('walkthrough.open')} chevron onPress={() => router.push('/how-it-works')} />
+        </Group>
         <SectionLabel>{t('common.language')}</SectionLabel>
         <Segmented value={getLang()} onChange={changeLang} options={LANGS.map((l) => ({ value: l.code, label: l.label }))} />
         <Txt v="sub" color={p.muted} style={{ marginTop: 8, marginLeft: 6 }}>

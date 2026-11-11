@@ -74,6 +74,7 @@ export default function Welcome() {
         <View style={[styles.column, { gap: 10 }]}>
           <Btn title={t('onboarding.welcome.parent')} onPress={() => router.push('/onboarding')} />
           <Btn title={t('onboarding.welcome.haveCode')} kind="secondary" icon="key-outline" onPress={() => router.push('/join')} />
+          <Btn title={t('walkthrough.open')} kind="ghost" icon="book-outline" onPress={() => router.push('/how-it-works')} />
           <Txt v="sub" color={p.muted} style={{ textAlign: 'center', marginTop: 4 }}>
             {t('onboarding.welcome.footnote')}
           </Txt>

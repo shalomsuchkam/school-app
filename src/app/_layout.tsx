@@ -62,6 +62,7 @@ function Root() {
     <Stack key={lang} screenOptions={{ headerShown: false, contentStyle: { backgroundColor: p.bg }, animation: 'fade' }}>
       <Stack.Screen name="index" />
       <Stack.Screen name="welcome" />
+      <Stack.Screen name="how-it-works" options={{ animation: 'slide_from_right' }} />
       <Stack.Screen name="join" options={{ animation: 'slide_from_right' }} />
       <Stack.Screen name="onboarding" options={{ animation: 'slide_from_right' }} />
       <Stack.Screen name="child/index" />
