@@ -1,10 +1,5 @@
-// BilimClass import (beta), privacy-first:
-//  · the parent signs in on the real bilimclass.kz page inside a WebView; we never see the login or password;
-//  · a script injected into that page uses the page's own session to read this and next week's diary and posts
-//    only the diary JSON back to the app (never the token);
-//  · nothing from BilimClass is sent to our server except the homework text the parent confirms, as task notes.
-// Endpoints follow the public community docs of the web app's API (api.bilimclass.kz, v4 client office).
-// Every parser here is defensive: unknown shapes yield an empty list, never a crash.
+// Explicit text import and pure subject/date matching helpers.
+// No portal access, credentials, cookies or session inspection.
 
 export type BcItem = { date: string; subject: string; homework: string };
 export type SubjectLike = { id: number; name: string };
@@ -207,7 +202,7 @@ export function parsePasted(text: string): { subject: string; homework: string }
   return out;
 }
 
-// ---------- the script injected into bilimclass.kz ----------
+// ---------- calendar helpers ----------
 /** Monday of the week of `d` as DD.MM.YYYY (the diary's `date` parameter). */
 export function mondayOf(d: Date) {
   const x = new Date(d.getFullYear(), d.getMonth(), d.getDate());
@@ -217,88 +212,3 @@ export function mondayOf(d: Date) {
 /** School year that contains `d` (Sept–Aug), as BilimClass's `eduYear`. */
 export const eduYearOf = (d: Date) => (d.getMonth() >= 7 ? d.getFullYear() : d.getFullYear() - 1);
 
-/**
- * Runs inside the BilimClass page. It finds the page's own access token and profile in its storage, reads the diary
- * for this and next week (falling back to the monthly homework list) and posts
- * `{ type: 'diary', payloads }`, `{ type: 'need_login' }` or `{ type: 'error', message }`. The token never leaves the page.
- */
-export const READ_DIARY_JS = String.raw`(function () {
-  var RN = window.ReactNativeWebView;
-  function post(o) { try { RN && RN.postMessage(JSON.stringify(o)); } catch (e) {} }
-  var JWT = /^(Bearer\s+)?(eyJ[\w-]+\.[\w-]+\.[\w-]+)$/;
-  function parse(v) { try { return JSON.parse(v); } catch (e) { return v; } }
-  function walk(v, depth, fn) {
-    if (depth > 6 || v == null) return;
-    if (typeof v === 'string') { var p = v.length > 1 && (v[0] === '{' || v[0] === '[') ? parse(v) : v; if (p !== v) walk(p, depth + 1, fn); else fn(null, v); return; }
-    if (typeof v !== 'object') return;
-    for (var k in v) { if (!Object.prototype.hasOwnProperty.call(v, k)) continue; fn(k, v[k], v); walk(v[k], depth + 1, fn); }
-  }
-  function stores() {
-    var out = [];
-    [window.localStorage, window.sessionStorage].forEach(function (s) {
-      try { for (var i = 0; i < s.length; i++) { var k = s.key(i); out.push([k, s.getItem(k)]); } } catch (e) {}
-    });
-    try { document.cookie.split(';').forEach(function (c) { var i = c.indexOf('='); if (i > 0) out.push([c.slice(0, i).trim(), decodeURIComponent(c.slice(i + 1))]); }); } catch (e) {}
-    return out;
-  }
-  var token = null, info = {};
-  stores().forEach(function (kv) {
-    var m = typeof kv[1] === 'string' && kv[1].match(JWT);
-    if (m && !token && /token|auth|access/i.test(kv[0])) token = m[2];
-    walk(parse(kv[1]), 0, function (k, v, parent) {
-      if (typeof v === 'string') { var j = v.match(JWT); if (j && !token && (!k || /access|token/i.test(k)) && !/refresh|chat/i.test(k || '')) token = j[2]; }
-      if (k === 'school_id' || k === 'schoolId') info.schoolId = info.schoolId || v;
-      if (k === 'group' && v && typeof v === 'object' && v.id) info.groupId = info.groupId || v.id;
-      if (k === 'groupId' && typeof v !== 'object') info.groupId = info.groupId || v;
-      if (k === 'studentGroupUuid' && typeof v === 'string') info.groupUuid = info.groupUuid || v;
-      if (k === 'studentGroupUuids' && v && v.length) info.groupUuid = info.groupUuid || v[0];
-      if (k === 'isCurrent' && v === true && parent && parent.eduYear) info.eduYear = parent.eduYear;
-    });
-  });
-  if (!token) { post({ type: 'need_login' }); return; }
-  try { var payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))); info.schoolId = info.schoolId || payload.school_id || payload.schoolId; } catch (e) {}
-  var now = new Date();
-  function pad(n) { return (n < 10 ? '0' : '') + n; }
-  function monday(d) { var x = new Date(d.getFullYear(), d.getMonth(), d.getDate()); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return x; }
-  function fmt(d) { return pad(d.getDate()) + '.' + pad(d.getMonth() + 1) + '.' + d.getFullYear(); }
-  var eduYear = info.eduYear || (now.getMonth() >= 7 ? now.getFullYear() : now.getFullYear() - 1);
-  var headers = { Accept: 'application/json', Authorization: 'Bearer ' + token, 'x-localization': 'ru' };
-  if (info.schoolId) headers['x-school-id'] = String(info.schoolId);
-  var API = 'https://api.bilimclass.kz';
-  function get(path, q) {
-    var qs = Object.keys(q).filter(function (k) { return q[k] != null && q[k] !== ''; }).map(function (k) { return k + '=' + encodeURIComponent(q[k]); }).join('&');
-    return fetch(API + path + (qs ? '?' + qs : ''), { headers: headers, credentials: 'omit' }).then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); });
-  }
-  var thisWeek = monday(now), nextWeek = new Date(thisWeek.getTime()); nextWeek.setDate(nextWeek.getDate() + 7);
-  var base = { schoolId: info.schoolId, eduYear: eduYear };
-  var groupReady = info.groupId ? Promise.resolve() : get('/api/v4/os/clientoffice/group-list', base).then(function (g) {
-    walk(g, 0, function (k, v, parent) { if (!info.groupId && k === 'id' && parent && (parent.isMain || parent.main || parent.name)) info.groupId = v; if (!info.groupUuid && k === 'uuid' && parent && parent.name) info.groupUuid = v; });
-  }).catch(function () {});
-  groupReady.then(function () {
-    return Promise.all([thisWeek, nextWeek].map(function (d) {
-      return get('/api/v4/os/clientoffice/diary', { schoolId: base.schoolId, eduYear: eduYear, date: fmt(d), groupId: info.groupId }).catch(function () { return null; });
-    }));
-  }).then(function (weeks) {
-    var got = weeks.filter(Boolean);
-    if (got.length) return got;
-    if (!info.groupUuid) return [];
-    return get('/api/v4/os/clientoffice/homeworks/monthly/list', { schoolId: base.schoolId, eduYear: eduYear, studentGroupUuid: info.groupUuid }).then(function (h) { return [h]; }).catch(function () { return []; });
-  }).then(function (payloads) {
-    if (!payloads.length) post({ type: 'error', message: 'no diary' });
-    else post({ type: 'diary', payloads: payloads });
-  }).catch(function (e) { post({ type: 'error', message: String(e && e.message || e) }); });
-})();
-true;`;
-
-export const BILIM_URL = 'https://bilimclass.kz/';
-
-/** A message from the WebView, validated (anything else is ignored). */
-export function readMessage(data: string): { type: 'diary'; payloads: unknown[] } | { type: 'need_login' } | { type: 'error'; message: string } | null {
-  try {
-    const m = JSON.parse(data) as { type?: string; payloads?: unknown; message?: unknown };
-    if (m?.type === 'diary' && Array.isArray(m.payloads)) return { type: 'diary', payloads: m.payloads };
-    if (m?.type === 'need_login') return { type: 'need_login' };
-    if (m?.type === 'error') return { type: 'error', message: typeof m.message === 'string' ? m.message : '' };
-  } catch {}
-  return null;
-}

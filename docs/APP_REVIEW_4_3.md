@@ -38,6 +38,16 @@ family product remains accessible through Create family / I have a code.
 This is an onboarding improvement that exposes the existing workflow, not a claim
 that an onboarding change alone establishes compliance with guideline 4.3.
 
+## Native, explicit homework text import
+
+The former embedded third-party diary login and injected session/token lookup
+script have been removed. Parents can explicitly paste homework text, inspect
+subject/date matching and the exact bounded note in a native preview, and confirm
+before the selected family task notes are replaced. Clipboard access occurs only
+on the Paste from clipboard button. No third-party account/session is requested.
+This is a concrete privacy/quality improvement found during the audit, not an
+assertion that Apple identified that integration as the reason for 4.3(a).
+
 ## Inspectable implementation
 
 - `src/app/onboarding.tsx`: subjects, schedule, household tasks and deadlines.
@@ -46,6 +56,8 @@ that an onboarding change alone establishes compliance with guideline 4.3.
 - `supabase/functions/app/core.ts`: task-scoped photos, actions, corrections and skips.
 - `supabase/functions/app/screen.ts`: homework readiness from required task status.
 - `src/lib/screenGuardIos.ts`: Family Controls/Managed Settings/Device Activity integration.
+- `src/app/parent/bilimclass.tsx`: native paste/preview/confirmation, retaining the old route for compatibility.
+- `__tests__/homeworkImport.test.tsx`: explicit clipboard access, exact preview limit and confirmation before writes.
 - `src/components/FamilyWalkthrough.tsx`: public, local learning exercise.
 - `src/i18n/walkthrough.ts`: original exercise copy in three languages.
 - `__tests__/familyWalkthrough.test.tsx`: both user journeys and reset across device/language fixtures.

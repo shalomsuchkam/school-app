@@ -1,47 +1,40 @@
 import { Redirect, router, useFocusEffect } from 'expo-router';
-import { useCallback, useRef, useState } from 'react';
-import { Clipboard, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { WebView, type WebViewMessageEvent } from 'react-native-webview';
+import { useCallback, useState } from 'react';
+import { Clipboard, ScrollView, StyleSheet, View } from 'react-native';
 
-import { Badge, Banner, Btn, Card, Chip, Empty, ErrorBanner, Field, Group, haptic, Icon, IconBtn, Loading, Row, Screen, SectionLabel, Txt, useToast } from '@/components/ui';
+import { Badge, Banner, Btn, Card, Chip, Empty, ErrorBanner, Field, Group, IconBtn, Loading, Row, Screen, SectionLabel, Txt, useToast } from '@/components/ui';
 import { api, type Child, type Overview, type Setup } from '@/lib/api';
 import { useIsViewer } from '@/lib/auth';
-import { BILIM_URL, normName, parseBilim, parsePasted, planImport, READ_DIARY_JS, readMessage, type BcItem, type Mapping } from '@/lib/bilimclass';
+import { normName, parsePasted, planImport, type BcItem, type Mapping } from '@/lib/bilimclass';
 import { ChildSwitcher, currentChildReady, getCurrentChild, setCurrentChild, useCurrentChild } from '@/lib/currentChild';
 import { longDate } from '@/lib/format';
 import { tn, useT } from '@/lib/i18n';
 import { storage } from '@/lib/storage';
-import { hairline, radius, space, usePalette } from '@/lib/theme';
+import { space, usePalette } from '@/lib/theme';
 
-type Step = 'intro' | 'web' | 'failed' | 'paste' | 'preview' | 'done';
+type Step = 'intro' | 'paste' | 'preview' | 'done';
 const MAP_KEY = 'uroki.bilimMap';
 const NOTE_MAX = 300;
 
-// BilimClass import (beta). The parent signs in on the real site; only the diary JSON comes back to the app,
-// the mapping of subject names is remembered on this phone, and only confirmed homework text is saved as notes.
+// Explicit text import: inspect a native preview and confirm before writing family task notes.
+// There is no embedded portal, page script, token lookup or background clipboard access.
 export default function BilimImport() {
   const p = usePalette();
   const t = useT();
-  const insets = useSafeAreaInsets();
   const toast = useToast();
   const [step, setStep] = useState<Step>('intro');
-  const [consent, setConsent] = useState(false);
   const [setup, setSetup] = useState<Setup | null>(null);
   const [ov, setOv] = useState<Overview | null>(null);
   const [kids, setKids] = useState<Child[]>([]);
   const [childId] = useCurrentChild(kids);
-  const [tz, setTz] = useState('Asia/Almaty');
   const [error, setError] = useState<string | null>(null);
   const [items, setItems] = useState<BcItem[]>([]);
   const [map, setMap] = useState<Mapping>({});
   // per-item manual choice in this preview (index → subject id); also remembered by name when the name is known
   const [pick, setPick] = useState<Record<number, number | null>>({});
-  const [reading, setReading] = useState(false);
   const [paste, setPaste] = useState('');
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{ ok: string[]; skipped: string[] } | null>(null);
-  const web = useRef<WebView>(null);
   const viewer = useIsViewer();
 
   const load = useCallback(async () => {
@@ -52,7 +45,6 @@ export default function BilimImport() {
       setSetup(s);
       setOv(o);
       setKids(me.children);
-      setTz(me.family.tz);
       try {
         const m = saved ? (JSON.parse(saved) as Mapping) : {};
         if (m && typeof m === 'object') setMap(m);
@@ -83,25 +75,6 @@ export default function BilimImport() {
   const otherDates = items.filter((x) => x.date !== ov.active).length;
   const ready = plans.filter((x) => x.taskId !== null);
 
-  const onMessage = (e: WebViewMessageEvent) => {
-    const m = readMessage(e.nativeEvent.data);
-    if (!m) return;
-    setReading(false);
-    if (m.type === 'need_login') return toast.show(t('parent.bc.needLogin'));
-    if (m.type === 'error') return setStep('failed');
-    const got = parseBilim(m.payloads, tz);
-    if (!got.length) return setStep('failed');
-    setItems(got);
-    setPick({});
-    setStep('preview');
-  };
-  const read = () => {
-    haptic.tap();
-    setReading(true);
-    web.current?.injectJavaScript(READ_DIARY_JS);
-    // the page may never answer (blocked script, navigation): give up after a while
-    setTimeout(() => setReading(false), 20000);
-  };
   const fromClipboard = async () => {
     try {
       const text = await Clipboard.getString();
@@ -155,50 +128,12 @@ export default function BilimImport() {
     load();
   };
 
-  // ---------- the real BilimClass site, in-app ----------
-  if (step === 'web' && Platform.OS !== 'web') {
-    return (
-      <View style={{ flex: 1, backgroundColor: p.bg, paddingTop: insets.top }}>
-        <View style={[styles.webBar, { borderColor: p.line, backgroundColor: p.bgElevated }]}>
-          <IconBtn icon="close" label={t('common.close')} onPress={() => setStep('intro')} />
-          <View style={{ flex: 1, minWidth: 0 }}>
-            <Txt v="headline" numberOfLines={1}>
-              bilimclass.kz
-            </Txt>
-            <View style={styles.lock}>
-              <Icon name="lock-closed" size={12} color={p.ok} />
-              <Txt v="sub" color={p.muted} numberOfLines={1}>
-                {t('parent.bc.webHint')}
-              </Txt>
-            </View>
-          </View>
-        </View>
-        <WebView
-          ref={web}
-          source={{ uri: BILIM_URL }}
-          onMessage={onMessage}
-          // the page keeps its own session in its own storage; nothing is shared with the app
-          incognito={false}
-          sharedCookiesEnabled={false}
-          javaScriptEnabled
-          domStorageEnabled
-          setSupportMultipleWindows={false}
-          style={{ flex: 1, backgroundColor: p.bg }}
-        />
-        <View style={[styles.webFoot, { paddingBottom: insets.bottom + space.s, borderColor: p.line, backgroundColor: p.bgElevated }]}>
-          <Btn title={reading ? t('parent.bc.reading') : t('parent.bc.read')} icon="download-outline" loading={reading} onPress={read} />
-        </View>
-        {toast.node}
-      </View>
-    );
-  }
-
   return (
     <Screen title={t('parent.bc.title')} subtitle={t('parent.bc.beta')} right={<IconBtn icon="close" label={t('common.close')} onPress={back} />} footer={toast.node}>
       <ChildSwitcher list={kids} value={childId} onChange={switchChild} />
       <ErrorBanner error={error} onRetry={load} />
 
-      {step === 'intro' || (step === 'web' && Platform.OS === 'web') ? (
+      {step === 'intro' ? (
         <>
           <Card style={{ gap: space.s }}>
             <Txt v="callout">{t('parent.bc.intro')}</Txt>
@@ -216,35 +151,8 @@ export default function BilimImport() {
             ))}
           </Card>
           <Banner tone="ok" icon="shield-checkmark-outline" text={t('parent.bc.privacy')} />
-          <Pressable
-            onPress={() => {
-              haptic.tap();
-              setConsent(!consent);
-            }}
-            accessibilityRole="checkbox"
-            accessibilityState={{ checked: consent }}
-            style={[styles.consent, { borderColor: consent ? p.brand : p.line, backgroundColor: p.card }]}
-          >
-            <View style={[styles.box, { borderColor: consent ? p.brandFill : p.border, backgroundColor: consent ? p.brandFill : 'transparent' }]}>
-              {consent ? <Icon name="checkmark" size={16} color="#fff" /> : null}
-            </View>
-            <Txt v="callout" style={{ flex: 1 }}>
-              {t('parent.bc.consent')}
-            </Txt>
-          </Pressable>
-          {step === 'web' && Platform.OS === 'web' ? <Banner tone="warn" icon="phone-portrait-outline" text={t('parent.bc.phoneOnly')} /> : null}
-          <Btn title={t('parent.bc.start')} icon="open-outline" disabled={!consent} onPress={() => setStep('web')} style={{ marginTop: space.m }} />
           <Btn title={t('parent.bc.paste')} kind="ghost" icon="clipboard-outline" onPress={() => setStep('paste')} style={{ marginTop: space.xs }} />
         </>
-      ) : null}
-
-      {step === 'failed' ? (
-        <Card>
-          <Empty icon="document-text-outline" title={t('parent.bc.fail')} text={t('parent.bc.failText')}>
-            <Btn title={t('parent.bc.paste')} icon="clipboard-outline" onPress={() => setStep('paste')} style={{ marginTop: space.m, alignSelf: 'stretch' }} />
-            <Btn title={t('common.retry')} kind="ghost" icon="refresh" onPress={() => setStep('web')} style={{ marginTop: space.xs, alignSelf: 'stretch' }} />
-          </Empty>
-        </Card>
       ) : null}
 
       {step === 'paste' ? (
@@ -264,6 +172,7 @@ export default function BilimImport() {
       {step === 'preview' ? (
         <>
           <SectionLabel>{t('parent.bc.preview', { date: longDate(ov.active) })}</SectionLabel>
+          <Banner tone="warn" icon="document-text-outline" text={t('parent.bc.previewLimit', { n: NOTE_MAX })} />
           {!plans.length ? (
             <Card>
               <Empty icon="calendar-outline" title={t('parent.bc.previewEmpty', { date: longDate(ov.active) })} />
@@ -278,7 +187,7 @@ export default function BilimImport() {
                   {pl.taskId !== null ? <Badge tone="ok" icon="checkmark" label={t('parent.bc.willWrite')} /> : <Badge tone={pl.subjectId === null ? 'warn' : 'neutral'} label={pl.subjectId === null ? t('parent.bc.noMatch') : t('parent.bc.noTask')} />}
                 </View>
                 <Txt v="callout" color={p.ink2} numberOfLines={6} selectable>
-                  {pl.item.homework}
+                  {pl.item.homework.slice(0, NOTE_MAX)}
                 </Txt>
                 <Txt v="sub" color={p.muted} style={{ fontWeight: '600' }}>
                   {t('parent.bc.mapTo')}
@@ -334,13 +243,8 @@ export default function BilimImport() {
 const styles = StyleSheet.create({
   how: { flexDirection: 'row', alignItems: 'flex-start', gap: space.s },
   num: { width: 24, height: 24, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  consent: { flexDirection: 'row', alignItems: 'center', gap: space.s, borderWidth: 1, borderRadius: radius.l, padding: space.m, marginTop: space.s },
-  box: { width: 26, height: 26, borderRadius: 7, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
   row: { flexDirection: 'row', gap: space.xs, flexWrap: 'wrap' },
   item: { gap: space.xs, marginBottom: space.xs },
   itemHead: { flexDirection: 'row', alignItems: 'flex-start', gap: space.xs },
   chips: { gap: space.xs, paddingVertical: 2 },
-  webBar: { flexDirection: 'row', alignItems: 'center', gap: space.s, paddingHorizontal: space.m, paddingVertical: space.xs, borderBottomWidth: hairline },
-  lock: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  webFoot: { paddingHorizontal: space.m, paddingTop: space.s, borderTopWidth: hairline },
 });

@@ -1,4 +1,4 @@
-import { cleanText, mondayOf, eduYearOf, matchSubject, normName, parseBilim, parsePasted, planImport, readMessage, similarity, toIsoDate, READ_DIARY_JS } from '@/lib/bilimclass';
+import { cleanText, mondayOf, eduYearOf, matchSubject, normName, parseBilim, parsePasted, planImport, similarity, toIsoDate } from '@/lib/bilimclass';
 
 import diary from './fixtures/bilimclass-diary.json';
 import homeworks from './fixtures/bilimclass-homeworks.json';
@@ -112,17 +112,3 @@ describe('pasted homework', () => {
   });
 });
 
-describe('WebView bridge', () => {
-  it('accepts only the three known message types', () => {
-    expect(readMessage(JSON.stringify({ type: 'diary', payloads: [diary] }))).toEqual({ type: 'diary', payloads: [diary] });
-    expect(readMessage('{"type":"need_login"}')).toEqual({ type: 'need_login' });
-    expect(readMessage('{"type":"error","message":"HTTP 500"}')).toEqual({ type: 'error', message: 'HTTP 500' });
-    expect(readMessage('{"type":"token","value":"eyJ..."}')).toBeNull();
-    expect(readMessage('not json')).toBeNull();
-  });
-  it('the injected script never posts the token or the password and parses as JavaScript', () => {
-    expect(() => new Function(READ_DIARY_JS)).not.toThrow();
-    expect(READ_DIARY_JS).not.toMatch(/password/i);
-    expect(READ_DIARY_JS).not.toMatch(/post\(\{[^}]*token/);
-  });
-});
