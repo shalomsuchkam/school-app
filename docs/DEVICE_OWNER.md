@@ -66,3 +66,26 @@ References:
 Unit tests cover non-owner isolation, reading back failed policy application, release
 ordering and failed release. Native build and disposable-device policy verification
 must be recorded separately; unit tests alone do not prove OS enforcement.
+
+### Verified pilot build 73 (13 November 2026)
+
+The complete, locally release-signed APK was tested on a separate BlueStacks Android11
+instance with no Google/family accounts. Baseline was unmanaged; explicit USB enrollment
+and a repeated enable succeeded. Uninstall returned `DELETE_FAILED_OWNER_BLOCKED`.
+A separate ordinary app without DUMP permission could not release ownership. Ownership
+and uninstall protection survived a VM power cycle. Parent USB release and repeated
+release succeeded, followed by successful ordinary uninstall. The APK was reinstalled
+and protection re-enabled for inspection. `adb reboot` froze BlueStacks; the persistence
+test used its instance manager to stop/start that one VM without clearing its disk.
+
+Validation:563 JS tests, TypeScript, lint,12 native JVM tests including5 new ownership
+tests; release build and APK signature/16KB page-alignment checks passed. Build runtime
+source is18ae208; USB helper correction is2fa7064. Machine-readable test/signature reports
+are distributed beside the pilot APK. This is emulator verification, not physical-phone
+or all-OEM certification. No real child's phone was enrolled.
+
+Choose one signing/update channel for a managed installation. A developer-signed pilot
+APK and Google Play's app-signing certificate may differ. Do not remove an existing
+Play installation/data to force a signature change. Use same-certificate APK updates
+for this USB pilot; a Play deployment needs its own correctly signed distribution and
+device/provisioning validation.
