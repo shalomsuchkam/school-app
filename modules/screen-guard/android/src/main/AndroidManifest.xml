@@ -21,6 +21,16 @@
   </queries>
 
   <application>
+    <receiver android:name="expo.modules.screenguard.DeviceOwnerReceiver"
+      android:permission="android.permission.BIND_DEVICE_ADMIN" android:exported="true">
+      <meta-data android:name="android.app.device_admin" android:resource="@xml/device_owner_admin" />
+      <intent-filter>
+        <action android:name="android.app.action.DEVICE_ADMIN_ENABLED" />
+      </intent-filter>
+    </receiver>
+    <!-- Explicit component only; Android denies callers without this platform permission. -->
+    <receiver android:name="expo.modules.screenguard.OwnerMaintenanceReceiver"
+      android:permission="android.permission.DUMP" android:exported="true" />
     <!-- Google Play: declares a parental-control (child monitoring) app -->
     <meta-data android:name="isMonitoringTool" android:value="child_monitoring" />
 

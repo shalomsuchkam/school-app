@@ -1,6 +1,18 @@
 {
   "cli": { "appVersionSource": "local" },
   "build": {
-    "production": { "distribution": "store" }
+    "production": { "distribution": "store" },
+    "deviceOwnerPilot": {
+      "distribution": "store",
+      "env": {
+        "BUILD_NUMBER": "73",
+        "EAS_PROJECT_ID": "0989c4de-abdc-4810-9763-fcdd3a771259"
+      },
+      "android": {
+        "withoutCredentials": true,
+        "buildType": "apk",
+        "gradleCommand": ":screen-guard:testReleaseUnitTest :app:assembleRelease"
+      }
+    }
   }
 }

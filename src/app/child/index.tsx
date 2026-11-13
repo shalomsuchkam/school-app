@@ -13,6 +13,7 @@ import { GeoPanel } from '@/components/GeoPanel';
 import { PhotoViewer } from '@/components/PhotoViewer';
 import { ProgressRing } from '@/components/ProgressRing';
 import { ScreenTimePanel } from '@/components/ScreenTimePanel';
+import { DeviceOwnerCard } from '@/components/DeviceOwnerCard';
 import { NoteSheet, SkipSheet } from '@/components/SkipSheet';
 import { ChildTaskCard } from '@/components/TaskCards';
 import { Banner, Btn, Card, CONTENT_MAX, Empty, ErrorBanner, Group, haptic, Icon, IconBtn, type IconName, IconTile, Loading, PressableScale, ProgressBar, Screen, SectionLabel, Sheet, Stat, TextScale, ToggleRow, Txt, useLayout, useToast } from '@/components/ui';
@@ -445,6 +446,7 @@ export default function ChildHome() {
         ) : null}
 
         <ScreenTimePanel />
+        <DeviceOwnerCard />
         <GeoPanel trackLocation={s.track_location} />
 
         {s.override_note ? <Banner tone="brand" icon="swap-horizontal" title={t('common.overrideTitle')} text={s.override_note} /> : null}

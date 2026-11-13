@@ -4,8 +4,11 @@
 
 Parental controls for the child's phone, configured by the parent in «Уроки». Android is enforced by the
 native module `modules/screen-guard` (UsageStats + foreground service with a visible notification + full-screen block screen). There is no
-anti-uninstall (no device admin): if the child removes «Уроки» or turns a permission off, the reports stop or show it and
+anti-uninstall by default: if the child removes «Уроки» or turns a permission off, the reports stop or show it and
 the parent sees «Защита выключена» in the app.
+An optional parent-assisted Android Device Owner USB pilot can block ordinary uninstall;
+it requires explicit external provisioning, not a normal permission prompt. See [DEVICE_OWNER.md](DEVICE_OWNER.md)
+for setup, platform limits and parent-assisted release. It does not replace usage/overlay/location permissions.
 iOS uses Apple's Screen Time API (FamilyControls/ManagedSettings/DeviceActivity, see "iOS" below), behind the
 `iosScreenTime` build flag that stays off until Apple grants the Family Controls (Distribution) entitlement; until
 then iOS shows the rules but does not enforce them.

@@ -11,6 +11,8 @@ export type GuardStatus = {
   battery_ok: boolean;
   running: boolean;
   configured: boolean;
+  device_owner?: boolean;
+  uninstall_blocked?: boolean;
 };
 
 /** The guard's copy of the child session (what `start` was given; `stop` clears it). */

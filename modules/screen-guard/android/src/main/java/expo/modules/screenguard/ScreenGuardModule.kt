@@ -35,6 +35,13 @@ class ScreenGuardModule : Module() {
       out["supported"] = true
       for ((k, v) in GuardPermissions.guardStatus(ctx)) out[k] = v
       out["configured"] = GuardStore(ctx).configured
+      // Ownership can only be provisioned externally by a parent, never by this JS API.
+      try {
+        out.putAll(DeviceOwnerProtection.protect(ctx))
+      } catch (error: Exception) {
+        out["device_owner"] = runCatching { DeviceOwnerProtection.status(ctx)["device_owner"] == true }.getOrDefault(false)
+        out["uninstall_blocked"] = false
+      }
       out
     }
 
