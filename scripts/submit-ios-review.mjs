@@ -88,7 +88,7 @@ async function main() {
     });
     const raw = await response.text();
     const result = raw ? JSON.parse(raw) : { data: null };
-    if (!response.ok) throw new Error(JSON.stringify({ status: response.status, errors: result.errors?.map(({ code, title, detail }) => ({ code, title, detail })) }));
+    if (!response.ok) throw new Error(JSON.stringify({ status: response.status, errors: result.errors }));
     return result.data;
   };
   const app = await apple(`apps/${APP}`);
