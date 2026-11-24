@@ -22,9 +22,9 @@ for(const loc of locales){
  const sets=await api(`appStoreVersionLocalizations/${loc.id}/appScreenshotSets?limit=200`);
  for(const set of sets){
   const shots=await api(`appScreenshotSets/${set.id}/appScreenshots?limit=200`);
-  console.log('SET',set.id,set.attributes.screenshotDisplayType,JSON.stringify(shots.map(s=>({id:s.id,file:s.attributes.fileName,state:s.attributes.assetDeliveryState?.state}))));
+  console.log('SET',set.id,set.attributes.screenshotDisplayType,JSON.stringify(shots.map(s=>({id:s.id,file:s.attributes.fileName,state:s.attributes.assetDeliveryState?.state,image:s.attributes.imageAsset}))));
   for(const shot of shots){
-   if(apply && /^3-screen\.png$/i.test(shot.attributes.fileName)){
+   if(apply && /^(3-screen|(?:iphone|ipad)-02-screen-time|iphone-04-settings)\.png$/i.test(shot.attributes.fileName)){
     if(shots.length<2)throw Error('Cannot leave an empty screenshot set');
     await api(`appScreenshots/${shot.id}`,'DELETE');console.log('REMOVED_PLATFORM_SCREENSHOT',shot.id);
    }
