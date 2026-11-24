@@ -38,7 +38,7 @@ export function PhoneLimitGuide({ visible, onClose }: { visible: boolean; onClos
       <Txt v="callout" color={p.muted} style={{ marginBottom: 14 }}>
         {t('parent.phone.intro')}
       </Txt>
-      <Segmented
+      {Platform.OS !== 'ios' ? <Segmented
         value={os}
         onChange={setOs}
         options={[
@@ -46,7 +46,7 @@ export function PhoneLimitGuide({ visible, onClose }: { visible: boolean; onClos
           { value: 'ios', label: t('parent.phone.ios') },
         ]}
         style={{ marginBottom: 12 }}
-      />
+      /> : null}
       <View style={[styles.card, { backgroundColor: p.card, borderColor: p.line }]}>
         {steps.map((k, i) => (
           <View key={k} style={styles.step}>

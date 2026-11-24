@@ -44,6 +44,13 @@ export default function CameraScreen() {
   const taskId = Number(params.id);
   const [perm, requestPerm, getPerm] = useCameraPermissions();
   const cam = useRef<CameraView>(null);
+  const requested = useRef(false);
+  const [permissionDenied, setPermissionDenied] = useState(false);
+  useEffect(() => {
+    if (!perm || perm.granted || perm.status !== 'undetermined' || requested.current) return;
+    requested.current = true;
+    requestPerm().then((result) => setPermissionDenied(!result.granted)).catch(() => setPermissionDenied(true));
+  }, [perm, requestPerm]);
   const [torch, setTorch] = useState(false);
   const [shot, setShot] = useState<string | null>(null);
   const [dims, setDims] = useState<{ w: number; h: number } | null>(null);
@@ -61,7 +68,7 @@ export default function CameraScreen() {
     return () => sub.remove();
   }, [getPerm]);
 
-  if (!perm) return <View style={styles.bg} />;
+  if (!perm || (!perm.granted && perm.status === 'undetermined' && !permissionDenied)) return <View style={styles.bg} />;
   if (!perm.granted) {
     return (
       <View style={[styles.bg, styles.center, { paddingTop: insets.top }]}>
@@ -75,8 +82,8 @@ export default function CameraScreen() {
           {t('child.cam.permText')}
         </Txt>
         <Btn
-          title={perm.canAskAgain ? t('child.cam.allow') : t('child.cam.openSettings')}
-          onPress={() => (perm.canAskAgain ? requestPerm() : Linking.openSettings())}
+          title={t('child.cam.openSettings')}
+          onPress={() => Linking.openSettings()}
           style={{ marginTop: 22, alignSelf: 'stretch' }}
         />
         <Btn title={t('common.back')} kind="plain" onPress={() => router.back()} style={{ marginTop: 10, alignSelf: 'stretch' }} />
