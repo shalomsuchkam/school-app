@@ -42,3 +42,12 @@ if(apply){
  await api(`appStoreReviewDetails/${detail.id}`,'PATCH',{type:'appStoreReviewDetails',id:detail.id,attributes:{notes}});
  console.log('REVIEW_NOTES_UPDATED',notes.length);
 }
+
+const infos=await api('apps/6827758955/appInfos');
+for(const info of infos){
+ const localizations=await api(`appInfos/${info.id}/appInfoLocalizations`);
+ for(const loc of localizations){
+  console.log('APP_INFO',loc.attributes.locale,JSON.stringify({name:loc.attributes.name,subtitle:loc.attributes.subtitle}));
+  if(/Android|Google Play|Family Link/i.test((loc.attributes.name??'')+' '+(loc.attributes.subtitle??'')))throw Error('Competing platform reference in app information');
+ }
+}
