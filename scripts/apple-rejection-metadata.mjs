@@ -51,3 +51,6 @@ for(const info of infos){
   if(/Android|Google Play|Family Link/i.test((loc.attributes.name??'')+' '+(loc.attributes.subtitle??'')))throw Error('Competing platform reference in app information');
  }
 }
+
+const uploads=await api('apps/6827758955/buildUploads?limit=10');
+console.log('BUILD_UPLOADS',JSON.stringify(uploads.map(u=>({id:u.id,attributes:u.attributes}))));
