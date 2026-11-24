@@ -31,3 +31,14 @@ for(const loc of locales){
   }
  }
 }
+
+if(apply){
+ const detail=await api(`appStoreVersions/${v.id}/appStoreReviewDetail`);
+ const old=detail.attributes.notes??'';
+ const access=old.match(/FULL FAMILY ACCESS:[\s\S]*?(?=\n\n|$)/)?.[0];
+ if(!access)throw Error('Existing demo access instructions must be preserved');
+ const notes='BUILD 73 — RESPONSE TO NOVEMBER 23 REVIEW\n\n5.1.1(iv): opening a task camera now directly requests the native system camera permission. The custom pre-permission screen and its Allow camera / Back choices are removed. After denial, the app does not request again automatically; it offers Settings and Back. Denying camera access does not prevent leaving the camera or using other features.\n\n2.3.10: iOS interface text in Russian, Kazakh and English now uses store-specific wording without competing platform references. The phone setup guide on iOS shows only Apple Screen Time. The Russian App Store description is updated; old Screen Time and Settings screenshots containing those references were removed from every existing screenshot set. Other screenshots remain unchanged.\n\n'+access+'\n\niOS CHILD SCREEN TIME: use a physical child iPhone in Apple Family Sharing, authorize with the parent and select apps on that child device. Bedtime, school time, homework rules and a shared limit for selected apps are supported. Usage statistics remain on the child device.\n\nPDF: user-selected local files only. Optional location sharing remains visible and consent-based. Support: https://urokiapp.kz/support';
+ if(notes.length>4000)throw Error('Review notes too long');
+ await api(`appStoreReviewDetails/${detail.id}`,'PATCH',{type:'appStoreReviewDetails',id:detail.id,attributes:{notes}});
+ console.log('REVIEW_NOTES_UPDATED',notes.length);
+}

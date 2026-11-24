@@ -119,7 +119,9 @@ async function main() {
     console.log(`ALREADY_SUBMITTED ${expected.build} ${state}`);
     return;
   }
-  const notes = process.env.REVIEW_NOTES;
+  const preparedDetail = await apple(`appStoreVersions/${version.id}/appStoreReviewDetail`);
+  const notes = process.env.REVIEW_NOTES?.startsWith(`BUILD ${expected.build} —`)
+    ? process.env.REVIEW_NOTES : preparedDetail?.attributes.notes;
   check(notes?.startsWith(`BUILD ${expected.build} —`), 'Reviewer instructions must describe the requested build');
   let rejectedVerified = false;
   if (state === 'REJECTED') {
