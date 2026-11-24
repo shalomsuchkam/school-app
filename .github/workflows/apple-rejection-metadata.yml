@@ -5,6 +5,9 @@ on:
       apply:
         type: boolean
         default: false
+      exclude_mainland_china:
+        type: boolean
+        default: false
 permissions:
   contents: read
 jobs:
@@ -21,3 +24,4 @@ jobs:
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
           ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
           APPLY: ${{ inputs.apply }}
+          EXCLUDE_MAINLAND_CHINA: ${{ inputs.exclude_mainland_china }}

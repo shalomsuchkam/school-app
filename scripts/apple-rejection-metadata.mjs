@@ -4,7 +4,7 @@ const b64=x=>Buffer.from(JSON.stringify(x)).toString('base64url');
 const now=Math.floor(Date.now()/1000);
 const unsigned=`${b64({alg:'ES256',kid:process.env.ASC_KEY_ID,typ:'JWT'})}.${b64({iss:process.env.ASC_ISSUER_ID,iat:now,exp:now+1200,aud:'appstoreconnect-v1'})}`;
 const token=unsigned+'.'+sign('sha256',Buffer.from(unsigned),{key:createPrivateKey(process.env.ASC_KEY_P8),dsaEncoding:'ieee-p1363'}).toString('base64url');
-async function api(path,method='GET',data){const r=await fetch('https://api.appstoreconnect.apple.com/v1/'+path,{method,headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},...(data?{body:JSON.stringify({data})}:{})});const text=await r.text();if(!r.ok)throw Error(r.status+' '+text);return text?JSON.parse(text).data:null;}
+async function api(path,method='GET',data){const r=await fetch('https://api.appstoreconnect.apple.com/'+(path.startsWith('v2/')?path:'v1/'+path),{method,headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},...(data?{body:JSON.stringify({data})}:{})});const text=await r.text();if(!r.ok)throw Error(r.status+' '+text);return text?JSON.parse(text).data:null;}
 const versions=await api('apps/6827758955/appStoreVersions?filter[platform]=IOS&filter[versionString]=1.0.0');
 if(versions.length!==1)throw Error('Unexpected versions');
 const v=versions[0];console.log('VERSION',v.id,v.attributes.appStoreState);
@@ -54,3 +54,15 @@ for(const info of infos){
 
 const uploads=await api('apps/6827758955/buildUploads?limit=10');
 console.log('BUILD_UPLOADS',JSON.stringify(uploads.map(u=>({id:u.id,attributes:u.attributes}))));
+
+const availability=await api('apps/6827758955/appAvailabilityV2');
+const territories=await api(`v2/appAvailabilities/${availability.id}/territoryAvailabilities?limit=200&include=territory`);
+console.log('TERRITORIES',JSON.stringify(territories.map(t=>({id:t.id,territory:t.relationships.territory.data.id,available:t.attributes.available}))));
+if(process.env.EXCLUDE_MAINLAND_CHINA==='true'){
+ const china=territories.find(t=>t.relationships.territory.data.id==='CHN');
+ if(!china)throw Error('Mainland China territory missing');
+ if(china.attributes.available)await api(`territoryAvailabilities/${china.id}`,'PATCH',{type:'territoryAvailabilities',id:china.id,attributes:{available:false}});
+ const checked=await api(`v2/appAvailabilities/${availability.id}/territoryAvailabilities?limit=200&include=territory`);
+ for(const t of territories){const after=checked.find(x=>x.id===t.id);if(!after || after.attributes.available!==(t.id===china.id?false:t.attributes.available))throw Error('Unexpected territory availability change');}
+ console.log('MAINLAND_CHINA_EXCLUDED_OTHER_TERRITORIES_UNCHANGED');
+}
